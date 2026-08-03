@@ -1,0 +1,154 @@
+#ifndef FLUME_FLUME_H_
+#define FLUME_FLUME_H_
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct flume_client flume_client_t;
+typedef struct flume_file flume_file_t;
+typedef struct flume_buffer flume_buffer_t;
+typedef struct flume_io flume_io_t;
+typedef struct flume_a3_symmetric_window flume_a3_symmetric_window_t;
+
+typedef enum {
+  FLUME_OK = 0,
+  FLUME_ERR_INVALID_ARGUMENT = 1,
+  FLUME_ERR_IO = 2,
+  FLUME_ERR_TIMEOUT = 3,
+  FLUME_ERR_UNSUPPORTED = 4,
+  FLUME_ERR_BACKEND = 5,
+  FLUME_ERR_REMOTE = 6,
+  FLUME_ERR_PROTOCOL = 7,
+  FLUME_PENDING = 8
+} flume_status_t;
+
+typedef enum {
+  FLUME_BUFFER_HOST = 0,
+  FLUME_BUFFER_ASCEND_HBM = 1,
+  FLUME_BUFFER_HCCL_COMM = 2,
+  FLUME_BUFFER_SIM_HBM = 100,
+  FLUME_BUFFER_SIM_HCCL_COMM = 101
+} flume_buffer_type_t;
+
+typedef enum {
+  FLUME_PATH_AUTO = 0,
+  FLUME_PATH_HCCL_HCOMM = 1,
+  FLUME_PATH_RUNTIME_BASELINE = 2,
+  FLUME_PATH_MOCK = 3
+} flume_path_t;
+
+typedef enum {
+  FLUME_DTYPE_INT8 = 0,
+  FLUME_DTYPE_INT16 = 1,
+  FLUME_DTYPE_INT32 = 2,
+  FLUME_DTYPE_FP16 = 3,
+  FLUME_DTYPE_FP32 = 4,
+  FLUME_DTYPE_INT64 = 5,
+  FLUME_DTYPE_UINT64 = 6,
+  FLUME_DTYPE_UINT8 = 7,
+  FLUME_DTYPE_UINT16 = 8,
+  FLUME_DTYPE_UINT32 = 9,
+  FLUME_DTYPE_FP64 = 10,
+  FLUME_DTYPE_BFP16 = 11
+} flume_data_type_t;
+
+typedef enum {
+  FLUME_REDUCE_SUM = 0,
+  FLUME_REDUCE_PROD = 1,
+  FLUME_REDUCE_MAX = 2,
+  FLUME_REDUCE_MIN = 3
+} flume_reduce_op_t;
+
+const char *flume_status_string(int status);
+
+int flume_client_open(const char *endpoint, flume_client_t **out);
+int flume_client_close(flume_client_t *client);
+
+int flume_attach_hccl_comm(flume_client_t *client, void *hccl_comm,
+                          uint32_t rank, uint32_t rank_size);
+int flume_attach_sim_comm(flume_client_t *client, const char *comm_name,
+                         uint32_t rank, uint32_t rank_size);
+
+int flume_open(flume_client_t *client, const char *path, flume_file_t **out);
+int flume_close(flume_file_t *file);
+
+int flume_register_buffer(flume_client_t *client, void *ptr, size_t len,
+                         flume_buffer_type_t type, flume_buffer_t **out);
+int flume_sim_alloc_buffer(flume_client_t *client, size_t len,
+                          flume_buffer_type_t type, flume_buffer_t **out);
+void *flume_buffer_data(flume_buffer_t *buffer);
+size_t flume_buffer_size(flume_buffer_t *buffer);
+flume_buffer_type_t flume_buffer_type(flume_buffer_t *buffer);
+int flume_buffer_release(flume_buffer_t *buffer);
+
+int flume_a3_register_symmetric_memory(flume_client_t *client,
+                                       flume_buffer_t *buffer,
+                                       size_t offset,
+                                       size_t len,
+                                       flume_a3_symmetric_window_t **out);
+int flume_a3_deregister_symmetric_memory(flume_a3_symmetric_window_t *window);
+
+int flume_a3_set_memory_range(flume_client_t *client,
+                             void *base_vir_ptr,
+                             size_t size,
+                             size_t alignment,
+                             uint64_t flags);
+int flume_a3_unset_memory_range(flume_client_t *client, void *base_vir_ptr);
+int flume_a3_activate_comm_memory(flume_client_t *client,
+                                 void *vir_ptr,
+                                 size_t size,
+                                 size_t offset,
+                                 void *drv_mem_handle,
+                                 uint64_t flags);
+int flume_a3_deactivate_comm_memory(flume_client_t *client, void *vir_ptr);
+
+int flume_pread_async(flume_file_t *file, flume_buffer_t *dst, size_t len,
+                     uint64_t file_offset, size_t buffer_offset,
+                     void *acl_stream, flume_io_t **out);
+
+int flume_hbm_copy_async(flume_client_t *client,
+                        flume_buffer_t *dst,
+                        size_t dst_offset,
+                        flume_buffer_t *src,
+                        size_t src_offset,
+                        size_t len,
+                        void *acl_stream,
+                        flume_io_t **out);
+
+int flume_allreduce_async(flume_client_t *client,
+                         flume_buffer_t *dst,
+                         size_t dst_offset,
+                         flume_buffer_t *src,
+                         size_t src_offset,
+                         uint64_t count,
+                         flume_data_type_t data_type,
+                         flume_reduce_op_t op,
+                         void *acl_stream,
+                         flume_io_t **out);
+
+int flume_allgather_async(flume_client_t *client,
+                         flume_buffer_t *dst,
+                         size_t dst_offset,
+                         flume_buffer_t *src,
+                         size_t src_offset,
+                         uint64_t send_count,
+                         flume_data_type_t data_type,
+                         void *acl_stream,
+                         flume_io_t **out);
+
+int flume_wait(flume_io_t *io, int timeout_ms);
+int flume_io_status(flume_io_t *io);
+size_t flume_io_bytes(flume_io_t *io);
+uint32_t flume_io_checksum(flume_io_t *io);
+const char *flume_io_error_message(flume_io_t *io);
+int flume_io_release(flume_io_t *io);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // FLUME_FLUME_H_

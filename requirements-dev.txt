@@ -1,0 +1,2 @@
+# Keep Python tooling intentionally small.
+# HCCL/HCOMM are CANN C/C++ components, not Python venv dependencies.

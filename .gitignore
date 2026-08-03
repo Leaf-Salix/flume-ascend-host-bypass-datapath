@@ -1,0 +1,22 @@
+# Local cloned reference repositories.
+refer/cann-src/
+
+# Build outputs.
+build/
+build-*/
+cmake-build-*/
+
+# Python local environments.
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Editor and OS noise.
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files.
+logs/
+*.log
+*.tmp
