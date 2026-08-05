@@ -238,6 +238,18 @@ bool IsCollectiveBufferType(flume_buffer_type_t type) {
   return IsSimBufferType(type) || IsRealHcclBufferType(type);
 }
 
+bool IsSupportedReduceOp(flume_reduce_op_t op) {
+  switch (op) {
+    case FLUME_REDUCE_SUM:
+    case FLUME_REDUCE_PROD:
+    case FLUME_REDUCE_MAX:
+    case FLUME_REDUCE_MIN:
+      return true;
+    default:
+      return false;
+  }
+}
+
 size_t DataTypeBytes(flume_data_type_t data_type) {
   switch (data_type) {
     case FLUME_DTYPE_INT8:
@@ -682,6 +694,10 @@ int SubmitSimCollective(flume_client_t* client,
   }
 
   size_t input_bytes = 0;
+  if (kind == SimCollectiveKind::kAllReduce &&
+      !IsSupportedReduceOp(reduce_op)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
   if (!CheckedBytes(count, data_type, &input_bytes)) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }

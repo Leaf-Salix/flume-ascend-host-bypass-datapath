@@ -292,14 +292,30 @@ bool WriteRootInfoFile(const std::string& path,
       return false;
     }
   }
-  std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+  std::filesystem::path temp =
+      output.string() + ".tmp." +
+      std::to_string(static_cast<long long>(
+          std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::ofstream stream(temp, std::ios::binary | std::ios::trunc);
   if (!stream) {
-    *error = "failed to open root-info output file: " + path;
+    *error = "failed to open root-info temp file: " + temp.string();
     return false;
   }
   stream.write(reinterpret_cast<const char*>(&root_info), sizeof(HcclRootInfo));
+  stream.close();
   if (!stream) {
-    *error = "failed to write root-info output file: " + path;
+    std::error_code ignored;
+    std::filesystem::remove(temp, ignored);
+    *error = "failed to write root-info temp file: " + temp.string();
+    return false;
+  }
+  std::error_code ec;
+  std::filesystem::rename(temp, output, ec);
+  if (ec) {
+    std::error_code ignored;
+    std::filesystem::remove(temp, ignored);
+    *error = "failed to publish root-info file " + output.string() +
+             ": " + ec.message();
     return false;
   }
   return true;

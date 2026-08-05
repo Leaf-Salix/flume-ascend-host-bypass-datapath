@@ -152,6 +152,26 @@ int main() {
   }
 
   {
+    flume_client_t* rank0 = nullptr;
+    OpenClient(agent, "bad-reduce-op-world", 0, 1, &rank0);
+    flume_buffer_t* src0 = nullptr;
+    flume_buffer_t* dst0 = nullptr;
+    flume_io_t* io0 = nullptr;
+    AllocPair(rank0, 4, &src0, &dst0);
+
+    FLUME_TEST_CHECK(flume_allreduce_async(
+                         rank0, dst0, 0, src0, 0, 4, FLUME_DTYPE_FP32,
+                         static_cast<flume_reduce_op_t>(999), nullptr, &io0) ==
+                     FLUME_ERR_INVALID_ARGUMENT);
+    FLUME_TEST_CHECK(io0 == nullptr);
+    SubmitAllReduce(rank0, dst0, src0, 4, &io0);
+    FLUME_TEST_CHECK(flume_wait(io0, 1000) == FLUME_OK);
+    FLUME_TEST_CHECK(flume_io_release(io0) == FLUME_OK);
+    ReleasePair(src0, dst0);
+    flume_client_close(rank0);
+  }
+
+  {
     flume_client_t* rank0a = nullptr;
     flume_client_t* rank0b = nullptr;
     OpenClient(agent, "duplicate-rank-world", 0, 2, &rank0a);
