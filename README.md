@@ -134,6 +134,7 @@ HCCL-enabled builds additionally require a sourced CANN environment with:
 
 ## Documentation
 
+- [Implementation flow summary](docs/implementation-flow-summary.md)
 - [Architecture](docs/architecture.md)
 - [Demo plan](docs/demo-plan.md)
 - [Single-node multi-card HBM/HCCL analysis](docs/single-node-hbm-hccl-analysis.md)
