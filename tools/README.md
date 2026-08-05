@@ -48,6 +48,16 @@ python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-dev
 
 该 smoke 会构建并运行 `flume-hccl-collective-smoke`。如果传入 `--hccl-devices <device-a>,<device-b>`，工具默认设置 `ASCEND_RT_VISIBLE_DEVICES=<device-a>,<device-b>`，并让每个 rank 进程使用逻辑设备 `0,1`。随后通过 Flume API 在 Ascend HBM buffer 上提交 AllReduce 和 AllGather，并用 D2H 结果校验 correctness。H2D/D2H 只用于初始化和校验，collective 本身不经过 host memory staging。
 
+可选 Stage 2 HCCL P2P copy smoke：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+该模式会在同一个 `flume-hccl-collective-smoke` 中追加 `--p2p-copy`，先跑 base AllReduce / AllGather，再通过 Flume API 调用 `HcclSend` / `HcclRecv` 做 rank0 HBM 到 rank1 HBM 的配对拷贝并校验 rank1 结果。它是当前 Stage 2 的公开 HCCL baseline；HCOMM Channel / Notify / HCCL Buffer 自定义 P2P backend 仍保留为下一步。
+
+`--run-hccl-p2p-smoke` 目前不能和 `--run-a3-symmetric-smoke` 组合。CMake 会探测 `FLUME_HAVE_HCCL_P2P`，如果当前 HCCL 头文件或库没有导出 `HcclSend` / `HcclRecv`，smoke 会直接报告不可用。
+
 推荐真机打通顺序：
 
 1. `auto` / `root-info`：默认推荐路径。工具让 rank0 通过 `HcclGetRootInfo` 生成 root info 文件，再启动一进程一 rank 的 `HcclCommInitRootInfo`，尽量贴近官方 HCCL root-info 测试。

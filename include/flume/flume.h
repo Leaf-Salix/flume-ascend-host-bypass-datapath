@@ -119,6 +119,24 @@ int flume_hbm_copy_async(flume_client_t *client,
                         void *acl_stream,
                         flume_io_t **out);
 
+int flume_p2p_send_async(flume_client_t *client,
+                        flume_buffer_t *src,
+                        size_t src_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t dest_rank,
+                        void *acl_stream,
+                        flume_io_t **out);
+
+int flume_p2p_recv_async(flume_client_t *client,
+                        flume_buffer_t *dst,
+                        size_t dst_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t src_rank,
+                        void *acl_stream,
+                        flume_io_t **out);
+
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,
                          size_t dst_offset,

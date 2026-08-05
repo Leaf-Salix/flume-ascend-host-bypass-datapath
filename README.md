@@ -15,6 +15,7 @@ Implemented and testable on macOS/Linux without NPU hardware:
   - `FLUME_BUFFER_SIM_HBM`
 - Simulated HBM copy through `flume_hbm_copy_async`.
 - Simulated multi-rank `AllReduce` / `AllGather`.
+- Simulated paired P2P send/recv through `flume_p2p_send_async` / `flume_p2p_recv_async`.
 - Simulated A3 symmetric-memory lifecycle checks.
 - Tooling for local and Ascend-host validation under `tools/`.
 
@@ -23,7 +24,9 @@ Implemented but still requires Ascend hardware validation:
 - HCCL-enabled build path with CANN/HCCL/HCOMM/ACL discovery.
 - `flume_attach_hccl_comm` for reusing an external `HcclComm`.
 - `flume_allreduce_async` / `flume_allgather_async` wrappers over `HcclAllReduce` / `HcclAllGather`.
+- `flume_p2p_send_async` / `flume_p2p_recv_async` wrappers over `HcclSend` / `HcclRecv` when those APIs are exported by the installed HCCL headers and library.
 - Optional single-node multi-card HCCL smoke test on Ascend HBM buffers.
+- Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not implemented yet:
@@ -84,6 +87,14 @@ Single-node multi-card HCCL collective smoke:
 ```bash
 python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe
 ```
+
+Stage 2 HCCL P2P copy smoke:
+
+```bash
+python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe
+```
+
+This adds a paired `HcclSend` / `HcclRecv` check from rank 0 HBM to rank 1 HBM after the base collective smoke. It is the current public-HCCL baseline for HBM-to-HBM P2P copy; the lower HCOMM Channel backend remains a follow-up.
 
 When `--hccl-devices` is set, the default `auto` mode uses the HCCL
 `root-info` initialization strategy and launches one process per rank. This is

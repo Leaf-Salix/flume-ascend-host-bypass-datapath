@@ -36,6 +36,9 @@
 #ifndef FLUME_HAVE_HCCL_COMM_MEMORY
 #define FLUME_HAVE_HCCL_COMM_MEMORY 0
 #endif
+#ifndef FLUME_HAVE_HCCL_P2P
+#define FLUME_HAVE_HCCL_P2P 0
+#endif
 #ifndef FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
 #endif
@@ -54,6 +57,8 @@ struct flume_client {
   uint32_t rank_size = 0;
   uint64_t sim_allreduce_seq = 0;
   uint64_t sim_allgather_seq = 0;
+  uint64_t sim_p2p_send_seq = 0;
+  uint64_t sim_p2p_recv_seq = 0;
   uint64_t sim_a3_register_seq = 0;
 };
 
@@ -114,6 +119,8 @@ struct CommState {
   bool hccl_attached = false;
   void* hccl_comm = nullptr;
   bool sim_comm_attached = false;
+  std::string sim_comm_name;
+  uint32_t rank = 0;
   uint32_t rank_size = 0;
 };
 
@@ -130,6 +137,8 @@ CommState SnapshotCommState(flume_client_t* client) {
   state.hccl_attached = client->hccl_attached;
   state.hccl_comm = client->hccl_comm;
   state.sim_comm_attached = client->sim_comm_attached;
+  state.sim_comm_name = client->sim_comm_name;
+  state.rank = client->rank;
   state.rank_size = client->rank_size;
   return state;
 }
@@ -467,6 +476,44 @@ struct PendingSimA3Registration {
   std::vector<bool> arrived;
 };
 
+struct SimP2pKey {
+  std::string comm_name;
+  uint32_t rank_size = 0;
+  uint32_t src_rank = 0;
+  uint32_t dst_rank = 0;
+  uint64_t seq = 0;
+
+  bool operator<(const SimP2pKey& other) const {
+    if (comm_name != other.comm_name) {
+      return comm_name < other.comm_name;
+    }
+    if (rank_size != other.rank_size) {
+      return rank_size < other.rank_size;
+    }
+    if (src_rank != other.src_rank) {
+      return src_rank < other.src_rank;
+    }
+    if (dst_rank != other.dst_rank) {
+      return dst_rank < other.dst_rank;
+    }
+    return seq < other.seq;
+  }
+};
+
+struct PendingSimP2p {
+  bool metadata_set = false;
+  uint64_t count = 0;
+  flume_data_type_t data_type = FLUME_DTYPE_INT8;
+  size_t bytes = 0;
+  bool has_send = false;
+  bool has_recv = false;
+  std::vector<uint8_t> payload;
+  flume_buffer_t* dst = nullptr;
+  size_t dst_offset = 0;
+  flume_io_t* send_io = nullptr;
+  flume_io_t* recv_io = nullptr;
+};
+
 std::mutex& SimCollectiveMutex() {
   static auto* mu = new std::mutex;
   return *mu;
@@ -489,6 +536,60 @@ SimA3Registrations() {
   static auto* registrations =
       new std::map<SimA3RegistrationKey, std::unique_ptr<PendingSimA3Registration>>;
   return *registrations;
+}
+
+std::mutex& SimP2pMutex() {
+  static auto* mu = new std::mutex;
+  return *mu;
+}
+
+std::map<SimP2pKey, std::unique_ptr<PendingSimP2p>>& SimP2ps() {
+  static auto* p2ps = new std::map<SimP2pKey, std::unique_ptr<PendingSimP2p>>;
+  return *p2ps;
+}
+
+bool PendingSimP2pMatches(const PendingSimP2p& pending,
+                          uint64_t count,
+                          flume_data_type_t data_type,
+                          size_t bytes) {
+  return !pending.metadata_set ||
+         (pending.count == count && pending.data_type == data_type &&
+          pending.bytes == bytes);
+}
+
+void MaybeSetPendingSimP2pMetadata(PendingSimP2p* pending,
+                                   uint64_t count,
+                                   flume_data_type_t data_type,
+                                   size_t bytes) {
+  if (pending == nullptr || pending->metadata_set) {
+    return;
+  }
+  pending->metadata_set = true;
+  pending->count = count;
+  pending->data_type = data_type;
+  pending->bytes = bytes;
+}
+
+void FailPendingSimP2p(PendingSimP2p& pending, int status,
+                       const std::string& error) {
+  if (pending.has_recv && pending.dst != nullptr) {
+    ReleasePendingBuffer(pending.dst);
+  }
+  if (pending.send_io != nullptr) {
+    CompletePendingIo(pending.send_io, status, 0, 0, error);
+  }
+  if (pending.recv_io != nullptr) {
+    CompletePendingIo(pending.recv_io, status, 0, 0, error);
+  }
+}
+
+void CompletePendingSimP2p(PendingSimP2p& pending) {
+  auto* dst = static_cast<uint8_t*>(pending.dst->ptr) + pending.dst_offset;
+  memcpy(dst, pending.payload.data(), pending.bytes);
+  uint32_t checksum = flume::protocol::Checksum32(dst, pending.bytes);
+  ReleasePendingBuffer(pending.dst);
+  CompletePendingIo(pending.recv_io, FLUME_OK, pending.bytes, checksum);
+  CompletePendingIo(pending.send_io, FLUME_OK, pending.bytes, checksum);
 }
 
 int SubmitSimA3Registration(const std::string& comm_name,
@@ -779,6 +880,125 @@ int SubmitSimCollective(flume_client_t* client,
   return FLUME_OK;
 }
 
+enum class SimP2pRole {
+  kSend = 0,
+  kRecv = 1,
+};
+
+int SubmitSimP2p(flume_client_t* client,
+                 SimP2pRole role,
+                 flume_buffer_t* buffer,
+                 size_t offset,
+                 uint64_t count,
+                 flume_data_type_t data_type,
+                 uint32_t peer_rank,
+                 flume_io_t** out) {
+  std::string comm_name;
+  uint32_t rank = 0;
+  uint32_t rank_size = 0;
+  {
+    std::lock_guard<std::mutex> lock(client->mu);
+    if (!client->sim_comm_attached || client->rank_size == 0) {
+      *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                    "sim p2p requires flume_attach_sim_comm");
+      return FLUME_OK;
+    }
+    comm_name = client->sim_comm_name;
+    rank = client->rank;
+    rank_size = client->rank_size;
+  }
+
+  if (peer_rank >= rank_size || peer_rank == rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(buffer, offset, bytes)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (buffer->client != client || !IsSimBufferType(buffer->type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  uint64_t seq = 0;
+  {
+    std::lock_guard<std::mutex> lock(client->mu);
+    seq = role == SimP2pRole::kSend ? client->sim_p2p_send_seq++
+                                    : client->sim_p2p_recv_seq++;
+  }
+
+  std::vector<uint8_t> payload;
+  if (role == SimP2pRole::kSend) {
+    payload.resize(bytes);
+    memcpy(payload.data(), static_cast<const uint8_t*>(buffer->ptr) + offset,
+           bytes);
+  }
+
+  auto* io = MakePendingIo();
+  *out = io;
+
+  SimP2pKey key{
+      comm_name,
+      rank_size,
+      role == SimP2pRole::kSend ? rank : peer_rank,
+      role == SimP2pRole::kSend ? peer_rank : rank,
+      seq,
+  };
+  auto& map = SimP2ps();
+  std::lock_guard<std::mutex> lock(SimP2pMutex());
+  auto inserted = map.emplace(key, nullptr);
+  if (inserted.second) {
+    inserted.first->second = std::make_unique<PendingSimP2p>();
+  }
+
+  PendingSimP2p& pending = *inserted.first->second;
+  if (!PendingSimP2pMatches(pending, count, data_type, bytes)) {
+    FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                      "sim p2p parameters do not match peer submission");
+    map.erase(inserted.first);
+    CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+               "sim p2p parameters do not match peer submission");
+    return FLUME_OK;
+  }
+  MaybeSetPendingSimP2pMetadata(&pending, count, data_type, bytes);
+
+  if (role == SimP2pRole::kSend) {
+    if (pending.has_send) {
+      FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                        "duplicate sim p2p send submission");
+      map.erase(inserted.first);
+      CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+                 "duplicate sim p2p send submission");
+      return FLUME_OK;
+    }
+    RetainPendingIo(io);
+    pending.has_send = true;
+    pending.payload = std::move(payload);
+    pending.send_io = io;
+  } else {
+    if (pending.has_recv) {
+      FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                        "duplicate sim p2p recv submission");
+      map.erase(inserted.first);
+      CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+                 "duplicate sim p2p recv submission");
+      return FLUME_OK;
+    }
+    RetainPendingBuffer(buffer);
+    RetainPendingIo(io);
+    pending.has_recv = true;
+    pending.dst = buffer;
+    pending.dst_offset = offset;
+    pending.recv_io = io;
+  }
+
+  if (pending.has_send && pending.has_recv) {
+    CompletePendingSimP2p(pending);
+    map.erase(inserted.first);
+  }
+  return FLUME_OK;
+}
+
 #if FLUME_ENABLE_HCCL
 bool ToHcclDataType(flume_data_type_t data_type, HcclDataType* out) {
   if (out == nullptr) {
@@ -974,6 +1194,8 @@ int flume_attach_sim_comm(flume_client_t* client, const char* comm_name,
   client->rank_size = rank_size;
   client->sim_allreduce_seq = 0;
   client->sim_allgather_seq = 0;
+  client->sim_p2p_send_seq = 0;
+  client->sim_p2p_recv_seq = 0;
   client->sim_a3_register_seq = 0;
   return FLUME_OK;
 }
@@ -1417,6 +1639,140 @@ int flume_hbm_copy_async(flume_client_t* client, flume_buffer_t* dst,
   }
   *out = io;
   return FLUME_OK;
+}
+
+int flume_p2p_send_async(flume_client_t* client,
+                        flume_buffer_t* src,
+                        size_t src_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t dest_rank,
+                        void* acl_stream,
+                        flume_io_t** out) {
+  if (client == nullptr || src == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(src, src_offset, bytes) || src->client != client) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (IsSimBufferType(src->type)) {
+    return SubmitSimP2p(client, SimP2pRole::kSend, src, src_offset, count,
+                        data_type, dest_rank, out);
+  }
+  if (!IsRealHcclBufferType(src->type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCCL_P2P
+  CommState state = SnapshotCommState(client);
+  if (!state.hccl_attached || state.hccl_comm == nullptr ||
+      state.rank_size == 0) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCCL P2P send requires flume_attach_hccl_comm");
+    return FLUME_OK;
+  }
+  if (dest_rank >= state.rank_size || dest_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  HcclDataType hccl_data_type;
+  if (!ToHcclDataType(data_type, &hccl_data_type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  auto* send_ptr = static_cast<uint8_t*>(src->ptr) + src_offset;
+  HcclResult result =
+      HcclSend(send_ptr, count, hccl_data_type, dest_rank,
+               static_cast<HcclComm>(state.hccl_comm),
+               static_cast<aclrtStream>(acl_stream));
+  if (result != HCCL_SUCCESS) {
+    *out = MakeIo(FLUME_ERR_BACKEND, 0, 0, HcclErrorMessage(result));
+    return FLUME_OK;
+  }
+
+  *out = MakeAclStreamIo(acl_stream, bytes);
+  return FLUME_OK;
+#else
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCCL P2P send is unavailable in this build");
+  return FLUME_OK;
+#endif
+}
+
+int flume_p2p_recv_async(flume_client_t* client,
+                        flume_buffer_t* dst,
+                        size_t dst_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t src_rank,
+                        void* acl_stream,
+                        flume_io_t** out) {
+  if (client == nullptr || dst == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(dst, dst_offset, bytes) || dst->client != client) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (IsSimBufferType(dst->type)) {
+    return SubmitSimP2p(client, SimP2pRole::kRecv, dst, dst_offset, count,
+                        data_type, src_rank, out);
+  }
+  if (!IsRealHcclBufferType(dst->type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCCL_P2P
+  CommState state = SnapshotCommState(client);
+  if (!state.hccl_attached || state.hccl_comm == nullptr ||
+      state.rank_size == 0) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCCL P2P recv requires flume_attach_hccl_comm");
+    return FLUME_OK;
+  }
+  if (src_rank >= state.rank_size || src_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  HcclDataType hccl_data_type;
+  if (!ToHcclDataType(data_type, &hccl_data_type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  auto* recv_ptr = static_cast<uint8_t*>(dst->ptr) + dst_offset;
+  HcclResult result =
+      HcclRecv(recv_ptr, count, hccl_data_type, src_rank,
+               static_cast<HcclComm>(state.hccl_comm),
+               static_cast<aclrtStream>(acl_stream));
+  if (result != HCCL_SUCCESS) {
+    *out = MakeIo(FLUME_ERR_BACKEND, 0, 0, HcclErrorMessage(result));
+    return FLUME_OK;
+  }
+
+  *out = MakeAclStreamIo(acl_stream, bytes);
+  return FLUME_OK;
+#else
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCCL P2P recv is unavailable in this build");
+  return FLUME_OK;
+#endif
 }
 
 int flume_allreduce_async(flume_client_t* client, flume_buffer_t* dst,

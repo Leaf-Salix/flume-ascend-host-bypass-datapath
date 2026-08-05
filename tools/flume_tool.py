@@ -512,7 +512,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     sim_collective_demo = str(Path(build_dir) / "flume-sim-collective-demo")
     commands.append(CommandSpec("sim-collective-demo", [sim_collective_demo],
                                 True, {}))
-    if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke):
+    if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
+                        args.run_hccl_p2p_smoke):
         hccl_smoke = str(Path(build_dir) / "flume-hccl-collective-smoke")
         init_mode = ResolveHcclInitMode(args)
         command = [hccl_smoke, f"--count={args.hccl_count}",
@@ -594,6 +595,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         if args.run_a3_symmetric_smoke:
             command.append("--a3-symmetric")
             command.append(f"--sym-win-gb={args.hccl_sym_win_gb}")
+        if args.run_hccl_p2p_smoke:
+            command.append("--p2p-copy")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -616,7 +619,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     runner.write_env_report()
     runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
                required=True, timeout_seconds=args.step_timeout_sec)
-    requested_hccl_smoke = args.run_hccl_smoke or args.run_a3_symmetric_smoke
+    requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
+                            args.run_hccl_p2p_smoke)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
@@ -661,7 +665,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--hccl-devices is set, auto init uses the root-info path to mirror "
         "the official HCCL bring-up baseline. Pass "
         "--run-a3-symmetric-smoke on Atlas A3 HCCS hosts to allocate ACL mapped "
-        "HBM and register it through HcclCommSymWinRegister.\n",
+        "HBM and register it through HcclCommSymWinRegister. Pass "
+        "--run-hccl-p2p-smoke to add a rank0-to-rank1 HcclSend/HcclRecv "
+        "HBM copy check after the collective smoke.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -689,6 +695,9 @@ def parse_args() -> argparse.Namespace:
                         help="Run the optional real HCCL collective smoke test in ascend-probe")
     parser.add_argument("--run-a3-symmetric-smoke", action="store_true",
                         help="Run the optional Atlas A3 HCCS symmetric-memory smoke test")
+    parser.add_argument("--run-hccl-p2p-smoke", action="store_true",
+                        help=("Run the optional Stage 2 rank0-to-rank1 HCCL "
+                              "Send/Recv HBM copy smoke test"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",
@@ -755,6 +764,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--jobs must be greater than 0")
     if args.hccl_server_id == "":
         parser.error("--hccl-server-id must not be empty")
+    if args.run_hccl_p2p_smoke and args.run_a3_symmetric_smoke:
+        parser.error("--run-hccl-p2p-smoke currently cannot be combined with "
+                     "--run-a3-symmetric-smoke")
     try:
         ParseDeviceList(args.hccl_devices)
     except ValueError as exc:

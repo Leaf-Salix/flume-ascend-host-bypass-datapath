@@ -66,13 +66,15 @@ HcommReadOnThread
 | mock storage pread | 已实现 | `ctest -R mock_pread` | 验证本地 agent、TCP 控制面、offset/length/checksum |
 | local sim e2e | 已实现 | `ctest -R sim_end_to_end` 或 `flume-sim-demo` | 验证 storage->SIM_HCCL_COMM->SIM_HBM 的 API 形状 |
 | local sim collectives | 已实现 | `ctest -R sim_collectives` 或 `flume-sim-collective-demo` | 验证 4-rank AllReduce/AllGather API、等待和结果布局 |
+| local sim P2P copy | 已实现 | `ctest -R sim_p2p_copy` | 验证 `flume_p2p_send_async` / `flume_p2p_recv_async` 的配对、pending、释放约束和数据正确性 |
 | CANN/HCCL 发现 | 可探测 | `tools/flume_tool.py ascend-probe` | 验证 `ASCEND_HOME_PATH`、HCCL 头文件和库、CMake link |
 | Base HCCL collectives | 初版已实现，root-info 为首选真机打通路径 | `tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装 `HcclAllReduce` / `HcclAllGather`，输入输出为 Ascend HBM；rank-table 保留为 VNIC/P2P 诊断路径，单机 HCCS_SW 暂未通过真机验证 |
+| HCCL P2P HBM copy | 初版已实现，待更多卡对验证 | `tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装公开 `HcclSend` / `HcclRecv`，当前 smoke 测 rank0 HBM -> rank1 HBM；这是 HCOMM Channel backend 前的公开 HCCL baseline |
 | A3 symmetric memory collectives | 初版已实现，按 CANN/HCCL 能力位启用 | `tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-devices 0,1 ascend-probe` | 需要 ACL VMM、`HcclCommInitRootInfoConfig`、symmetric-window config 字段和 `HcclCommSymWinRegister` 均存在 |
-| HCOMM Channel HBM-HBM | 待实现 | 暂不可真实测试 | `flume_hbm_copy_async` 的 HCCL/HCOMM Channel 分支当前返回 unsupported |
+| HCOMM Channel HBM-HBM | 待实现 | 暂不可真实测试 | `flume_hbm_copy_async` 的 HCCL/HCOMM Channel 分支当前返回 unsupported；当前 Stage 2 先用 HCCL Send/Recv 做 P2P baseline |
 | storage/RDMA->NPU HBM | 待探索 | 暂不可真实测试 | 依赖外部 RDMA/NVMe-oF 与 NPU HBM/comm memory 的注册和同步能力 |
 
-因此，理论层面现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”和“base HCCL AllReduce/AllGather HBM collective smoke”。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。还不能宣称已经可以测试 HCOMM Channel 自定义 HBM-HBM 或 storage->HBM 数据搬运。
+因此，理论层面现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”、base HCCL AllReduce/AllGather HBM collective smoke，以及公开 HCCL `Send/Recv` 的 P2P HBM copy smoke。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。还不能宣称已经可以测试 HCOMM Channel 自定义数据面或 storage->HBM 数据搬运。
 
 ### 3.1 HCCL/HCOMM 是主线
 
@@ -123,6 +125,7 @@ flowchart TB
         PreadApi["flume_pread_async<br/>文件块读入 buffer"]:::done
         CopyApi["flume_hbm_copy_async<br/>sim HBM copy 已实现"]:::done
         CollectiveApi["flume_allreduce_async / flume_allgather_async"]:::done
+        P2pApi["flume_p2p_send_async / flume_p2p_recv_async"]:::partial
         WaitApi["flume_wait / status / bytes / checksum / error"]:::done
         HcclAttach["flume_attach_hccl_comm<br/>复用外部 HcclComm"]:::partial
         A3Api["A3 symmetric memory / comm memory wrappers"]:::partial
@@ -134,12 +137,14 @@ flowchart TB
         SimComm["FLUME_BUFFER_SIM_HCCL_COMM<br/>模拟通信内存"]:::done
         SimHbm["FLUME_BUFFER_SIM_HBM<br/>模拟 NPU HBM"]:::done
         SimCollective["sim 4-rank AllReduce / AllGather<br/>含 pending 生命周期与失败路径"]:::done
+        SimP2p["sim P2P send/recv<br/>配对 pending 与释放约束"]:::done
         SimA3["sim A3 window 生命周期<br/>多 rank offset/size 一致性检查"]:::done
     end
 
     subgraph Ascend["Ascend 真机入口：代码已接好，待硬件验证"]
         CMakeHccl["CMake FLUME_ENABLE_HCCL=ON<br/>查找 HCCL / HCOMM / ACL / securec"]:::partial
         HcclCollective["Base HCCL collective backend<br/>HcclAllReduce / HcclAllGather"]:::partial
+        HcclP2p["Public HCCL P2P backend<br/>HcclSend / HcclRecv"]:::partial
         HcclWait["flume_wait 内部同步 aclrtStream"]:::partial
         A3Smoke["flume-hccl-collective-smoke<br/>普通 HBM + A3 symmetric-memory 模式"]:::partial
         HbmPeer["目标：NPU HBM <-> NPU HBM<br/>HCCS / RoCE / HCCL 数据面"]:::partial
@@ -164,6 +169,7 @@ flowchart TB
     Client --> PreadApi
     Client --> CopyApi
     Client --> CollectiveApi
+    Client --> P2pApi
     Client --> WaitApi
     Client --> HcclAttach
     Client --> A3Api
@@ -174,6 +180,7 @@ flowchart TB
     CopyApi --> SimComm
     SimComm --> SimHbm
     CollectiveApi --> SimCollective
+    P2pApi --> SimP2p
     A3Api --> SimA3
     SimCollective --> SimComm
     SimCollective --> SimHbm
@@ -181,7 +188,9 @@ flowchart TB
     HcclAttach --> CMakeHccl
     CMakeHccl --> HcclCollective
     CollectiveApi --> HcclCollective
+    P2pApi --> HcclP2p
     HcclCollective --> HcclWait
+    HcclP2p --> HcclWait
     HcclWait --> HbmPeer
     A3Api --> A3Smoke
     A3Smoke --> HbmPeer
@@ -717,8 +726,9 @@ store-agent pread
 - 已实现 `flume_attach_hccl_comm` 保存外部 `HcclComm`。
 - 已实现 `flume_register_buffer(FLUME_BUFFER_ASCEND_HBM)` 的 HCCL-enabled 分支。
 - 已实现 `flume_allreduce_async` / `flume_allgather_async` 调用 `HcclAllReduce` / `HcclAllGather`。
+- 已实现 `flume_p2p_send_async` / `flume_p2p_recv_async`，sim backend 可在无 NPU 环境验证配对语义，HCCL backend 在能力位 `FLUME_HAVE_HCCL_P2P=1` 时调用 `HcclSend` / `HcclRecv`。
 - 已增加可选真机 smoke app `flume-hccl-collective-smoke`。
-- 后续复用 HCCL P2P 示例，跑通 `HcclSend/HcclRecv` 和自定义 P2P。
+- 已给 smoke 增加 `--p2p-copy`，当前测试 rank0 HBM -> rank1 HBM 的公开 HCCL P2P baseline。
 - 后续抽出 `HcclGetHcclBuffer`、`HcclChannelGetHcclBuffer`、`HcommReadOnThread`、Notify 的通用封装。
 - 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`。
 - 测量不同 block size 的 HBM-HBM bandwidth、latency、CPU usage。
@@ -833,9 +843,10 @@ Ascend 主机编译探测：
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe
+python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe
 ```
 
-`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。该 smoke 仍不验证 HCOMM Channel 自定义数据面或 storage->HBM。
+`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory/P2P 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；加 `--run-hccl-p2p-smoke` 会在 collective 之后追加 rank0 到 rank1 的 `HcclSend` / `HcclRecv` HBM copy smoke。当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。该 smoke 仍不验证 HCOMM Channel 自定义数据面或 storage->HBM。
 
 ### 14.1 本地无 NPU
 
@@ -845,6 +856,7 @@ python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-dev
 - mock agent/client。
 - sim storage->SIM_HCCL_COMM->SIM_HBM end-to-end。
 - sim AllReduce / AllGather multi-rank collective。
+- sim P2P send/recv 配对、pending、释放约束和数据正确性。
 - sim buffer offset、type 和越界错误。
 
 ### 14.2 HBM-HBM 真机

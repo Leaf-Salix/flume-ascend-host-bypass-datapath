@@ -123,10 +123,12 @@ rank HBM
 关键点：
 
 - 第一版已经有 base HCCL collective wrapper：`flume_attach_hccl_comm`、`flume_register_buffer(FLUME_BUFFER_ASCEND_HBM)`、`flume_allreduce_async`、`flume_allgather_async`。
+- Stage 2 P2P baseline 已经接入公开 HCCL API：`flume_p2p_send_async` / `flume_p2p_recv_async` 在 HCCL backend 调用 `HcclSend` / `HcclRecv`，在 sim backend 验证成对收发、pending 和释放约束。
 - 真机 smoke app：`flume-hccl-collective-smoke`，只在 `FLUME_ENABLE_HCCL=ON` 时构建。
+- 真机 P2P smoke：`tools/flume_tool.py --run-hccl-p2p-smoke` 会追加 rank0 HBM -> rank1 HBM 的 `HcclSend` / `HcclRecv` 校验。
 - Atlas A3 HCCS 模式可加 `--a3-symmetric`：当 CMake 探测到 ACL VMM 和 HCCL symmetric window 能力时，用 ACL mapped HBM + `flume_a3_register_symmetric_memory` 包装 `HcclCommSymWinRegister`，再跑 AllReduce / AllGather。
 - 目标是证明 NPU HBM collective 不经过 host memory staging；host 仍负责通信域初始化、任务下发和 stream 同步。
-- 后续再跑通 `HcclSend/HcclRecv` 或 `HcclBatchSendRecv`，并参考自定义 P2P 示例封装 HCOMM Channel、Notify、HCCL Buffer。
+- 后续参考自定义 P2P 示例封装 HCOMM Channel、Notify、HCCL Buffer，替换或补充公开 HCCL P2P baseline。
 - 输出 bandwidth、latency、CPU 占用、block size sweep。
 
 ### MVP-3：Storage Proxy -> HCCL/HCOMM demo
@@ -306,6 +308,24 @@ int flume_hbm_copy_async(flume_client_t *client,
                         void *acl_stream,
                         flume_io_t **out);
 
+int flume_p2p_send_async(flume_client_t *client,
+                        flume_buffer_t *src,
+                        size_t src_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t dest_rank,
+                        void *acl_stream,
+                        flume_io_t **out);
+
+int flume_p2p_recv_async(flume_client_t *client,
+                        flume_buffer_t *dst,
+                        size_t dst_offset,
+                        uint64_t count,
+                        flume_data_type_t data_type,
+                        uint32_t src_rank,
+                        void *acl_stream,
+                        flume_io_t **out);
+
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,
                          size_t dst_offset,
@@ -343,9 +363,10 @@ int flume_wait(flume_io_t *io, int timeout_ms);
 7. 增加 HCCL/HCOMM backend 的接口壳和编译开关 `FLUME_ENABLE_HCCL`。
 8. 增加 base HCCL collective wrapper 与可选真机 smoke app。
 9. 增加 A3 symmetric memory API wrapper、sim 回归和可选 A3 真机 smoke。
-10. 有 NPU 后实现 HCOMM Channel / custom backend 的 HBM-HBM demo。
-11. 再实现 Storage Proxy -> HCCL/HCOMM demo。
-12. Runtime fallback 和 HIXL reference 作为对照实现。
+10. 增加公开 HCCL P2P baseline：`HcclSend` / `HcclRecv` wrapper、sim 回归和可选真机 P2P smoke。
+11. 有 NPU 后继续实现 HCOMM Channel / custom backend 的 HBM-HBM demo。
+12. 再实现 Storage Proxy -> HCCL/HCOMM demo。
+13. Runtime fallback 和 HIXL reference 作为对照实现。
 
 ## 测试入口
 
@@ -363,10 +384,11 @@ Ascend 主机：
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe
+python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe
 python3 tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-devices 0,1 ascend-probe
 ```
 
-默认 `ascend-probe` 做环境、编译、链接和 mock/sim 回归探测。加 `--run-hccl-smoke` 且传入 `--hccl-devices` 后，`auto` 初始化默认走一进程一 rank 的 HCCL root-info 路径，优先复用官方 HCCL 已验证过的 bring-up 策略来运行 base HCCL AllReduce/AllGather 真机 smoke；加 `--run-a3-symmetric-smoke` 后会在 Atlas A3 HCCS 场景尝试 symmetric memory collective。rank-table 初始化暂存为未通过真机验证的诊断路径，用来继续定位 VNIC/P2P memory-share 问题。HCOMM Channel / storage->HBM 真数据面仍要等后续 backend。
+默认 `ascend-probe` 做环境、编译、链接和 mock/sim 回归探测。加 `--run-hccl-smoke` 且传入 `--hccl-devices` 后，`auto` 初始化默认走一进程一 rank 的 HCCL root-info 路径，优先复用官方 HCCL 已验证过的 bring-up 策略来运行 base HCCL AllReduce/AllGather 真机 smoke；加 `--run-hccl-p2p-smoke` 后会在 collective 之后追加公开 HCCL `Send/Recv` 的 HBM-HBM P2P copy smoke；加 `--run-a3-symmetric-smoke` 后会在 Atlas A3 HCCS 场景尝试 symmetric memory collective。rank-table 初始化暂存为未通过真机验证的诊断路径，用来继续定位 VNIC/P2P memory-share 问题。HCOMM Channel / storage->HBM 真数据面仍要等后续 backend。
 
 ## 成功标准
 
@@ -383,12 +405,14 @@ MVP-1：
 - sim path 与未来 HCCL/HCOMM path 共用 `flume_pread_async` / `flume_hbm_copy_async` API。
 - `flume-sim-collective-demo` 可在无 NPU 环境跑通 4-rank AllReduce / AllGather。
 - `test_sim_collectives` 校验 AllReduce 规约结果和 AllGather rank 拼接布局。
+- `test_sim_p2p_copy` 校验 P2P send/recv 成对完成、pending IO、buffer 释放约束和数据正确性。
 - `test_sim_a3_symmetric_memory` 校验 A3 symmetric memory API 生命周期和注册后 collective 形状。
 
 MVP-2：
 
 - Ascend 环境可完成 HCCL/HCOMM HBM-HBM 数据搬运。
 - base HCCL collective 的数据搬运不经过 host memory staging。
+- 公开 HCCL P2P baseline 可完成 rank0 HBM -> rank1 HBM 拷贝并校验。
 - A3 HCCS 环境可验证 registered symmetric HBM window 作为 collective 输入输出。
 - Channel Notify 和 stream 同步行为明确。
 

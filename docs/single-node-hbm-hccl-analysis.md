@@ -47,6 +47,7 @@ flowchart LR
 - `flume_attach_hccl_comm` 保存外部已有 `HcclComm`。
 - `flume_register_buffer(..., FLUME_BUFFER_ASCEND_HBM)` 在 `FLUME_ENABLE_HCCL=ON` 时接受真实 Ascend HBM 指针。
 - `flume_allreduce_async` / `flume_allgather_async` 对真实 Ascend HBM 指针直接调用 `HcclAllReduce` / `HcclAllGather`。
+- `flume_p2p_send_async` / `flume_p2p_recv_async` 在能力位 `FLUME_HAVE_HCCL_P2P=1` 时调用公开 `HcclSend` / `HcclRecv`，当前 smoke 可测 rank0 HBM 到 rank1 HBM 的配对拷贝。
 - `flume_a3_register_symmetric_memory` / `flume_a3_deregister_symmetric_memory` 已按能力位封装 A3 `HcclCommSymWinRegister` / `HcclCommSymWinDeregister`，缺失时返回 unsupported。
 - `flume_a3_set_memory_range` / `flume_a3_activate_comm_memory` / `flume_a3_deactivate_comm_memory` / `flume_a3_unset_memory_range` 已作为 A3 comm memory activation 薄封装，依赖 CMake 探测到对应 HCCL 试用接口。
 - `flume_attach_sim_comm` 和 sim collective world，可以在无 NPU Mac/Linux 上验证 4-rank AllReduce / AllGather 的 API、等待和结果布局。
@@ -54,7 +55,7 @@ flowchart LR
 
 未实现：
 
-- HCOMM Channel / custom op 版本的 HBM-HBM copy。
+- HCOMM Channel / custom op 版本的 HBM-HBM copy；当前只实现公开 HCCL P2P baseline。
 - 独立通信 daemon 与计算进程跨进程共享 HBM。
 - storage RDMA/NVMe-oF 直接写入 NPU HBM 或 activated comm memory。
 

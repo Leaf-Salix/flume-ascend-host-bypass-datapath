@@ -198,6 +198,17 @@ int main() {
 " FLUME_HAVE_HCCL_COMM_MEMORY)
 
   check_cxx_source_compiles("
+${_FLUME_HCCL_CHECK_INCLUDE}
+int main() {
+  HcclComm comm = nullptr;
+  aclrtStream stream = nullptr;
+  (void)HcclSend(nullptr, 0, HCCL_DATA_TYPE_FP32, 1, comm, stream);
+  (void)HcclRecv(nullptr, 0, HCCL_DATA_TYPE_FP32, 0, comm, stream);
+  return 0;
+}
+" FLUME_HAVE_HCCL_P2P)
+
+  check_cxx_source_compiles("
 #include <acl/acl.h>
 int main() {
   aclrtStream stream = nullptr;
@@ -253,6 +264,7 @@ int main() {
       FLUME_HAVE_HCCL_CONFIG_SYM_WINDOW
       FLUME_HAVE_HCCL_SYM_WINDOW
       FLUME_HAVE_HCCL_COMM_MEMORY
+      FLUME_HAVE_HCCL_P2P
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -291,6 +303,7 @@ int main() {
     FLUME_HAVE_HCCL_CONFIG_SYM_WINDOW=${FLUME_HAVE_HCCL_CONFIG_SYM_WINDOW_VALUE}
     FLUME_HAVE_HCCL_SYM_WINDOW=${FLUME_HAVE_HCCL_SYM_WINDOW_VALUE}
     FLUME_HAVE_HCCL_COMM_MEMORY=${FLUME_HAVE_HCCL_COMM_MEMORY_VALUE}
+    FLUME_HAVE_HCCL_P2P=${FLUME_HAVE_HCCL_P2P_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -307,6 +320,7 @@ else()
     FLUME_HAVE_HCCL_CONFIG_SYM_WINDOW=0
     FLUME_HAVE_HCCL_SYM_WINDOW=0
     FLUME_HAVE_HCCL_COMM_MEMORY=0
+    FLUME_HAVE_HCCL_P2P=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0
@@ -363,6 +377,11 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_sim_collectives PRIVATE flume)
   target_include_directories(test_sim_collectives PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME sim_collectives COMMAND test_sim_collectives)
+
+  add_executable(test_sim_p2p_copy tests/test_sim_p2p_copy.cc)
+  target_link_libraries(test_sim_p2p_copy PRIVATE flume)
+  target_include_directories(test_sim_p2p_copy PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME sim_p2p_copy COMMAND test_sim_p2p_copy)
 
   add_executable(test_sim_collective_failures tests/test_sim_collective_failures.cc)
   target_link_libraries(test_sim_collective_failures PRIVATE flume)

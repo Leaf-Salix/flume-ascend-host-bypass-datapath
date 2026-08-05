@@ -48,6 +48,9 @@
 #ifndef FLUME_HAVE_HCCL_SYM_WINDOW
 #define FLUME_HAVE_HCCL_SYM_WINDOW 0
 #endif
+#ifndef FLUME_HAVE_HCCL_P2P
+#define FLUME_HAVE_HCCL_P2P 0
+#endif
 #ifndef FLUME_HAVE_ACL_VMM
 #define FLUME_HAVE_ACL_VMM 0
 #endif
@@ -74,6 +77,7 @@ struct RankContext {
   int32_t device = 0;
   uint64_t count = 0;
   bool a3_symmetric = false;
+  bool p2p_copy = false;
   uint64_t sym_win_gb = 1;
   int status = 0;
   std::string error;
@@ -660,6 +664,7 @@ void RankMain(RankContext* ctx) {
   bool a3_window_deregistered = true;
   flume_io_t* reduce_io = nullptr;
   flume_io_t* gather_io = nullptr;
+  flume_io_t* p2p_io = nullptr;
 
   BufferLayout layout;
   std::string error;
@@ -837,6 +842,59 @@ void RankMain(RankContext* ctx) {
     }
   }
 
+  if (ctx->p2p_copy) {
+    if (ctx->rank_size < 2) {
+      error = "P2P copy smoke requires at least two ranks";
+      goto cleanup;
+    }
+    if (ctx->rank == 1) {
+      auto* host = static_cast<float*>(host_buf);
+      for (uint64_t i = 0; i < ctx->count; ++i) {
+        host[i] = -1.0F;
+      }
+      if (!CheckAcl(aclrtMemcpy(reduce_recv, one_rank_bytes, host,
+                                one_rank_bytes, ACL_MEMCPY_HOST_TO_DEVICE),
+                    "aclrtMemcpy p2p recv clear H2D", &error)) {
+        goto cleanup;
+      }
+    }
+
+    if (ctx->rank == 0) {
+      if (!CheckFlume(flume_p2p_send_async(
+                            client, reduce_send_buf,
+                            ctx->a3_symmetric ? layout.reduce_send_offset : 0,
+                            ctx->count, FLUME_DTYPE_FP32, 1, stream, &p2p_io),
+                      "flume_p2p_send_async", &error) ||
+          !CheckFlume(flume_wait(p2p_io, -1), "flume_wait p2p send",
+                      &error)) {
+        goto cleanup;
+      }
+    } else if (ctx->rank == 1) {
+      if (!CheckFlume(flume_p2p_recv_async(
+                            client, reduce_recv_buf,
+                            ctx->a3_symmetric ? layout.reduce_recv_offset : 0,
+                            ctx->count, FLUME_DTYPE_FP32, 0, stream, &p2p_io),
+                      "flume_p2p_recv_async", &error) ||
+          !CheckFlume(flume_wait(p2p_io, -1), "flume_wait p2p recv",
+                      &error)) {
+        goto cleanup;
+      }
+      auto* host = static_cast<float*>(host_buf);
+      if (!CheckAcl(aclrtMemcpy(host, one_rank_bytes, reduce_recv,
+                                one_rank_bytes, ACL_MEMCPY_DEVICE_TO_HOST),
+                    "aclrtMemcpy p2p recv D2H", &error)) {
+        goto cleanup;
+      }
+      for (uint64_t i = 0; i < ctx->count; ++i) {
+        float expected = static_cast<float>(1 + i);
+        if (host[i] != expected) {
+          error = "p2p copy verification failed";
+          goto cleanup;
+        }
+      }
+    }
+  }
+
 cleanup:
   if (a3_window != nullptr) {
     int ret = flume_a3_deregister_symmetric_memory(a3_window);
@@ -849,6 +907,7 @@ cleanup:
     }
     a3_window = nullptr;
   }
+  flume_io_release(p2p_io);
   flume_io_release(gather_io);
   flume_io_release(reduce_io);
   if (a3_block_buf != nullptr) {
@@ -912,6 +971,7 @@ cleanup:
 int main(int argc, char** argv) {
   uint64_t count = 1024;
   bool a3_symmetric = false;
+  bool p2p_copy = false;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
   std::string rank_table_path;
@@ -937,6 +997,8 @@ int main(int argc, char** argv) {
       }
     } else if (arg == "--a3-symmetric") {
       a3_symmetric = true;
+    } else if (arg == "--p2p-copy") {
+      p2p_copy = true;
     } else if (arg.rfind("--init=", 0) == 0) {
       if (!ParseHcclInitMode(arg.substr(std::string("--init=").size()),
                              &init_mode, &parse_error)) {
@@ -980,6 +1042,7 @@ int main(int argc, char** argv) {
                 << " [--root-info=path|--root-info-out=path]"
                 << " [--rank=0 --rank-size=2]"
                 << " [--a3-symmetric]"
+                << " [--p2p-copy]"
                 << " [--sym-win-gb=1]\n";
       return 2;
     }
@@ -992,6 +1055,17 @@ int main(int argc, char** argv) {
     std::cerr << "--sym-win-gb must be greater than 0\n";
     return 2;
   }
+  if (p2p_copy && a3_symmetric) {
+    std::cerr << "--p2p-copy currently uses ordinary HBM buffers; do not "
+                 "combine it with --a3-symmetric\n";
+    return 2;
+  }
+#if !FLUME_HAVE_HCCL_P2P
+  if (p2p_copy) {
+    std::cerr << "--p2p-copy requires HcclSend/HcclRecv in this HCCL header\n";
+    return 2;
+  }
+#endif
   if (init_mode == HcclInitMode::kRankTable && rank_table_path.empty()) {
     std::cerr << "--init=rank-table requires --rank-table\n";
     return 2;
@@ -1069,6 +1143,7 @@ int main(int argc, char** argv) {
             << " cluster_info=" << FLUME_HAVE_HCCL_CLUSTER_INFO
             << " cluster_info_config=" << FLUME_HAVE_HCCL_CLUSTER_INFO_CONFIG
             << " sym_window=" << FLUME_HAVE_HCCL_SYM_WINDOW
+            << " p2p=" << FLUME_HAVE_HCCL_P2P
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
   std::set<int32_t> unique_devices;
@@ -1083,6 +1158,11 @@ int main(int argc, char** argv) {
       (void)aclFinalize();
       return 2;
     }
+  }
+  if (p2p_copy && global_rank_size < 2) {
+    std::cerr << "--p2p-copy requires at least two ranks\n";
+    (void)aclFinalize();
+    return 2;
   }
 
   BufferLayout preflight_layout;
@@ -1221,6 +1301,7 @@ int main(int argc, char** argv) {
     contexts[local_index].device = devices[local_index];
     contexts[local_index].count = count;
     contexts[local_index].a3_symmetric = a3_symmetric;
+    contexts[local_index].p2p_copy = p2p_copy;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
   }
@@ -1251,6 +1332,7 @@ int main(int argc, char** argv) {
             << " local_ranks=" << devices.size()
             << " count=" << count
             << " init=" << HcclInitModeName(init_mode)
-            << " a3_symmetric=" << (a3_symmetric ? "on" : "off") << "\n";
+            << " a3_symmetric=" << (a3_symmetric ? "on" : "off")
+            << " p2p_copy=" << (p2p_copy ? "on" : "off") << "\n";
   return 0;
 }
