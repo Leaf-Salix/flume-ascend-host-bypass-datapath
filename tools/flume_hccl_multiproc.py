@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
                         help="Run rank0->rank1 HCCL Send/Recv P2P copy smoke")
     parser.add_argument("--hcomm-channel-probe", action="store_true",
                         help="Run rank0/rank1 HCOMM Channel resource probe")
+    parser.add_argument("--hcomm-channel-engine", default="aicpu",
+                        choices=["auto", "aicpu", "aicpu-ts", "cpu"])
+    parser.add_argument("--hcomm-channel-protocol", default="hccs",
+                        choices=["auto", "hccs", "roce", "pcie", "sio"])
+    parser.add_argument("--hcomm-notify-num", type=int, default=2)
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -49,6 +54,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--count must be greater than 0")
     if args.sym_win_gb <= 0:
         parser.error("--sym-win-gb must be greater than 0")
+    if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
+        parser.error("--hcomm-notify-num must be in [1, 64]")
     if args.timeout_sec < 0:
         parser.error("--timeout-sec must be >= 0")
     try:
@@ -89,6 +96,9 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append("--p2p-copy")
     if args.hcomm_channel_probe:
         command.append("--hcomm-channel-probe")
+        command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
+        command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
+        command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
     return command
 
 

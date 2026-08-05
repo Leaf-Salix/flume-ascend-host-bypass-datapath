@@ -62,6 +62,25 @@ int main() {
   FLUME_TEST_CHECK(flume_io_bytes(hcomm_probe01) == 0);
   FLUME_TEST_CHECK(flume_io_release(hcomm_probe01) == FLUME_OK);
 
+  flume_hcomm_channel_probe_options_t hcomm_options = {};
+  hcomm_options.size = sizeof(hcomm_options);
+  hcomm_options.notify_num = 3;
+  hcomm_options.engine = FLUME_HCOMM_ENGINE_CPU;
+  hcomm_options.protocol = FLUME_HCOMM_PROTOCOL_SIO;
+  flume_io_t* hcomm_probe10 = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
+                                                nullptr, &hcomm_probe10) ==
+                   FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(hcomm_probe10, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_io_release(hcomm_probe10) == FLUME_OK);
+
+  hcomm_options.size = 1;
+  flume_io_t* bad_options_probe = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
+                                                nullptr, &bad_options_probe) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(bad_options_probe == nullptr);
+
   flume_io_t* bad_hcomm_probe = nullptr;
   FLUME_TEST_CHECK(flume_hcomm_channel_probe(clients[0], 0, nullptr,
                                              &bad_hcomm_probe) ==

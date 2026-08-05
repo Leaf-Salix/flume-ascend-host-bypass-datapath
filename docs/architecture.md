@@ -71,7 +71,7 @@ HcommReadOnThread
 | Base HCCL collectives | 初版已实现，root-info 为首选真机打通路径 | `tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装 `HcclAllReduce` / `HcclAllGather`，输入输出为 Ascend HBM；rank-table 保留为 VNIC/P2P 诊断路径，单机 HCCS_SW 暂未通过真机验证 |
 | HCCL P2P HBM copy | 初版已实现，待更多卡对验证 | `tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装公开 `HcclSend` / `HcclRecv`，当前 smoke 测 rank0 HBM -> rank1 HBM；这是 HCOMM payload backend 前的公开 HCCL baseline |
 | A3 symmetric memory collectives | 初版已实现，按 CANN/HCCL 能力位启用 | `tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-devices 0,1 ascend-probe` | 需要 ACL VMM、`HcclCommInitRootInfoConfig`、symmetric-window config 字段和 `HcclCommSymWinRegister` 均存在 |
-| HCOMM Channel resource probe | 初版已实现，待真机验证 | `tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe` | Flume 会探测 `HcclGetHcclBuffer`、thread acquire/export、`HcclChannelAcquire` 和 `HcclChannelGetHcclBuffer`；尚未 launch AICPU kernel 或执行 `HcommReadOnThread` payload copy |
+| HCOMM Channel resource probe | 初版已实现，待真机验证 | `tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe` | Flume 会探测 `HcclGetHcclBuffer`、thread acquire/export、可配置 engine/protocol 的 `HcclChannelAcquire` 和 `HcclChannelGetHcclBuffer`；尚未 launch AICPU kernel 或执行 `HcommReadOnThread` payload copy |
 | storage/RDMA->NPU HBM | 待探索 | 暂不可真实测试 | 依赖外部 RDMA/NVMe-oF 与 NPU HBM/comm memory 的注册和同步能力 |
 
 因此，理论层面现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”、base HCCL AllReduce/AllGather HBM collective smoke、公开 HCCL `Send/Recv` 的 P2P HBM copy smoke，以及 HCOMM Channel resource probe。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。还不能宣称已经可以测试 HCOMM primitive/custom-op payload copy 或 storage->HBM 数据搬运。
@@ -730,7 +730,7 @@ store-agent pread
 - 已实现 `flume_register_buffer(FLUME_BUFFER_ASCEND_HBM)` 的 HCCL-enabled 分支。
 - 已实现 `flume_allreduce_async` / `flume_allgather_async` 调用 `HcclAllReduce` / `HcclAllGather`。
 - 已实现 `flume_p2p_send_async` / `flume_p2p_recv_async`，sim backend 可在无 NPU 环境验证配对语义，HCCL backend 在能力位 `FLUME_HAVE_HCCL_P2P=1` 时调用 `HcclSend` / `HcclRecv`。
-- 已实现 `flume_hcomm_channel_probe`，sim backend 覆盖 public API，HCCL/HCOMM backend 在能力位 `FLUME_HAVE_HCOMM_CHANNEL_RES=1` 时获取 HCCL Buffer、CPU_TS/AICPU_TS thread、可用时做 thread export、建立 HCCS Channel 并查询远端 HCCL Buffer。
+- 已实现 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex`，sim backend 覆盖 public API，HCCL/HCOMM backend 在能力位 `FLUME_HAVE_HCOMM_CHANNEL_RES=1` 时获取 HCCL Buffer、CPU_TS/AICPU_TS thread、可用时做 thread export、按可配置 engine/protocol 建立 Channel 并查询远端 HCCL Buffer。
 - 已增加可选真机 smoke app `flume-hccl-collective-smoke`。
 - 已给 smoke 增加 `--p2p-copy`，当前测试 rank0 HBM -> rank1 HBM 的公开 HCCL P2P baseline。
 - 已给 smoke 增加 `--hcomm-channel-probe`，当前测试 HCOMM 自定义 backend 的资源准备阶段。

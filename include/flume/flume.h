@@ -63,6 +63,28 @@ typedef enum {
   FLUME_REDUCE_MIN = 3
 } flume_reduce_op_t;
 
+typedef enum {
+  FLUME_HCOMM_ENGINE_AUTO = 0,
+  FLUME_HCOMM_ENGINE_AICPU = 1,
+  FLUME_HCOMM_ENGINE_AICPU_TS = 2,
+  FLUME_HCOMM_ENGINE_CPU = 3
+} flume_hcomm_engine_t;
+
+typedef enum {
+  FLUME_HCOMM_PROTOCOL_AUTO = 0,
+  FLUME_HCOMM_PROTOCOL_HCCS = 1,
+  FLUME_HCOMM_PROTOCOL_ROCE = 2,
+  FLUME_HCOMM_PROTOCOL_PCIE = 3,
+  FLUME_HCOMM_PROTOCOL_SIO = 4
+} flume_hcomm_protocol_t;
+
+typedef struct {
+  uint32_t size;
+  uint32_t notify_num;
+  flume_hcomm_engine_t engine;
+  flume_hcomm_protocol_t protocol;
+} flume_hcomm_channel_probe_options_t;
+
 const char *flume_status_string(int status);
 
 int flume_client_open(const char *endpoint, flume_client_t **out);
@@ -141,6 +163,13 @@ int flume_hcomm_channel_probe(flume_client_t *client,
                               uint32_t peer_rank,
                               void *acl_stream,
                               flume_io_t **out);
+
+int flume_hcomm_channel_probe_ex(
+    flume_client_t *client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t *options,
+    void *acl_stream,
+    flume_io_t **out);
 
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,

@@ -609,6 +609,9 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append("--p2p-copy")
         if args.run_hcomm_channel_probe:
             command.append("--hcomm-channel-probe")
+            command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
+            command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
+            command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -682,7 +685,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--run-hccl-p2p-smoke to add a rank0-to-rank1 HcclSend/HcclRecv "
         "HBM copy check after the collective smoke. Pass "
         "--run-hcomm-channel-probe to validate the HCOMM Channel resource "
-        "stage used by the future AICPU/HCOMM primitive data path.\n",
+        "stage used by the future AICPU/HCOMM primitive data path; "
+        "--hcomm-channel-engine, --hcomm-channel-protocol, and "
+        "--hcomm-notify-num select the resource probe strategy.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -716,6 +721,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hcomm-channel-probe", action="store_true",
                         help=("Run the optional Stage 2 HCOMM Channel resource "
                               "probe after the collective smoke"))
+    parser.add_argument("--hcomm-channel-engine",
+                        choices=["auto", "aicpu", "aicpu-ts", "cpu"],
+                        default="aicpu",
+                        help="HCOMM channel engine for --run-hcomm-channel-probe")
+    parser.add_argument("--hcomm-channel-protocol",
+                        choices=["auto", "hccs", "roce", "pcie", "sio"],
+                        default="hccs",
+                        help="HCOMM channel protocol for --run-hcomm-channel-probe")
+    parser.add_argument("--hcomm-notify-num", type=int, default=2,
+                        help="HCOMM notify count for --run-hcomm-channel-probe")
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",
@@ -780,6 +795,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--step-timeout-sec must be >= 0")
     if args.jobs <= 0:
         parser.error("--jobs must be greater than 0")
+    if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
+        parser.error("--hcomm-notify-num must be in [1, 64]")
     if args.hccl_server_id == "":
         parser.error("--hccl-server-id must not be empty")
     if args.run_hccl_p2p_smoke and args.run_a3_symmetric_smoke:

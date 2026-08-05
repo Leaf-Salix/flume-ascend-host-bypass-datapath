@@ -66,6 +66,21 @@ python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --
 
 该模式会在 base AllReduce / AllGather 之后追加 `--hcomm-channel-probe`。probe 会调用 Flume 的 `flume_hcomm_channel_probe`，在已 attach 的 HCCL comm 上尝试获取本端 HCCL Buffer、CPU_TS/AICPU_TS thread、可用时做 thread export、用 `HcclChannelAcquire(COMM_ENGINE_AICPU, COMM_PROTOCOL_HCCS)` 建立到 peer rank 的 Channel，并通过 `HcclChannelGetHcclBuffer` 查询远端 HCCL Buffer。它验证的是 HCOMM 自定义 P2P backend 的资源准备阶段；当前还不执行 AICPU kernel，也不调用 `HcommReadOnThread` 搬 payload。
 
+默认 HCOMM probe 使用 `engine=aicpu`、`protocol=hccs`、`channel notify_num=2`，贴近 CANN 自定义 P2P 示例在 Atlas A2/A3 上的资源准备路径。thread acquire 的 notify 数保持示例里的 1；需要定位现场差异时可以显式切换 channel 策略：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-sio --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-protocol sio ascend-probe
+python3 tools/flume_tool.py --build-dir build-hcomm-cpu --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-engine cpu --hcomm-channel-protocol hccs ascend-probe
+```
+
+可选值：
+
+| 参数 | 默认 | 可选值 |
+| --- | --- | --- |
+| `--hcomm-channel-engine` | `aicpu` | `auto`, `aicpu`, `aicpu-ts`, `cpu` |
+| `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `roce`, `pcie`, `sio` |
+| `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |
+
 可以和 P2P baseline 合在一起跑：
 
 ```bash

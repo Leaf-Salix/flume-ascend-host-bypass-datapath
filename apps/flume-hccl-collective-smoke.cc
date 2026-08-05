@@ -88,6 +88,9 @@ struct RankContext {
   bool a3_symmetric = false;
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
+  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AICPU;
+  flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  uint32_t hcomm_notify_num = 2;
   uint64_t sym_win_gb = 1;
   int status = 0;
   std::string error;
@@ -404,6 +407,84 @@ const char* HcclInitModeName(HcclInitMode mode) {
       return "root-info";
     case HcclInitMode::kRankTable:
       return "rank-table";
+  }
+  return "unknown";
+}
+
+bool ParseHcommEngine(const std::string& text,
+                      flume_hcomm_engine_t* out,
+                      std::string* error) {
+  if (out == nullptr || error == nullptr) {
+    return false;
+  }
+  if (text == "auto" || text == "aicpu") {
+    *out = FLUME_HCOMM_ENGINE_AICPU;
+    return true;
+  }
+  if (text == "aicpu-ts") {
+    *out = FLUME_HCOMM_ENGINE_AICPU_TS;
+    return true;
+  }
+  if (text == "cpu") {
+    *out = FLUME_HCOMM_ENGINE_CPU;
+    return true;
+  }
+  *error = "invalid --hcomm-channel-engine, expected auto, aicpu, aicpu-ts, or cpu";
+  return false;
+}
+
+const char* HcommEngineName(flume_hcomm_engine_t engine) {
+  switch (engine) {
+    case FLUME_HCOMM_ENGINE_AICPU:
+      return "aicpu";
+    case FLUME_HCOMM_ENGINE_AICPU_TS:
+      return "aicpu-ts";
+    case FLUME_HCOMM_ENGINE_CPU:
+      return "cpu";
+    case FLUME_HCOMM_ENGINE_AUTO:
+      return "auto";
+  }
+  return "unknown";
+}
+
+bool ParseHcommProtocol(const std::string& text,
+                        flume_hcomm_protocol_t* out,
+                        std::string* error) {
+  if (out == nullptr || error == nullptr) {
+    return false;
+  }
+  if (text == "auto" || text == "hccs") {
+    *out = FLUME_HCOMM_PROTOCOL_HCCS;
+    return true;
+  }
+  if (text == "roce") {
+    *out = FLUME_HCOMM_PROTOCOL_ROCE;
+    return true;
+  }
+  if (text == "pcie") {
+    *out = FLUME_HCOMM_PROTOCOL_PCIE;
+    return true;
+  }
+  if (text == "sio") {
+    *out = FLUME_HCOMM_PROTOCOL_SIO;
+    return true;
+  }
+  *error = "invalid --hcomm-channel-protocol, expected auto, hccs, roce, pcie, or sio";
+  return false;
+}
+
+const char* HcommProtocolName(flume_hcomm_protocol_t protocol) {
+  switch (protocol) {
+    case FLUME_HCOMM_PROTOCOL_HCCS:
+      return "hccs";
+    case FLUME_HCOMM_PROTOCOL_ROCE:
+      return "roce";
+    case FLUME_HCOMM_PROTOCOL_PCIE:
+      return "pcie";
+    case FLUME_HCOMM_PROTOCOL_SIO:
+      return "sio";
+    case FLUME_HCOMM_PROTOCOL_AUTO:
+      return "auto";
   }
   return "unknown";
 }
@@ -928,8 +1009,13 @@ void RankMain(RankContext* ctx) {
     }
     if (ctx->rank == 0 || ctx->rank == 1) {
       uint32_t peer_rank = (ctx->rank == 0) ? 1 : 0;
-      if (!CheckFlume(flume_hcomm_channel_probe(client, peer_rank, stream,
-                                                &hcomm_channel_io),
+      flume_hcomm_channel_probe_options_t options = {};
+      options.size = sizeof(options);
+      options.notify_num = ctx->hcomm_notify_num;
+      options.engine = ctx->hcomm_engine;
+      options.protocol = ctx->hcomm_protocol;
+      if (!CheckFlume(flume_hcomm_channel_probe_ex(client, peer_rank, &options,
+                                                   stream, &hcomm_channel_io),
                       "flume_hcomm_channel_probe", &error) ||
           !WaitFlumeIo(hcomm_channel_io, "flume_wait hcomm channel probe",
                        &error)) {
@@ -940,6 +1026,9 @@ void RankMain(RankContext* ctx) {
            << " hcomm channel probe passed: peer_rank=" << peer_rank
            << " usable_hccl_buffer_bytes="
            << flume_io_bytes(hcomm_channel_io)
+           << " engine=" << HcommEngineName(ctx->hcomm_engine)
+           << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
+           << " notify_num=" << ctx->hcomm_notify_num
            << " thread_export="
            << (FLUME_HAVE_HCOMM_THREAD_EXPORT ? "available" : "not-built")
            << " primitives="
@@ -1027,6 +1116,9 @@ int main(int argc, char** argv) {
   bool a3_symmetric = false;
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
+  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AICPU;
+  flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  uint32_t hcomm_notify_num = 2;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
   std::string rank_table_path;
@@ -1056,6 +1148,29 @@ int main(int argc, char** argv) {
       p2p_copy = true;
     } else if (arg == "--hcomm-channel-probe") {
       hcomm_channel_probe = true;
+    } else if (arg.rfind("--hcomm-channel-engine=", 0) == 0) {
+      if (!ParseHcommEngine(
+              arg.substr(std::string("--hcomm-channel-engine=").size()),
+              &hcomm_engine, &parse_error)) {
+        std::cerr << parse_error << "\n";
+        return 2;
+      }
+    } else if (arg.rfind("--hcomm-channel-protocol=", 0) == 0) {
+      if (!ParseHcommProtocol(
+              arg.substr(std::string("--hcomm-channel-protocol=").size()),
+              &hcomm_protocol, &parse_error)) {
+        std::cerr << parse_error << "\n";
+        return 2;
+      }
+    } else if (arg.rfind("--hcomm-notify-num=", 0) == 0) {
+      uint64_t value = 0;
+      if (!ParseU64(arg.substr(std::string("--hcomm-notify-num=").size()),
+                    &value) || value == 0 ||
+          value > std::numeric_limits<uint32_t>::max()) {
+        std::cerr << "invalid --hcomm-notify-num\n";
+        return 2;
+      }
+      hcomm_notify_num = static_cast<uint32_t>(value);
     } else if (arg.rfind("--init=", 0) == 0) {
       if (!ParseHcclInitMode(arg.substr(std::string("--init=").size()),
                              &init_mode, &parse_error)) {
@@ -1101,6 +1216,9 @@ int main(int argc, char** argv) {
                 << " [--a3-symmetric]"
                 << " [--p2p-copy]"
                 << " [--hcomm-channel-probe]"
+                << " [--hcomm-channel-engine=aicpu]"
+                << " [--hcomm-channel-protocol=hccs]"
+                << " [--hcomm-notify-num=2]"
                 << " [--sym-win-gb=1]\n";
       return 2;
     }
@@ -1111,6 +1229,10 @@ int main(int argc, char** argv) {
   }
   if (sym_win_gb == 0) {
     std::cerr << "--sym-win-gb must be greater than 0\n";
+    return 2;
+  }
+  if (hcomm_notify_num == 0 || hcomm_notify_num > 64) {
+    std::cerr << "--hcomm-notify-num must be in [1, 64]\n";
     return 2;
   }
   if (p2p_copy && a3_symmetric) {
@@ -1202,6 +1324,9 @@ int main(int argc, char** argv) {
             << (visible_devices == nullptr ? "not set" : visible_devices)
             << " process_mode=" << (single_rank_mode ? "single-rank" : "local")
             << " rank_size=" << global_rank_size
+            << " hcomm_engine=" << HcommEngineName(hcomm_engine)
+            << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
+            << " hcomm_notify_num=" << hcomm_notify_num
             << "\n";
   std::cout << "hccl feature probe: root_info=" << FLUME_HAVE_HCCL_ROOT_INFO
             << " root_info_config=" << FLUME_HAVE_HCCL_ROOT_INFO_CONFIG
@@ -1376,6 +1501,9 @@ int main(int argc, char** argv) {
     contexts[local_index].a3_symmetric = a3_symmetric;
     contexts[local_index].p2p_copy = p2p_copy;
     contexts[local_index].hcomm_channel_probe = hcomm_channel_probe;
+    contexts[local_index].hcomm_engine = hcomm_engine;
+    contexts[local_index].hcomm_protocol = hcomm_protocol;
+    contexts[local_index].hcomm_notify_num = hcomm_notify_num;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
   }
@@ -1409,6 +1537,9 @@ int main(int argc, char** argv) {
             << " a3_symmetric=" << (a3_symmetric ? "on" : "off")
             << " p2p_copy=" << (p2p_copy ? "on" : "off")
             << " hcomm_channel_probe="
-            << (hcomm_channel_probe ? "on" : "off") << "\n";
+            << (hcomm_channel_probe ? "on" : "off")
+            << " hcomm_engine=" << HcommEngineName(hcomm_engine)
+            << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
+            << " hcomm_notify_num=" << hcomm_notify_num << "\n";
   return 0;
 }

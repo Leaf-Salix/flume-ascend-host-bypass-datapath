@@ -26,7 +26,7 @@ Implemented but still requires Ascend hardware validation:
 - `flume_attach_hccl_comm` for reusing an external `HcclComm`.
 - `flume_allreduce_async` / `flume_allgather_async` wrappers over `HcclAllReduce` / `HcclAllGather`.
 - `flume_p2p_send_async` / `flume_p2p_recv_async` wrappers over `HcclSend` / `HcclRecv` when those APIs are exported by the installed HCCL headers and library.
-- `flume_hcomm_channel_probe` wrapper for the HCOMM Channel resource stage: local HCCL Buffer, CPU_TS/AICPU_TS thread resources, optional thread export, HCCS channel acquire, and remote HCCL Buffer query.
+- `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` wrappers for the HCOMM Channel resource stage: local HCCL Buffer, CPU_TS/AICPU_TS thread resources, optional thread export, configurable channel engine/protocol, channel acquire, and remote HCCL Buffer query.
 - Optional single-node multi-card HCCL smoke test on Ascend HBM buffers.
 - Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers.
 - Optional rank0/rank1 HCOMM Channel resource probe smoke.
@@ -106,6 +106,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --
 ```
 
 This keeps the same base collective smoke, then asks Flume to acquire the HCOMM resources needed by the future custom backend: HCCL Buffer, CPU_TS/AICPU_TS threads, optional thread export, an AICPU/HCCS channel, and the peer HCCL Buffer. It does not yet launch an AICPU kernel or move payload with `HcommReadOnThread`.
+
+The default HCOMM probe uses `--hcomm-channel-engine aicpu`, `--hcomm-channel-protocol hccs`, and `--hcomm-notify-num 2`. Those can be changed from `tools/flume_tool.py` to isolate channel acquire behavior on different fabrics.
 
 When `--hccl-devices` is set, the default `auto` mode uses the HCCL
 `root-info` initialization strategy and launches one process per rank. This is

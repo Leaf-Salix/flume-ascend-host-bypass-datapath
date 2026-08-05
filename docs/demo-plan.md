@@ -126,7 +126,7 @@ rank HBM
 - Stage 2 P2P baseline 已经接入公开 HCCL API：`flume_p2p_send_async` / `flume_p2p_recv_async` 在 HCCL backend 调用 `HcclSend` / `HcclRecv`，在 sim backend 验证成对收发、pending 和释放约束。
 - 真机 smoke app：`flume-hccl-collective-smoke`，只在 `FLUME_ENABLE_HCCL=ON` 时构建。
 - 真机 P2P smoke：`tools/flume_tool.py --run-hccl-p2p-smoke` 会追加 rank0 HBM -> rank1 HBM 的 `HcclSend` / `HcclRecv` 校验。
-- HCOMM Channel resource probe：`tools/flume_tool.py --run-hcomm-channel-probe` 会追加 HCCL Buffer、thread、thread export、HCCS Channel 和远端 HCCL Buffer 查询。
+- HCOMM Channel resource probe：`tools/flume_tool.py --run-hcomm-channel-probe` 会追加 HCCL Buffer、thread、thread export、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询。
 - Atlas A3 HCCS 模式可加 `--a3-symmetric`：当 CMake 探测到 ACL VMM 和 HCCL symmetric window 能力时，用 ACL mapped HBM + `flume_a3_register_symmetric_memory` 包装 `HcclCommSymWinRegister`，再跑 AllReduce / AllGather。
 - 目标是证明 NPU HBM collective 不经过 host memory staging；host 仍负责通信域初始化、任务下发和 stream 同步。
 - 后续参考自定义 P2P 示例实现 AICPU/HCOMM primitive payload backend，替换或补充公开 HCCL P2P baseline。

@@ -149,6 +149,12 @@ struct CommState {
   uint32_t rank_size = 0;
 };
 
+struct HcommProbeOptions {
+  uint32_t notify_num = 2;
+  flume_hcomm_engine_t engine = FLUME_HCOMM_ENGINE_AICPU;
+  flume_hcomm_protocol_t protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+};
+
 bool SetSocketTimeouts(int fd) {
   timeval timeout = {};
   timeout.tv_sec = kSocketTimeoutSeconds;
@@ -329,6 +335,63 @@ bool CheckedMul(size_t lhs, size_t rhs, size_t* out) {
 
 bool ValidateRange(const flume_buffer_t* buffer, size_t offset, size_t len) {
   return buffer != nullptr && offset <= buffer->len && len <= buffer->len - offset;
+}
+
+bool NormalizeHcommProbeOptions(
+    const flume_hcomm_channel_probe_options_t* options,
+    HcommProbeOptions* out,
+    std::string* error) {
+  if (out == nullptr) {
+    return false;
+  }
+  HcommProbeOptions normalized;
+  if (options != nullptr && options->size != 0) {
+    if (options->size < sizeof(flume_hcomm_channel_probe_options_t)) {
+      if (error != nullptr) {
+        *error = "HCOMM channel probe options size is too small";
+      }
+      return false;
+    }
+    normalized.notify_num = options->notify_num == 0 ? 2 : options->notify_num;
+    normalized.engine = options->engine == FLUME_HCOMM_ENGINE_AUTO ?
+                            FLUME_HCOMM_ENGINE_AICPU :
+                            options->engine;
+    normalized.protocol = options->protocol == FLUME_HCOMM_PROTOCOL_AUTO ?
+                              FLUME_HCOMM_PROTOCOL_HCCS :
+                              options->protocol;
+  }
+
+  if (normalized.notify_num == 0 || normalized.notify_num > 64) {
+    if (error != nullptr) {
+      *error = "HCOMM channel probe notify_num must be in [1, 64]";
+    }
+    return false;
+  }
+  switch (normalized.engine) {
+    case FLUME_HCOMM_ENGINE_AICPU:
+    case FLUME_HCOMM_ENGINE_AICPU_TS:
+    case FLUME_HCOMM_ENGINE_CPU:
+      break;
+    default:
+      if (error != nullptr) {
+        *error = "unsupported HCOMM channel probe engine";
+      }
+      return false;
+  }
+  switch (normalized.protocol) {
+    case FLUME_HCOMM_PROTOCOL_HCCS:
+    case FLUME_HCOMM_PROTOCOL_ROCE:
+    case FLUME_HCOMM_PROTOCOL_PCIE:
+    case FLUME_HCOMM_PROTOCOL_SIO:
+      break;
+    default:
+      if (error != nullptr) {
+        *error = "unsupported HCOMM channel probe protocol";
+      }
+      return false;
+  }
+  *out = normalized;
+  return true;
 }
 
 flume_io* MakeIo(int status = FLUME_OK, size_t bytes = 0, uint32_t checksum = 0,
@@ -1112,9 +1175,51 @@ bool CheckHcclResource(HcclResult result, const char* label,
   return false;
 }
 
+bool ToHcommCommEngine(flume_hcomm_engine_t engine, CommEngine* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  switch (engine) {
+    case FLUME_HCOMM_ENGINE_AICPU:
+      *out = COMM_ENGINE_AICPU;
+      return true;
+    case FLUME_HCOMM_ENGINE_AICPU_TS:
+      *out = COMM_ENGINE_AICPU_TS;
+      return true;
+    case FLUME_HCOMM_ENGINE_CPU:
+      *out = COMM_ENGINE_CPU;
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool ToHcommProtocol(flume_hcomm_protocol_t protocol, CommProtocol* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  switch (protocol) {
+    case FLUME_HCOMM_PROTOCOL_HCCS:
+      *out = COMM_PROTOCOL_HCCS;
+      return true;
+    case FLUME_HCOMM_PROTOCOL_ROCE:
+      *out = COMM_PROTOCOL_ROCE;
+      return true;
+    case FLUME_HCOMM_PROTOCOL_PCIE:
+      *out = COMM_PROTOCOL_PCIE;
+      return true;
+    case FLUME_HCOMM_PROTOCOL_SIO:
+      *out = COMM_PROTOCOL_SIO;
+      return true;
+    default:
+      return false;
+  }
+}
+
 #if FLUME_HAVE_HCOMM_CHANNEL_RES
 bool ProbeHcommChannelResources(const CommState& state,
                                 uint32_t peer_rank,
+                                const HcommProbeOptions& options,
                                 void* acl_stream,
                                 size_t* usable_buffer_bytes,
                                 std::string* error) {
@@ -1133,6 +1238,16 @@ bool ProbeHcommChannelResources(const CommState& state,
   }
   if (acl_stream == nullptr) {
     *error = "HCOMM channel probe requires an ACL stream";
+    return false;
+  }
+  CommEngine channel_engine = COMM_ENGINE_RESERVED;
+  if (!ToHcommCommEngine(options.engine, &channel_engine)) {
+    *error = "unsupported HCOMM channel probe engine";
+    return false;
+  }
+  CommProtocol channel_protocol = COMM_PROTOCOL_RESERVED;
+  if (!ToHcommProtocol(options.protocol, &channel_protocol)) {
+    *error = "unsupported HCOMM channel probe protocol";
     return false;
   }
 
@@ -1158,29 +1273,35 @@ bool ProbeHcommChannelResources(const CommState& state,
   }
 
   ThreadHandle aicpu_ts_thread = 0;
-  if (!CheckHcclResource(
-          HcclThreadAcquire(comm, COMM_ENGINE_AICPU_TS, 1, 1,
-                            &aicpu_ts_thread),
-          "HcclThreadAcquire(AICPU_TS)", error)) {
-    return false;
+  bool needs_aicpu_thread = options.engine == FLUME_HCOMM_ENGINE_AICPU ||
+                            options.engine == FLUME_HCOMM_ENGINE_AICPU_TS;
+  if (needs_aicpu_thread) {
+    if (!CheckHcclResource(
+            HcclThreadAcquire(comm, COMM_ENGINE_AICPU_TS, 1,
+                              1, &aicpu_ts_thread),
+            "HcclThreadAcquire(AICPU_TS)", error)) {
+      return false;
+    }
   }
 
 #if FLUME_HAVE_HCOMM_THREAD_EXPORT
-  ThreadHandle cpu_thread_on_aicpu = 0;
-  if (!CheckHcclResource(
-          HcclThreadExportToCommEngine(comm, 1, &cpu_ts_thread,
-                                       COMM_ENGINE_AICPU_TS,
-                                       &cpu_thread_on_aicpu),
-          "HcclThreadExportToCommEngine(CPU_TS->AICPU_TS)", error)) {
-    return false;
-  }
-  ThreadHandle aicpu_thread_on_cpu = 0;
-  if (!CheckHcclResource(
-          HcclThreadExportToCommEngine(comm, 1, &aicpu_ts_thread,
-                                       COMM_ENGINE_CPU_TS,
-                                       &aicpu_thread_on_cpu),
-          "HcclThreadExportToCommEngine(AICPU_TS->CPU_TS)", error)) {
-    return false;
+  if (needs_aicpu_thread) {
+    ThreadHandle cpu_thread_on_aicpu = 0;
+    if (!CheckHcclResource(
+            HcclThreadExportToCommEngine(comm, 1, &cpu_ts_thread,
+                                         COMM_ENGINE_AICPU_TS,
+                                         &cpu_thread_on_aicpu),
+            "HcclThreadExportToCommEngine(CPU_TS->AICPU_TS)", error)) {
+      return false;
+    }
+    ThreadHandle aicpu_thread_on_cpu = 0;
+    if (!CheckHcclResource(
+            HcclThreadExportToCommEngine(comm, 1, &aicpu_ts_thread,
+                                         COMM_ENGINE_CPU_TS,
+                                         &aicpu_thread_on_cpu),
+            "HcclThreadExportToCommEngine(AICPU_TS->CPU_TS)", error)) {
+      return false;
+    }
   }
 #else
   (void)cpu_ts_thread;
@@ -1193,13 +1314,13 @@ bool ProbeHcommChannelResources(const CommState& state,
     return false;
   }
   desc.remoteRank = peer_rank;
-  desc.channelProtocol = COMM_PROTOCOL_HCCS;
-  desc.notifyNum = 2;
+  desc.channelProtocol = channel_protocol;
+  desc.notifyNum = options.notify_num;
 
   ChannelHandle channel = 0;
   if (!CheckHcclResource(
-          HcclChannelAcquire(comm, COMM_ENGINE_AICPU, &desc, 1, &channel),
-          "HcclChannelAcquire(AICPU/HCCS)", error)) {
+          HcclChannelAcquire(comm, channel_engine, &desc, 1, &channel),
+          "HcclChannelAcquire", error)) {
     return false;
   }
 
@@ -1931,10 +2052,32 @@ int flume_hcomm_channel_probe(flume_client_t* client,
                               uint32_t peer_rank,
                               void* acl_stream,
                               flume_io_t** out) {
+  flume_hcomm_channel_probe_options_t options = {};
+  options.size = sizeof(options);
+  options.notify_num = 2;
+  options.engine = FLUME_HCOMM_ENGINE_AICPU;
+  options.protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  return flume_hcomm_channel_probe_ex(client, peer_rank, &options, acl_stream,
+                                      out);
+}
+
+int flume_hcomm_channel_probe_ex(
+    flume_client_t* client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t* options,
+    void* acl_stream,
+    flume_io_t** out) {
   if (client == nullptr || out == nullptr) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   *out = nullptr;
+  HcommProbeOptions normalized_options;
+  std::string option_error;
+  if (!NormalizeHcommProbeOptions(options, &normalized_options,
+                                  &option_error)) {
+    (void)option_error;
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
 
   CommState state = SnapshotCommState(client);
   if (state.sim_comm_attached) {
@@ -1950,7 +2093,7 @@ int flume_hcomm_channel_probe(flume_client_t* client,
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
   size_t usable_buffer_bytes = 0;
   std::string error;
-  if (!ProbeHcommChannelResources(state, peer_rank, acl_stream,
+  if (!ProbeHcommChannelResources(state, peer_rank, normalized_options, acl_stream,
                                   &usable_buffer_bytes, &error)) {
     *out = MakeIo(FLUME_ERR_BACKEND, 0, 0, error);
     return FLUME_OK;

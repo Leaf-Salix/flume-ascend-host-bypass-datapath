@@ -11,7 +11,7 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 - 无 NPU 环境：可以验证 storage control plane、mock pread、sim HBM copy、sim collective、sim P2P send/recv、sim A3 symmetric memory 生命周期。
 - Ascend 真机环境：已经验证 `root-info` 和 `init-all` 初始化路径可跑通 base HCCL AllReduce / AllGather。
 - Stage 2 P2P baseline：已经在 Host A HCCS_SW pair A 跨 HCCS_SW die 对上验证 `HcclSend` / `HcclRecv` 的 rank0 HBM -> rank1 HBM P2P copy，结果 `p2p_copy=on`。
-- Stage 2 HCOMM resource probe：已经实现 `flume_hcomm_channel_probe` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、thread、thread export、HCCS Channel 和远端 HCCL Buffer 查询；仍待真机验证。
+- Stage 2 HCOMM resource probe：已经实现 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、thread、thread export、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询；仍待真机验证。
 - 仍未实现：AICPU/HCOMM primitive payload copy backend，storage proxy rank，RDMA / NVMe-oF / SPDK -> NPU HBM full direct data path。
 
 当前最重要的工程判断是：
@@ -170,7 +170,7 @@ flowchart TB
 | HCCL build path | `FLUME_ENABLE_HCCL=ON` | 查找 HCCL / HCOMM / ACL / securec / ascendcl | `tools/flume_tool.py ascend-probe` |
 | HCCL collective | `HcclAllReduce` / `HcclAllGather` | 已真机验证 root-info 和 init-all 路径 | `--run-hccl-smoke` |
 | HCCL P2P baseline | `HcclSend` / `HcclRecv` | 已真机验证 Host A HCCS_SW pair A | `--run-hccl-p2p-smoke` |
-| HCOMM Channel resource probe | `HcclGetHcclBuffer` / `HcclChannelAcquire` / `HcclChannelGetHcclBuffer` | 代码已接入，待真机验证 | `--run-hcomm-channel-probe` |
+| HCOMM Channel resource probe | `HcclGetHcclBuffer` / `HcclChannelAcquire` / `HcclChannelGetHcclBuffer` | 代码已接入，engine/protocol/notify 可配置，待真机验证 | `--run-hcomm-channel-probe` |
 | A3 symmetric wrapper | `flume_a3_*` | 按 CANN/HCCL 能力位编译和运行 | `test_sim_a3_symmetric_memory` / `--run-a3-symmetric-smoke` |
 | 工具化测试 | `tools/flume_tool.py` | env / local / ascend-probe / HCCL smoke / diagnostics | `logs/flume-check-*` |
 
