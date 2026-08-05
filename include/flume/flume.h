@@ -137,6 +137,11 @@ int flume_p2p_recv_async(flume_client_t *client,
                         void *acl_stream,
                         flume_io_t **out);
 
+int flume_hcomm_channel_probe(flume_client_t *client,
+                              uint32_t peer_rank,
+                              void *acl_stream,
+                              flume_io_t **out);
+
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,
                          size_t dst_offset,

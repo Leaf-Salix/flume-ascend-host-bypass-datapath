@@ -55,6 +55,19 @@ int main() {
   std::vector<flume_client_t*> clients;
   OpenRanks(agent, kRanks, &clients);
 
+  flume_io_t* hcomm_probe01 = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe(clients[0], 1, nullptr,
+                                             &hcomm_probe01) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(hcomm_probe01, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_io_bytes(hcomm_probe01) == 0);
+  FLUME_TEST_CHECK(flume_io_release(hcomm_probe01) == FLUME_OK);
+
+  flume_io_t* bad_hcomm_probe = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe(clients[0], 0, nullptr,
+                                             &bad_hcomm_probe) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(bad_hcomm_probe == nullptr);
+
   flume_buffer_t* src0 = nullptr;
   flume_buffer_t* dst1 = nullptr;
   flume_io_t* send01 = nullptr;

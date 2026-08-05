@@ -51,6 +51,15 @@
 #ifndef FLUME_HAVE_HCCL_P2P
 #define FLUME_HAVE_HCCL_P2P 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_RES
+#define FLUME_HAVE_HCOMM_CHANNEL_RES 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_THREAD_EXPORT
+#define FLUME_HAVE_HCOMM_THREAD_EXPORT 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_PRIMITIVES
+#define FLUME_HAVE_HCOMM_PRIMITIVES 0
+#endif
 #ifndef FLUME_HAVE_ACL_VMM
 #define FLUME_HAVE_ACL_VMM 0
 #endif
@@ -78,6 +87,7 @@ struct RankContext {
   uint64_t count = 0;
   bool a3_symmetric = false;
   bool p2p_copy = false;
+  bool hcomm_channel_probe = false;
   uint64_t sym_win_gb = 1;
   int status = 0;
   std::string error;
@@ -280,6 +290,21 @@ bool CheckFlume(int ret, const char* label, std::string* error) {
     return true;
   }
   *error = std::string(label) + " failed, flume ret=" + flume_status_string(ret);
+  return false;
+}
+
+bool WaitFlumeIo(flume_io_t* io, const char* label, std::string* error) {
+  int ret = flume_wait(io, -1);
+  if (ret == FLUME_OK) {
+    return true;
+  }
+  *error = std::string(label) + " failed, flume ret=" +
+           flume_status_string(ret);
+  const char* detail = flume_io_error_message(io);
+  if (detail != nullptr && detail[0] != '\0') {
+    *error += ": ";
+    *error += detail;
+  }
   return false;
 }
 
@@ -665,6 +690,7 @@ void RankMain(RankContext* ctx) {
   flume_io_t* reduce_io = nullptr;
   flume_io_t* gather_io = nullptr;
   flume_io_t* p2p_io = nullptr;
+  flume_io_t* hcomm_channel_io = nullptr;
 
   BufferLayout layout;
   std::string error;
@@ -895,7 +921,35 @@ void RankMain(RankContext* ctx) {
     }
   }
 
+  if (ctx->hcomm_channel_probe) {
+    if (ctx->rank_size < 2) {
+      error = "HCOMM channel probe requires at least two ranks";
+      goto cleanup;
+    }
+    if (ctx->rank == 0 || ctx->rank == 1) {
+      uint32_t peer_rank = (ctx->rank == 0) ? 1 : 0;
+      if (!CheckFlume(flume_hcomm_channel_probe(client, peer_rank, stream,
+                                                &hcomm_channel_io),
+                      "flume_hcomm_channel_probe", &error) ||
+          !WaitFlumeIo(hcomm_channel_io, "flume_wait hcomm channel probe",
+                       &error)) {
+        goto cleanup;
+      }
+      std::ostringstream line;
+      line << "rank " << ctx->rank
+           << " hcomm channel probe passed: peer_rank=" << peer_rank
+           << " usable_hccl_buffer_bytes="
+           << flume_io_bytes(hcomm_channel_io)
+           << " thread_export="
+           << (FLUME_HAVE_HCOMM_THREAD_EXPORT ? "available" : "not-built")
+           << " primitives="
+           << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built");
+      LogLine(line.str());
+    }
+  }
+
 cleanup:
+  flume_io_release(hcomm_channel_io);
   if (a3_window != nullptr) {
     int ret = flume_a3_deregister_symmetric_memory(a3_window);
     if (ret != FLUME_OK && error.empty()) {
@@ -972,6 +1026,7 @@ int main(int argc, char** argv) {
   uint64_t count = 1024;
   bool a3_symmetric = false;
   bool p2p_copy = false;
+  bool hcomm_channel_probe = false;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
   std::string rank_table_path;
@@ -999,6 +1054,8 @@ int main(int argc, char** argv) {
       a3_symmetric = true;
     } else if (arg == "--p2p-copy") {
       p2p_copy = true;
+    } else if (arg == "--hcomm-channel-probe") {
+      hcomm_channel_probe = true;
     } else if (arg.rfind("--init=", 0) == 0) {
       if (!ParseHcclInitMode(arg.substr(std::string("--init=").size()),
                              &init_mode, &parse_error)) {
@@ -1043,6 +1100,7 @@ int main(int argc, char** argv) {
                 << " [--rank=0 --rank-size=2]"
                 << " [--a3-symmetric]"
                 << " [--p2p-copy]"
+                << " [--hcomm-channel-probe]"
                 << " [--sym-win-gb=1]\n";
       return 2;
     }
@@ -1063,6 +1121,13 @@ int main(int argc, char** argv) {
 #if !FLUME_HAVE_HCCL_P2P
   if (p2p_copy) {
     std::cerr << "--p2p-copy requires HcclSend/HcclRecv in this HCCL header\n";
+    return 2;
+  }
+#endif
+#if !FLUME_HAVE_HCOMM_CHANNEL_RES
+  if (hcomm_channel_probe) {
+    std::cerr << "--hcomm-channel-probe requires HCOMM channel resource APIs "
+                 "such as HcclChannelAcquire in this build\n";
     return 2;
   }
 #endif
@@ -1144,6 +1209,9 @@ int main(int argc, char** argv) {
             << " cluster_info_config=" << FLUME_HAVE_HCCL_CLUSTER_INFO_CONFIG
             << " sym_window=" << FLUME_HAVE_HCCL_SYM_WINDOW
             << " p2p=" << FLUME_HAVE_HCCL_P2P
+            << " hcomm_channel_res=" << FLUME_HAVE_HCOMM_CHANNEL_RES
+            << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
+            << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
   std::set<int32_t> unique_devices;
@@ -1161,6 +1229,11 @@ int main(int argc, char** argv) {
   }
   if (p2p_copy && global_rank_size < 2) {
     std::cerr << "--p2p-copy requires at least two ranks\n";
+    (void)aclFinalize();
+    return 2;
+  }
+  if (hcomm_channel_probe && global_rank_size < 2) {
+    std::cerr << "--hcomm-channel-probe requires at least two ranks\n";
     (void)aclFinalize();
     return 2;
   }
@@ -1302,6 +1375,7 @@ int main(int argc, char** argv) {
     contexts[local_index].count = count;
     contexts[local_index].a3_symmetric = a3_symmetric;
     contexts[local_index].p2p_copy = p2p_copy;
+    contexts[local_index].hcomm_channel_probe = hcomm_channel_probe;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
   }
@@ -1333,6 +1407,8 @@ int main(int argc, char** argv) {
             << " count=" << count
             << " init=" << HcclInitModeName(init_mode)
             << " a3_symmetric=" << (a3_symmetric ? "on" : "off")
-            << " p2p_copy=" << (p2p_copy ? "on" : "off") << "\n";
+            << " p2p_copy=" << (p2p_copy ? "on" : "off")
+            << " hcomm_channel_probe="
+            << (hcomm_channel_probe ? "on" : "off") << "\n";
   return 0;
 }

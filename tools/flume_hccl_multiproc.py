@@ -39,6 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--a3-symmetric", action="store_true")
     parser.add_argument("--p2p-copy", action="store_true",
                         help="Run rank0->rank1 HCCL Send/Recv P2P copy smoke")
+    parser.add_argument("--hcomm-channel-probe", action="store_true",
+                        help="Run rank0/rank1 HCOMM Channel resource probe")
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -85,6 +87,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append(f"--sym-win-gb={args.sym_win_gb}")
     if args.p2p_copy:
         command.append("--p2p-copy")
+    if args.hcomm_channel_probe:
+        command.append("--hcomm-channel-probe")
     return command
 
 

@@ -35,7 +35,7 @@ python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 - 强制检查 CANN/HCCL 布局。
 - 以 `FLUME_ENABLE_HCCL=ON` 配置 CMake。
 - 编译并链接 HCCL/HCOMM；HCOMM public header 依赖的 `securec.h` 也需要在 CANN include 路径下可见。
-- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_COMM_MEMORY`、`FLUME_HAVE_ACL_VMM`。
+- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_ACL_VMM`。
 - 执行当前 CTest、storage sim demo 和 collective sim demo。
 
 默认边界：`ascend-probe` 只验证环境发现、编译和链接，以及当前 mock/sim 回归。它不会默认跑真实 HCCL 数据面，也不会要求 A3 试用 API 必须存在。
@@ -54,9 +54,23 @@ python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-dev
 python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-该模式会在同一个 `flume-hccl-collective-smoke` 中追加 `--p2p-copy`，先跑 base AllReduce / AllGather，再通过 Flume API 调用 `HcclSend` / `HcclRecv` 做 rank0 HBM 到 rank1 HBM 的配对拷贝并校验 rank1 结果。它是当前 Stage 2 的公开 HCCL baseline；HCOMM Channel / Notify / HCCL Buffer 自定义 P2P backend 仍保留为下一步。
+该模式会在同一个 `flume-hccl-collective-smoke` 中追加 `--p2p-copy`，先跑 base AllReduce / AllGather，再通过 Flume API 调用 `HcclSend` / `HcclRecv` 做 rank0 HBM 到 rank1 HBM 的配对拷贝并校验 rank1 结果。它是当前 Stage 2 的公开 HCCL payload baseline。
 
 `--run-hccl-p2p-smoke` 目前不能和 `--run-a3-symmetric-smoke` 组合。CMake 会探测 `FLUME_HAVE_HCCL_P2P`，如果当前 HCCL 头文件或库没有导出 `HcclSend` / `HcclRecv`，smoke 会直接报告不可用。
+
+可选 Stage 2 HCOMM Channel resource probe：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+该模式会在 base AllReduce / AllGather 之后追加 `--hcomm-channel-probe`。probe 会调用 Flume 的 `flume_hcomm_channel_probe`，在已 attach 的 HCCL comm 上尝试获取本端 HCCL Buffer、CPU_TS/AICPU_TS thread、可用时做 thread export、用 `HcclChannelAcquire(COMM_ENGINE_AICPU, COMM_PROTOCOL_HCCS)` 建立到 peer rank 的 Channel，并通过 `HcclChannelGetHcclBuffer` 查询远端 HCCL Buffer。它验证的是 HCOMM 自定义 P2P backend 的资源准备阶段；当前还不执行 AICPU kernel，也不调用 `HcommReadOnThread` 搬 payload。
+
+可以和 P2P baseline 合在一起跑：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-stage2 --run-hccl-p2p-smoke --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
 
 推荐真机打通顺序：
 

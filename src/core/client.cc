@@ -39,8 +39,33 @@
 #ifndef FLUME_HAVE_HCCL_P2P
 #define FLUME_HAVE_HCCL_P2P 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_RES
+#define FLUME_HAVE_HCOMM_CHANNEL_RES 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_THREAD_EXPORT
+#define FLUME_HAVE_HCOMM_THREAD_EXPORT 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_PRIMITIVES
+#define FLUME_HAVE_HCOMM_PRIMITIVES 0
+#endif
 #ifndef FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
+#endif
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+#if __has_include(<hccl/hccl_res.h>)
+#include <hccl/hccl_res.h>
+#else
+#error "FLUME_HAVE_HCOMM_CHANNEL_RES=1 requires hccl/hccl_res.h"
+#endif
+#endif
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_THREAD_EXPORT
+#if __has_include(<hccl/hccl_res_expt.h>)
+#include <hccl/hccl_res_expt.h>
+#else
+#error "FLUME_HAVE_HCOMM_THREAD_EXPORT=1 requires hccl/hccl_res_expt.h"
+#endif
 #endif
 
 #include "protocol/framing.h"
@@ -1075,6 +1100,129 @@ std::string HcclErrorMessage(HcclResult result) {
   }
   return "HCCL error code " + std::to_string(static_cast<int>(result));
 }
+
+bool CheckHcclResource(HcclResult result, const char* label,
+                       std::string* error) {
+  if (result == HCCL_SUCCESS) {
+    return true;
+  }
+  if (error != nullptr) {
+    *error = std::string(label) + " failed: " + HcclErrorMessage(result);
+  }
+  return false;
+}
+
+#if FLUME_HAVE_HCOMM_CHANNEL_RES
+bool ProbeHcommChannelResources(const CommState& state,
+                                uint32_t peer_rank,
+                                void* acl_stream,
+                                size_t* usable_buffer_bytes,
+                                std::string* error) {
+  if (usable_buffer_bytes == nullptr || error == nullptr) {
+    return false;
+  }
+  *usable_buffer_bytes = 0;
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    *error = "HCOMM channel probe requires flume_attach_hccl_comm";
+    return false;
+  }
+  if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank) {
+    *error = "HCOMM channel probe peer rank is outside the attached HCCL comm";
+    return false;
+  }
+  if (acl_stream == nullptr) {
+    *error = "HCOMM channel probe requires an ACL stream";
+    return false;
+  }
+
+  auto comm = static_cast<HcclComm>(state.hccl_comm);
+  void* local_buffer = nullptr;
+  uint64_t local_size = 0;
+  if (!CheckHcclResource(HcclGetHcclBuffer(comm, &local_buffer, &local_size),
+                         "HcclGetHcclBuffer", error)) {
+    return false;
+  }
+  if (local_buffer == nullptr || local_size == 0) {
+    *error = "HcclGetHcclBuffer returned an empty HCCL buffer";
+    return false;
+  }
+
+  ThreadHandle cpu_ts_thread = 0;
+  if (!CheckHcclResource(
+          HcclThreadAcquireWithStream(
+              comm, COMM_ENGINE_CPU_TS, static_cast<aclrtStream>(acl_stream),
+              1, &cpu_ts_thread),
+          "HcclThreadAcquireWithStream(CPU_TS)", error)) {
+    return false;
+  }
+
+  ThreadHandle aicpu_ts_thread = 0;
+  if (!CheckHcclResource(
+          HcclThreadAcquire(comm, COMM_ENGINE_AICPU_TS, 1, 1,
+                            &aicpu_ts_thread),
+          "HcclThreadAcquire(AICPU_TS)", error)) {
+    return false;
+  }
+
+#if FLUME_HAVE_HCOMM_THREAD_EXPORT
+  ThreadHandle cpu_thread_on_aicpu = 0;
+  if (!CheckHcclResource(
+          HcclThreadExportToCommEngine(comm, 1, &cpu_ts_thread,
+                                       COMM_ENGINE_AICPU_TS,
+                                       &cpu_thread_on_aicpu),
+          "HcclThreadExportToCommEngine(CPU_TS->AICPU_TS)", error)) {
+    return false;
+  }
+  ThreadHandle aicpu_thread_on_cpu = 0;
+  if (!CheckHcclResource(
+          HcclThreadExportToCommEngine(comm, 1, &aicpu_ts_thread,
+                                       COMM_ENGINE_CPU_TS,
+                                       &aicpu_thread_on_cpu),
+          "HcclThreadExportToCommEngine(AICPU_TS->CPU_TS)", error)) {
+    return false;
+  }
+#else
+  (void)cpu_ts_thread;
+  (void)aicpu_ts_thread;
+#endif
+
+  HcclChannelDesc desc;
+  if (!CheckHcclResource(HcclChannelDescInit(&desc, 1),
+                         "HcclChannelDescInit", error)) {
+    return false;
+  }
+  desc.remoteRank = peer_rank;
+  desc.channelProtocol = COMM_PROTOCOL_HCCS;
+  desc.notifyNum = 2;
+
+  ChannelHandle channel = 0;
+  if (!CheckHcclResource(
+          HcclChannelAcquire(comm, COMM_ENGINE_AICPU, &desc, 1, &channel),
+          "HcclChannelAcquire(AICPU/HCCS)", error)) {
+    return false;
+  }
+
+  void* remote_buffer = nullptr;
+  uint64_t remote_size = 0;
+  if (!CheckHcclResource(
+          HcclChannelGetHcclBuffer(comm, channel, &remote_buffer, &remote_size),
+          "HcclChannelGetHcclBuffer", error)) {
+    return false;
+  }
+  if (remote_buffer == nullptr || remote_size == 0) {
+    *error = "HcclChannelGetHcclBuffer returned an empty remote HCCL buffer";
+    return false;
+  }
+
+  uint64_t usable = std::min(local_size, remote_size);
+  if (usable > std::numeric_limits<size_t>::max()) {
+    usable = std::numeric_limits<size_t>::max();
+  }
+  *usable_buffer_bytes = static_cast<size_t>(usable);
+  return true;
+}
+#endif
 #endif
 
 }  // namespace
@@ -1170,6 +1318,8 @@ int flume_attach_hccl_comm(flume_client_t* client, void* hccl_comm,
   std::lock_guard<std::mutex> lock(client->mu);
   client->hccl_attached = true;
   client->hccl_comm = hccl_comm;
+  client->sim_comm_attached = false;
+  client->sim_comm_name.clear();
   client->rank = rank;
   client->rank_size = rank_size;
   return FLUME_OK;
@@ -1188,6 +1338,8 @@ int flume_attach_sim_comm(flume_client_t* client, const char* comm_name,
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   std::lock_guard<std::mutex> lock(client->mu);
+  client->hccl_attached = false;
+  client->hccl_comm = nullptr;
   client->sim_comm_attached = true;
   client->sim_comm_name = comm_name;
   client->rank = rank;
@@ -1771,6 +1923,45 @@ int flume_p2p_recv_async(flume_client_t* client,
   (void)acl_stream;
   *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
                 "HCCL P2P recv is unavailable in this build");
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_channel_probe(flume_client_t* client,
+                              uint32_t peer_rank,
+                              void* acl_stream,
+                              flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  CommState state = SnapshotCommState(client);
+  if (state.sim_comm_attached) {
+    if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+        peer_rank == state.rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    (void)acl_stream;
+    *out = MakeIo(FLUME_OK, 0, 0);
+    return FLUME_OK;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  size_t usable_buffer_bytes = 0;
+  std::string error;
+  if (!ProbeHcommChannelResources(state, peer_rank, acl_stream,
+                                  &usable_buffer_bytes, &error)) {
+    *out = MakeIo(FLUME_ERR_BACKEND, 0, 0, error);
+    return FLUME_OK;
+  }
+  *out = MakeIo(FLUME_OK, usable_buffer_bytes, 0);
+  return FLUME_OK;
+#else
+  (void)peer_rank;
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCOMM channel resources are unavailable in this build");
   return FLUME_OK;
 #endif
 }

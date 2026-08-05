@@ -228,7 +228,7 @@ base HCCL 没有直接提供这种模型。要做需要额外解决：
 3. **Bridge API proxy**
    - 我们的 `flume_allreduce_async` / `flume_allgather_async` 已经包装 base HCCL。
    - A3 场景可先打开 `flume_a3_register_symmetric_memory`，验证注册后业务 HBM 窗口可直接作为 collective 输入输出。
-   - `flume_hbm_copy_async` 的 HCOMM Channel 真机版本仍待实现。
+   - `flume_hcomm_channel_probe` 已接入 HCOMM Channel resource acquisition；`flume_hbm_copy_async` 的 AICPU/HCOMM primitive payload 版本仍待实现。
    - 先让计算进程显式调用 bridge API，但隐藏 HCCL 细节。
    - 再探索是否能通过框架 plugin/hook 做“上层无感”。
 
@@ -243,12 +243,14 @@ flume_attach_hccl_comm
 flume_register_buffer(FLUME_BUFFER_ASCEND_HBM)
 flume_allreduce_async
 flume_allgather_async
+flume_p2p_send_async / flume_p2p_recv_async
+flume_hcomm_channel_probe
 ```
 
 短期下一步：
 
 ```text
-flume_hbm_copy_async 的 HCOMM Channel backend
+flume_hbm_copy_async 的 AICPU/HCOMM primitive payload backend
 ```
 
 其中 `flume_allreduce_async` 和 `flume_allgather_async` 第一版直接调用 base HCCL public API。这样能最快在真机上验证：

@@ -87,6 +87,32 @@ if(FLUME_ENABLE_HCCL)
 #error no hccl header
 #endif
 ")
+  set(_FLUME_HCOMM_RES_CHECK_INCLUDE "
+${_FLUME_HCCL_CHECK_INCLUDE}
+#if __has_include(<hccl/hccl_res.h>)
+#include <hccl/hccl_res.h>
+#else
+#error no hccl_res header
+#endif
+")
+  set(_FLUME_HCOMM_RES_EXPT_CHECK_INCLUDE "
+${_FLUME_HCOMM_RES_CHECK_INCLUDE}
+#if __has_include(<hccl/hccl_res_expt.h>)
+#include <hccl/hccl_res_expt.h>
+#else
+#error no hccl_res_expt header
+#endif
+")
+  set(_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE "
+${_FLUME_HCOMM_RES_CHECK_INCLUDE}
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+")
   set(_FLUME_OLD_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
   set(_FLUME_OLD_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
   set(_FLUME_OLD_TRY_COMPILE_TARGET_TYPE "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
@@ -209,6 +235,59 @@ int main() {
 " FLUME_HAVE_HCCL_P2P)
 
   check_cxx_source_compiles("
+${_FLUME_HCOMM_RES_CHECK_INCLUDE}
+int main() {
+  HcclComm comm = nullptr;
+  aclrtStream stream = nullptr;
+  void *local_buffer = nullptr;
+  uint64_t local_size = 0;
+  ThreadHandle cpu_ts_thread = 0;
+  ThreadHandle aicpu_ts_thread = 0;
+  HcclChannelDesc desc;
+  ChannelHandle channel = 0;
+  (void)HcclGetHcclBuffer(comm, &local_buffer, &local_size);
+  (void)HcclThreadAcquireWithStream(
+      comm, COMM_ENGINE_CPU_TS, stream, 1, &cpu_ts_thread);
+  (void)HcclThreadAcquire(
+      comm, COMM_ENGINE_AICPU_TS, 1, 1, &aicpu_ts_thread);
+  (void)HcclChannelDescInit(&desc, 1);
+  desc.remoteRank = 1;
+  desc.channelProtocol = COMM_PROTOCOL_HCCS;
+  desc.notifyNum = 2;
+  (void)HcclChannelAcquire(comm, COMM_ENGINE_AICPU, &desc, 1, &channel);
+  (void)HcclChannelGetHcclBuffer(comm, channel, &local_buffer, &local_size);
+  return 0;
+}
+" FLUME_HAVE_HCOMM_CHANNEL_RES)
+
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_RES_EXPT_CHECK_INCLUDE}
+int main() {
+  HcclComm comm = nullptr;
+  ThreadHandle thread = 0;
+  ThreadHandle exported_thread = 0;
+  (void)HcclThreadExportToCommEngine(
+      comm, 1, &thread, COMM_ENGINE_AICPU_TS, &exported_thread);
+  return 0;
+}
+" FLUME_HAVE_HCOMM_THREAD_EXPORT)
+
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  void *ptr = nullptr;
+  (void)HcommLocalCopyOnThread(thread, ptr, ptr, 0);
+  (void)HcommReadOnThread(thread, channel, ptr, ptr, 0);
+  (void)HcommChannelNotifyRecordOnThread(thread, channel, 0);
+  (void)HcommChannelNotifyWaitOnThread(thread, channel, 0, 0);
+  (void)HcommChannelDrainOnThread(thread, channel);
+  return 0;
+}
+" FLUME_HAVE_HCOMM_PRIMITIVES)
+
+  check_cxx_source_compiles("
 #include <acl/acl.h>
 int main() {
   aclrtStream stream = nullptr;
@@ -265,6 +344,9 @@ int main() {
       FLUME_HAVE_HCCL_SYM_WINDOW
       FLUME_HAVE_HCCL_COMM_MEMORY
       FLUME_HAVE_HCCL_P2P
+      FLUME_HAVE_HCOMM_CHANNEL_RES
+      FLUME_HAVE_HCOMM_THREAD_EXPORT
+      FLUME_HAVE_HCOMM_PRIMITIVES
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -304,6 +386,9 @@ int main() {
     FLUME_HAVE_HCCL_SYM_WINDOW=${FLUME_HAVE_HCCL_SYM_WINDOW_VALUE}
     FLUME_HAVE_HCCL_COMM_MEMORY=${FLUME_HAVE_HCCL_COMM_MEMORY_VALUE}
     FLUME_HAVE_HCCL_P2P=${FLUME_HAVE_HCCL_P2P_VALUE}
+    FLUME_HAVE_HCOMM_CHANNEL_RES=${FLUME_HAVE_HCOMM_CHANNEL_RES_VALUE}
+    FLUME_HAVE_HCOMM_THREAD_EXPORT=${FLUME_HAVE_HCOMM_THREAD_EXPORT_VALUE}
+    FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -321,6 +406,9 @@ else()
     FLUME_HAVE_HCCL_SYM_WINDOW=0
     FLUME_HAVE_HCCL_COMM_MEMORY=0
     FLUME_HAVE_HCCL_P2P=0
+    FLUME_HAVE_HCOMM_CHANNEL_RES=0
+    FLUME_HAVE_HCOMM_THREAD_EXPORT=0
+    FLUME_HAVE_HCOMM_PRIMITIVES=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0

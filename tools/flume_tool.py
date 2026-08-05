@@ -222,6 +222,15 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 re.IGNORECASE,
             ),
         ),
+        (
+            "HCOMM Resource Probe",
+            re.compile(
+                r"(hcomm channel probe|HcclGetHcclBuffer|HcclThreadAcquire|"
+                r"HcclThreadExportToCommEngine|HcclChannelAcquire|"
+                r"HcclChannelGetHcclBuffer)",
+                re.IGNORECASE,
+            ),
+        ),
     ]
     signal_matches: list[tuple[str, list[tuple[int, str]]]] = []
     for title, pattern in signal_specs:
@@ -513,7 +522,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     commands.append(CommandSpec("sim-collective-demo", [sim_collective_demo],
                                 True, {}))
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
-                        args.run_hccl_p2p_smoke):
+                        args.run_hccl_p2p_smoke or
+                        args.run_hcomm_channel_probe):
         hccl_smoke = str(Path(build_dir) / "flume-hccl-collective-smoke")
         init_mode = ResolveHcclInitMode(args)
         command = [hccl_smoke, f"--count={args.hccl_count}",
@@ -597,6 +607,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append(f"--sym-win-gb={args.hccl_sym_win_gb}")
         if args.run_hccl_p2p_smoke:
             command.append("--p2p-copy")
+        if args.run_hcomm_channel_probe:
+            command.append("--hcomm-channel-probe")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -620,7 +632,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
                required=True, timeout_seconds=args.step_timeout_sec)
     requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
-                            args.run_hccl_p2p_smoke)
+                            args.run_hccl_p2p_smoke or
+                            args.run_hcomm_channel_probe)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
@@ -667,7 +680,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--run-a3-symmetric-smoke on Atlas A3 HCCS hosts to allocate ACL mapped "
         "HBM and register it through HcclCommSymWinRegister. Pass "
         "--run-hccl-p2p-smoke to add a rank0-to-rank1 HcclSend/HcclRecv "
-        "HBM copy check after the collective smoke.\n",
+        "HBM copy check after the collective smoke. Pass "
+        "--run-hcomm-channel-probe to validate the HCOMM Channel resource "
+        "stage used by the future AICPU/HCOMM primitive data path.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -698,6 +713,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hccl-p2p-smoke", action="store_true",
                         help=("Run the optional Stage 2 rank0-to-rank1 HCCL "
                               "Send/Recv HBM copy smoke test"))
+    parser.add_argument("--run-hcomm-channel-probe", action="store_true",
+                        help=("Run the optional Stage 2 HCOMM Channel resource "
+                              "probe after the collective smoke"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",

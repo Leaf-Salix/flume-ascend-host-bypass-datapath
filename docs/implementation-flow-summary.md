@@ -11,7 +11,8 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 - 无 NPU 环境：可以验证 storage control plane、mock pread、sim HBM copy、sim collective、sim P2P send/recv、sim A3 symmetric memory 生命周期。
 - Ascend 真机环境：已经验证 `root-info` 和 `init-all` 初始化路径可跑通 base HCCL AllReduce / AllGather。
 - Stage 2 P2P baseline：已经在 Host A HCCS_SW pair A 跨 HCCS_SW die 对上验证 `HcclSend` / `HcclRecv` 的 rank0 HBM -> rank1 HBM P2P copy，结果 `p2p_copy=on`。
-- 仍未实现：HCOMM Channel / Notify / HCCL Buffer 自定义 backend，storage proxy rank，RDMA / NVMe-oF / SPDK -> NPU HBM full direct data path。
+- Stage 2 HCOMM resource probe：已经实现 `flume_hcomm_channel_probe` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、thread、thread export、HCCS Channel 和远端 HCCL Buffer 查询；仍待真机验证。
+- 仍未实现：AICPU/HCOMM primitive payload copy backend，storage proxy rank，RDMA / NVMe-oF / SPDK -> NPU HBM full direct data path。
 
 当前最重要的工程判断是：
 
@@ -19,7 +20,7 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 root-info / init-all 是当前首选真机 bring-up 路径
 rank-table / HcclCommInitClusterInfo 保留为诊断路径
 公开 HCCL Send/Recv 是 Stage 2 已验证 P2P baseline
-HCOMM Channel 是下一阶段下钻 backend
+HCOMM Channel resource probe 已接入，payload backend 是下一阶段下钻目标
 ```
 
 ## 2. 项目目标边界
@@ -31,7 +32,7 @@ Flume 要探索的是 Ascend NPU 上的 host-bypass data path。这里的 host-b
 | host 是否参与初始化 | 参与。host 负责 CANN/HCCL 初始化、rank 建链、任务提交、日志和错误诊断。 |
 | 数据 payload 是否经过 host memory staging | 当前 HCCL collective 和 HCCL P2P smoke 不经过 host memory staging。H2D/D2H 只用于初始化测试数据和校验结果。 |
 | 是否已经实现存储到 HBM full direct | 尚未实现。当前 storage path 只有 mock/sim 和未来接口形状。 |
-| 是否已经实现 HCOMM Channel backend | 尚未实现。当前先用公开 HCCL `HcclSend` / `HcclRecv` 建立 P2P baseline。 |
+| 是否已经实现 HCOMM Channel backend | 已实现 resource probe，尚未实现 AICPU/HCOMM primitive payload copy。当前公开 HCCL `HcclSend` / `HcclRecv` 仍是已验证 payload baseline。 |
 | 是否追求上层无感知 | 是未来方向。当前先保证 C ABI、buffer、IO、工具和诊断闭环。 |
 
 非目标也很重要：
@@ -59,7 +60,8 @@ flowchart TB
     P2P["Stage 2 P2P baseline<br/>HcclSend / HcclRecv"]:::verified
     RankTable["rank-table path<br/>VNIC / driver P2P diagnostic"]:::diag
     A3["A3 symmetric memory wrapper<br/>按能力位启用"]:::partial
-    Hcomm["Stage 3 HCOMM Channel backend<br/>Channel / Notify / HCCL Buffer"]:::future
+    HcommProbe["Stage 2 HCOMM resource probe<br/>Channel / HCCL Buffer"]:::diag
+    Hcomm["Stage 3 HCOMM payload backend<br/>AICPU / Notify / HcommReadOnThread"]:::future
     Storage["Storage proxy / RDMA path<br/>storage -> HBM"]:::future
 
     Research --> ABI
@@ -69,8 +71,9 @@ flowchart TB
     Collectives --> P2P
     HcclBuild --> RankTable
     HcclBuild --> A3
-    P2P --> Hcomm
-    A3 --> Hcomm
+    P2P --> HcommProbe
+    A3 --> HcommProbe
+    HcommProbe --> Hcomm
     Hcomm --> Storage
 ```
 
@@ -163,9 +166,11 @@ flowchart TB
 | sim HBM copy | `flume_hbm_copy_async` | sim buffer 间 memcpy / memmove | `flume-sim-demo` |
 | sim collective | `flume_allreduce_async` / `flume_allgather_async` | 4-rank pending world，支持配对等待和失败路径 | `test_sim_collectives` / `test_sim_collective_failures` |
 | sim P2P | `flume_p2p_send_async` / `flume_p2p_recv_async` | send-first / recv-first 均可，完成前保护 pending IO 和 recv buffer | `test_sim_p2p_copy` |
+| sim HCOMM probe | `flume_hcomm_channel_probe` | 无 NPU 下覆盖 API、peer rank 校验和 IO 生命周期 | `test_sim_p2p_copy` |
 | HCCL build path | `FLUME_ENABLE_HCCL=ON` | 查找 HCCL / HCOMM / ACL / securec / ascendcl | `tools/flume_tool.py ascend-probe` |
 | HCCL collective | `HcclAllReduce` / `HcclAllGather` | 已真机验证 root-info 和 init-all 路径 | `--run-hccl-smoke` |
 | HCCL P2P baseline | `HcclSend` / `HcclRecv` | 已真机验证 Host A HCCS_SW pair A | `--run-hccl-p2p-smoke` |
+| HCOMM Channel resource probe | `HcclGetHcclBuffer` / `HcclChannelAcquire` / `HcclChannelGetHcclBuffer` | 代码已接入，待真机验证 | `--run-hcomm-channel-probe` |
 | A3 symmetric wrapper | `flume_a3_*` | 按 CANN/HCCL 能力位编译和运行 | `test_sim_a3_symmetric_memory` / `--run-a3-symmetric-smoke` |
 | 工具化测试 | `tools/flume_tool.py` | env / local / ascend-probe / HCCL smoke / diagnostics | `logs/flume-check-*` |
 
@@ -190,9 +195,10 @@ flowchart LR
     F3["10. 增加 host 参数和诊断<br/>--hccl-host-ifname / --hccl-host-ip"]:::fixed
     V1["11. root-info / init-all 通过<br/>base HCCL collective"]:::fixed
     V2["12. HcclSend / HcclRecv 通过<br/>Stage 2 P2P baseline"]:::fixed
-    N1["13. 下一步<br/>HCOMM Channel backend"]:::diag
+    N1["13. 当前<br/>HCOMM Channel resource probe"]:::diag
+    N2["14. 下一步<br/>AICPU/HCOMM payload backend"]:::diag
 
-    R0 --> R1 --> R2 --> R3 --> I1 --> F1 --> I2 --> F2 --> I3 --> F3 --> V1 --> V2 --> N1
+    R0 --> R1 --> R2 --> R3 --> I1 --> F1 --> I2 --> F2 --> I3 --> F3 --> V1 --> V2 --> N1 --> N2
 ```
 
 ## 7. 本地无 NPU 实现流程
@@ -465,33 +471,35 @@ flowchart TB
 | 单机多卡 HBM -> HBM P2P copy | 可以 | `--run-hccl-p2p-smoke` |
 | 诊断 rank-table / VNIC / HCCN 问题 | 可以 | `--hccl-init-mode rank-table` + diagnostics |
 | 验证 A3 symmetric API 是否存在 | 可以 | CMake feature probe + A3 smoke |
-| HCOMM Channel 自定义 backend | 暂不能 | 下一阶段实现 |
+| HCOMM Channel resource probe | 可以测试 | `--run-hcomm-channel-probe` |
+| HCOMM primitive payload backend | 暂不能 | 下一阶段实现 AICPU/custom-op 数据面 |
 | storage RDMA direct into HBM | 暂不能 | 需要 storage proxy / RDMA 注册探索 |
 | 计算进程完全无感 allreduce/allgather | 暂不能 | base HCCL 仍需每次 host enqueue |
 
 ## 16. 未来方向
 
-### 16.1 Stage 3: HCOMM Channel backend
+### 16.1 Stage 3: HCOMM primitive payload backend
 
-下一步不是替换掉已经验证的 HCCL P2P baseline，而是在它旁边新增一个 backend：
+下一步不是替换掉已经验证的 HCCL P2P baseline，而是在已经接入的 HCOMM Channel resource probe 之后继续下钻 payload backend：
 
 ```mermaid
 flowchart LR
     App["Flume API"] --> Select{"backend select"}
     Select -- "verified fallback" --> HcclP2P["HcclSend / HcclRecv"]
-    Select -- "new experimental" --> Hcomm["HCOMM Channel"]
+    Select -- "new experimental" --> Hcomm["HCOMM Channel resource probe"]
     Hcomm --> LocalBuf["HcclGetHcclBuffer"]
     Hcomm --> RemoteBuf["HcclChannelGetHcclBuffer"]
-    Hcomm --> Notify["HcommChannelNotifyRecord / Wait"]
-    Hcomm --> Read["HcommReadOnThread"]
+    Hcomm --> Payload["AICPU/custom-op payload backend"]
+    Payload --> Notify["HcommChannelNotifyRecord / Wait"]
+    Payload --> Read["HcommReadOnThread"]
     Read --> Dst["target HBM"]
 ```
 
-Stage 3 需要解决：
+Stage 3 已经先解决了资源获取的 host 侧入口，后续还需要解决：
 
 | 问题 | 说明 |
 | --- | --- |
-| HCOMM 接口上下文 | 很多 HCOMM Channel API 来自通信算子开发模型，可能要求 AICPU/CCU/AIV thread/context。 |
+| HCOMM 接口上下文 | Channel resource probe 已验证 host 侧 acquisition 入口；payload copy 仍需要 AICPU/CCU/AIV thread/context 和 kernel launch。 |
 | Channel 生命周期 | 需要明确 endpoint、channel、notify、remote buffer 的创建和销毁边界。 |
 | buffer 来源 | 需要验证普通业务 HBM、HCCL Buffer、A3 symmetric mapped HBM 哪些能作为源/目标。 |
 | 调度语义 | 对上层继续保留 `send/recv` 或封装成更高层 copy，需要避免伪造 one-sided 语义。 |
@@ -499,7 +507,7 @@ Stage 3 需要解决：
 
 ### 16.2 Stage 4: Storage proxy rank
 
-HCOMM Channel backend 跑通后，再接 storage proxy：
+HCOMM primitive payload backend 跑通后，再接 storage proxy：
 
 ```mermaid
 sequenceDiagram
@@ -586,15 +594,16 @@ hccl collective smoke passed: global_rank_size=2 ... init=root-info ... p2p_copy
 
 - **API 闭环**：已经有统一 C ABI、buffer handle、IO handle、状态码和错误信息。
 - **本地闭环**：没有 NPU 也能跑完整 mock/sim 回归，适合继续写上层逻辑和调度代码。
-- **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM。
+- **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM；HCOMM Channel resource probe 代码已接入，等待远端真机回填结果。
 - **诊断闭环**：工具能够收集环境、topology、HCCL 日志、rank-table、diagnostics，已经能区分 host TCP、device RoCE、NPU VNIC、driver P2P policy。
-- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，下一步可以在不破坏 fallback 的前提下实现 HCOMM Channel backend。
+- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
 
 未来的核心工作是沿着这条顺序推进：
 
 ```text
 HcclSend/HcclRecv verified baseline
-  -> HCOMM Channel / Notify / HCCL Buffer backend
+  -> HCOMM Channel resource probe
+  -> AICPU/HCOMM primitive payload backend
   -> storage proxy rank
   -> RDMA / NVMe-oF / SPDK direct registration
   -> storage -> NPU HBM full direct path
