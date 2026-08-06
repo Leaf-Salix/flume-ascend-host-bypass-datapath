@@ -365,7 +365,7 @@ int flume_wait(flume_io_t *io, int timeout_ms);
 8. 增加 base HCCL collective wrapper 与可选真机 smoke app。
 9. 增加 A3 symmetric memory API wrapper、sim 回归和可选 A3 真机 smoke。
 10. 增加公开 HCCL P2P baseline：`HcclSend` / `HcclRecv` wrapper、sim 回归和可选真机 P2P smoke。
-11. 增加 HCOMM Channel resource probe：HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、HCCS/HCCS_ONLY/SIO Channel、远端 HCCL Buffer。默认 probe 只证明 channel resource path；严格 AICPU thread-export 检查需要显式加 `--hcomm-require-thread-export`。
+11. 增加 HCOMM Channel resource probe：HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、HCCS/SIO Channel、远端 HCCL Buffer。`hccs-only` 作为 Flume 侧诊断别名保留，在当前 CANN 8.5/9.0 头文件里映射到 `COMM_PROTOCOL_HCCS`。默认 probe 只证明 channel resource path；严格 AICPU thread-export 检查需要显式加 `--hcomm-require-thread-export`。
 12. 继续实现 AICPU/HCOMM primitive payload backend 的 HBM-HBM demo。
 13. 再实现 Storage Proxy -> HCCL/HCOMM demo。
 14. Runtime fallback 和 HIXL reference 作为对照实现。

@@ -1293,7 +1293,7 @@ bool ToHcommProtocol(flume_hcomm_protocol_t protocol, CommProtocol* out) {
       *out = COMM_PROTOCOL_SIO;
       return true;
     case FLUME_HCOMM_PROTOCOL_HCCS_ONLY:
-      *out = COMM_PROTOCOL_HCCS_ONLY;
+      *out = COMM_PROTOCOL_HCCS;
       return true;
     default:
       return false;
@@ -1310,8 +1310,6 @@ const char* HcommCommProtocolName(CommProtocol protocol) {
       return "pcie";
     case COMM_PROTOCOL_SIO:
       return "sio";
-    case COMM_PROTOCOL_HCCS_ONLY:
-      return "hccs-only";
     default:
       return "unknown";
   }
@@ -1353,11 +1351,7 @@ bool TryBuildRankGraphChannelDescs(HcclComm comm,
         continue;
       }
       HcclChannelDesc desc;
-      if (!CheckHcclResource(HcclChannelDescInit(&desc, 1),
-                             "HcclChannelDescInit", error)) {
-        *status = FLUME_ERR_BACKEND;
-        return false;
-      }
+      HcclChannelDescInit(&desc, 1);
       desc.remoteRank = peer_rank;
       desc.localEndpoint = link.srcEndpointDesc;
       desc.remoteEndpoint = link.dstEndpointDesc;
@@ -1510,11 +1504,7 @@ bool ProbeHcommChannelResources(const CommState& state,
 #endif
   if (descs.empty()) {
     HcclChannelDesc desc;
-    if (!CheckHcclResource(HcclChannelDescInit(&desc, 1),
-                           "HcclChannelDescInit", error)) {
-      *status = FLUME_ERR_BACKEND;
-      return false;
-    }
+    HcclChannelDescInit(&desc, 1);
     desc.remoteRank = peer_rank;
     desc.channelProtocol = channel_protocol;
     desc.notifyNum = options.notify_num;

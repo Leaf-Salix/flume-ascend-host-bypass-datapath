@@ -76,7 +76,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-p
 
 `--hcomm-require-thread-export` 是严格 AICPU thread-export 前置检查：它要求当前 CANN 同时支持 thread export，并且最终 engine 是 `aicpu` / `aicpu-ts`。CANN 8.5 缺少 `hccl_res_expt.h` 是正常版本差异，该模式应清晰返回 unsupported，而不是编译失败或误报 success。
 
-`pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs`、`hccs-only` 或现场拓扑对应的 `sio`。
+`pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs` 或现场拓扑对应的 `sio`。`hccs-only` 是 Flume 侧保留的诊断别名，在当前 CANN 8.5/9.0 头文件里会映射到 `COMM_PROTOCOL_HCCS`。
 
 可选值：
 

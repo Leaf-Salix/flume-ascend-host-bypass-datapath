@@ -258,7 +258,7 @@ int main() {
   static_assert(sizeof(ThreadHandle) > 0, \"ThreadHandle missing\");
   static_assert(sizeof(ChannelHandle) > 0, \"ChannelHandle missing\");
   CommEngine engine = COMM_ENGINE_CPU_TS;
-  CommProtocol protocol = COMM_PROTOCOL_HCCS_ONLY;
+  CommProtocol protocol = COMM_PROTOCOL_HCCS;
   auto get_buffer = &HcclGetHcclBuffer;
   auto acquire_thread = &HcclThreadAcquire;
   auto acquire_thread_with_stream = &HcclThreadAcquireWithStream;
