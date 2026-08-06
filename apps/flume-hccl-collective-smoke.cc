@@ -1394,6 +1394,26 @@ int main(int argc, char** argv) {
             << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
+  std::cout << "FLUME_BACKEND_CAPS"
+            << " hccl_root_info="
+            << (FLUME_HAVE_HCCL_ROOT_INFO ? "on" : "off")
+            << " hccl_init_all="
+            << (FLUME_HAVE_HCCL_COMM_INIT_ALL ? "on" : "off")
+            << " hccl_p2p=" << (FLUME_HAVE_HCCL_P2P ? "on" : "off")
+            << " hcomm_channel="
+            << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "on" : "off")
+            << " hcomm_default_engine="
+            << HcommEngineName(ResolveHcommSmokeEngine(FLUME_HCOMM_ENGINE_AUTO))
+            << " hcomm_rank_graph="
+            << (FLUME_HAVE_HCOMM_RANK_GRAPH ? "on" : "off")
+            << " hcomm_aicpu_thread_export="
+            << (FLUME_HAVE_HCOMM_THREAD_EXPORT ? "on" : "off")
+            << " hcomm_primitives="
+            << (FLUME_HAVE_HCOMM_PRIMITIVES ? "on" : "off")
+            << " hcomm_payload=not-implemented"
+            << " storage_hbm=not-implemented"
+            << " cann85_baseline=feature-probed"
+            << "\n";
   std::set<int32_t> unique_devices;
   for (int32_t device : devices) {
     if (device < 0 || static_cast<uint32_t>(device) >= device_count) {

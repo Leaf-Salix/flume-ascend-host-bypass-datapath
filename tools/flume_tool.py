@@ -690,10 +690,11 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "stage used by the future AICPU/HCOMM primitive data path; "
         "--hcomm-channel-engine, --hcomm-channel-protocol, and "
         "--hcomm-notify-num select the resource probe strategy. The default "
-        "HCOMM probe validates channel resources only; add "
-        "--hcomm-require-thread-export for a strict payload-ready prerequisite "
-        "check, which is expected to report unsupported on CANN builds without "
-        "hccl_res_expt.h such as CANN 8.5.\n",
+        "HCOMM probe validates channel resources only and the smoke log prints "
+        "a FLUME_BACKEND_CAPS line. Add --hcomm-require-thread-export for a "
+        "strict AICPU thread-export prerequisite check, which is expected to "
+        "report unsupported on CANN builds without hccl_res_expt.h such as "
+        "CANN 8.5.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -740,8 +741,9 @@ def parse_args() -> argparse.Namespace:
                         help="HCOMM notify count for --run-hcomm-channel-probe")
     parser.add_argument("--hcomm-require-thread-export", action="store_true",
                         help=("Require HcclThreadExportToCommEngine in the "
-                              "HCOMM channel probe; CANN 8.5 is expected to "
-                              "report unsupported"))
+                              "HCOMM channel probe as an AICPU thread-export "
+                              "extension check; CANN 8.5 is expected to "
+                              "report unsupported for this extension"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",

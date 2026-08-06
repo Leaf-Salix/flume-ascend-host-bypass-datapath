@@ -107,7 +107,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --
 
 This keeps the same base collective smoke, then asks Flume to acquire the HCOMM resources needed by the future custom backend: HCCL Buffer, CPU_TS/AICPU_TS thread resources, an HCOMM Channel, and the peer HCCL Buffer. It prefers rank-graph link descriptors when available and falls back to a legacy descriptor only when rank graph is unavailable. It does not yet launch an AICPU kernel or move payload with `HcommReadOnThread`.
 
-The default HCOMM probe uses `--hcomm-channel-engine auto`, `--hcomm-channel-protocol hccs`, and `--hcomm-notify-num 2`. On CANN builds without `hccl_res_expt.h`, such as CANN 8.5, `auto` resolves to `cpu-ts` and validates the channel-resource path without claiming payload readiness. Add `--hcomm-require-thread-export` only when you want a strict future AICPU/HCOMM payload-ready check; CANN 8.5 is expected to report unsupported for that stricter mode.
+The default HCOMM probe uses `--hcomm-channel-engine auto`, `--hcomm-channel-protocol hccs`, and `--hcomm-notify-num 2`. On CANN builds without `hccl_res_expt.h`, such as CANN 8.5, `auto` resolves to `cpu-ts` and validates the channel-resource path without claiming AICPU thread-export readiness. Add `--hcomm-require-thread-export` only when you want a strict future AICPU thread-export check; CANN 8.5 is expected to report unsupported for that stricter extension check.
 
 When `--hccl-devices` is set, the default `auto` mode uses the HCCL
 `root-info` initialization strategy and launches one process per rank. This is
@@ -149,6 +149,7 @@ HCCL-enabled builds additionally require a sourced CANN environment with:
 ## Documentation
 
 - [Implementation flow summary](docs/implementation-flow-summary.md)
+- [CANN 8.5 compatibility strategy](docs/cann-8.5-compatibility.md)
 - [Architecture](docs/architecture.md)
 - [Demo plan](docs/demo-plan.md)
 - [Single-node multi-card HBM/HCCL analysis](docs/single-node-hbm-hccl-analysis.md)

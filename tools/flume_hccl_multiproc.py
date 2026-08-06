@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
                                  "hccs-only"])
     parser.add_argument("--hcomm-notify-num", type=int, default=2)
     parser.add_argument("--hcomm-require-thread-export", action="store_true",
-                        help="Require HcclThreadExportToCommEngine for payload-ready probe")
+                        help="Require HcclThreadExportToCommEngine for AICPU thread-export extension check")
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")

@@ -732,7 +732,7 @@ store-agent pread
 - 已实现 `flume_p2p_send_async` / `flume_p2p_recv_async`，sim backend 可在无 NPU 环境验证配对语义，HCCL backend 在能力位 `FLUME_HAVE_HCCL_P2P=1` 时调用 `HcclSend` / `HcclRecv`。
 - 已实现 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex`，sim backend 覆盖 public API，HCCL/HCOMM backend 在能力位 `FLUME_HAVE_HCOMM_CHANNEL_RES=1` 时获取 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、按可配置 engine/protocol 建立 Channel 并查询远端 HCCL Buffer。
 - HCOMM Channel descriptor 优先使用 `HcclRankGraphGetLinks` 返回的 link 填 `localEndpoint`、`remoteEndpoint` 和 `channelProtocol`；没有 rank graph 能力时才回退 legacy descriptor，并在 smoke 日志中标明。
-- HCOMM probe 默认 `engine=auto`：有 `hccl_res_expt.h` / thread-export 时选择 `aicpu-ts`，CANN 8.5 这类没有扩展头的环境选择 `cpu-ts`，只证明 channel resource path。`--hcomm-require-thread-export` 是严格 payload-ready 前置检查，CANN 8.5 预期返回 unsupported。
+- HCOMM probe 默认 `engine=auto`：有 `hccl_res_expt.h` / thread-export 时选择 `aicpu-ts`，CANN 8.5 这类没有扩展头的环境选择 `cpu-ts`，只证明 channel resource path。`--hcomm-require-thread-export` 是严格 AICPU thread-export 前置检查，CANN 8.5 预期返回 unsupported。
 - 已增加可选真机 smoke app `flume-hccl-collective-smoke`。
 - 已给 smoke 增加 `--p2p-copy`，当前测试 rank0 HBM -> rank1 HBM 的公开 HCCL P2P baseline。
 - 已给 smoke 增加 `--hcomm-channel-probe`，当前测试 HCOMM 自定义 backend 的资源准备阶段。
@@ -854,7 +854,7 @@ python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-de
 python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe
 ```
 
-`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory/P2P/HCOMM/rank-graph 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；加 `--run-hccl-p2p-smoke` 会在 collective 之后追加 rank0 到 rank1 的 `HcclSend` / `HcclRecv` HBM copy smoke；加 `--run-hcomm-channel-probe` 会追加 HCOMM Channel resource 探测，默认只证明 channel resource path，不声明 payload-ready。当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。该 smoke 仍不验证 HCOMM primitive payload copy 或 storage->HBM。
+`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory/P2P/HCOMM/rank-graph 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；加 `--run-hccl-p2p-smoke` 会在 collective 之后追加 rank0 到 rank1 的 `HcclSend` / `HcclRecv` HBM copy smoke；加 `--run-hcomm-channel-probe` 会追加 HCOMM Channel resource 探测，默认只证明 channel resource path，不声明 AICPU thread-export-ready。当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。该 smoke 仍不验证 HCOMM primitive payload copy 或 storage->HBM。
 
 ### 14.1 本地无 NPU
 

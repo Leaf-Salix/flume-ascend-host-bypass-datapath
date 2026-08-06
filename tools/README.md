@@ -35,7 +35,7 @@ python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 - 强制检查 CANN/HCCL 布局。
 - 以 `FLUME_ENABLE_HCCL=ON` 配置 CMake。
 - 编译并链接 HCCL/HCOMM；HCOMM public header 依赖的 `securec.h` 也需要在 CANN include 路径下可见。
-- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_ACL_VMM`。
+- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。
 - 执行当前 CTest、storage sim demo 和 collective sim demo。
 
 默认边界：`ascend-probe` 只验证环境发现、编译和链接，以及当前 mock/sim 回归。它不会默认跑真实 HCCL 数据面，也不会要求 A3 试用 API 必须存在。
@@ -66,7 +66,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --
 
 该模式会在 base AllReduce / AllGather 之后追加 `--hcomm-channel-probe`。probe 会调用 Flume 的 `flume_hcomm_channel_probe_ex`，在已 attach 的 HCCL comm 上尝试获取本端 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、HCOMM Channel，以及 peer rank 的远端 HCCL Buffer。它优先通过 `HcclRankGraphGetLinks` 构造官方 link descriptor；如果当前 CANN 没有 rank graph 能力，才退回 legacy `remoteRank/channelProtocol/notifyNum` descriptor，并在 smoke 日志里标明。它验证的是 HCOMM 自定义 P2P backend 的 channel resource 准备阶段；当前还不执行 AICPU kernel，也不调用 `HcommReadOnThread` 搬 payload。
 
-默认 HCOMM probe 使用 `engine=auto`、`protocol=hccs`、`channel notify_num=2`。`auto` 会按 CANN 能力选择最终 engine：如果探测到 `hccl_res_expt.h` / thread-export 能力，则选择 `aicpu-ts`；如果像 CANN 8.5 一样没有该扩展头，则选择 `cpu-ts`，只验证 channel resource path，不声明 payload-ready。需要定位现场差异时可以显式切换 channel 策略：
+默认 HCOMM probe 使用 `engine=auto`、`protocol=hccs`、`channel notify_num=2`。`auto` 会按 CANN 能力选择最终 engine：如果探测到 `hccl_res_expt.h` / thread-export 能力，则选择 `aicpu-ts`；如果像 CANN 8.5 一样没有该扩展头，则选择 `cpu-ts`，只验证 channel resource path，不声明 AICPU thread-export-ready。需要定位现场差异时可以显式切换 channel 策略：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-sio --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-protocol sio ascend-probe
@@ -74,7 +74,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-cpu-ts --run-hcomm-channel-p
 python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-probe --hcomm-require-thread-export --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-`--hcomm-require-thread-export` 是严格 payload-ready 前置检查：它要求当前 CANN 同时支持 thread export，并且最终 engine 是 `aicpu` / `aicpu-ts`。CANN 8.5 缺少 `hccl_res_expt.h` 是正常版本差异，该模式应清晰返回 unsupported，而不是编译失败或误报 success。
+`--hcomm-require-thread-export` 是严格 AICPU thread-export 前置检查：它要求当前 CANN 同时支持 thread export，并且最终 engine 是 `aicpu` / `aicpu-ts`。CANN 8.5 缺少 `hccl_res_expt.h` 是正常版本差异，该模式应清晰返回 unsupported，而不是编译失败或误报 success。
 
 `pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs`、`hccs-only` 或现场拓扑对应的 `sio`。
 
@@ -85,7 +85,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-p
 | `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |
-| `--hcomm-require-thread-export` | off | 严格要求 thread-export / AICPU payload-ready 前置能力 |
+| `--hcomm-require-thread-export` | off | 严格要求 thread-export / AICPU thread-export-ready 前置能力 |
 
 可以和 P2P baseline 合在一起跑：
 
@@ -148,6 +148,16 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 遇到 `HCCL_E_INTERNAL` / `HCCL_E_UNAVAIL` 但普通日志不足以定位时，可以追加 `--hccl-debug-logs`，工具会设置 `ASCEND_GLOBAL_LOG_LEVEL=0` 和 `ASCEND_SLOG_PRINT_TO_STDOUT=1`，尽量把 CANN/HCCL 内部日志收入 `07-hccl-collective-smoke.log`。
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
+
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。
+
+如果需要把现场 CANN 8.5 能力固化成文本 fixture，先跑一次 `ascend-probe`，再执行：
+
+```bash
+python3 tools/collect_cann_compat.py --label cann-8.5.0-aarch64 --flume-log-dir logs/flume-check-YYYYMMDD-HHMMSS --devices <device-a>,<device-b>
+```
+
+采集结果写入 `refer/cann-compat/cann-8.5.0-aarch64/`，默认被 Git 忽略；它只包含 header/lib/symbol/log 文本清单，不复制 CANN 二进制。
 
 常见判读：
 

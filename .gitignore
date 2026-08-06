@@ -1,5 +1,7 @@
 # Local cloned reference repositories.
 refer/cann-src/
+refer/cann-compat/*/
+!refer/cann-compat/README.md
 
 # Build outputs.
 build/
