@@ -65,8 +65,9 @@ int main() {
   flume_hcomm_channel_probe_options_t hcomm_options = {};
   hcomm_options.size = sizeof(hcomm_options);
   hcomm_options.notify_num = 3;
-  hcomm_options.engine = FLUME_HCOMM_ENGINE_CPU;
-  hcomm_options.protocol = FLUME_HCOMM_PROTOCOL_SIO;
+  hcomm_options.engine = FLUME_HCOMM_ENGINE_CPU_TS;
+  hcomm_options.protocol = FLUME_HCOMM_PROTOCOL_HCCS_ONLY;
+  hcomm_options.require_thread_export = 1;
   flume_io_t* hcomm_probe10 = nullptr;
   FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
                                                 nullptr, &hcomm_probe10) ==
@@ -80,6 +81,18 @@ int main() {
                                                 nullptr, &bad_options_probe) ==
                    FLUME_ERR_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(bad_options_probe == nullptr);
+
+  hcomm_options = {};
+  hcomm_options.size = sizeof(hcomm_options);
+  hcomm_options.protocol = FLUME_HCOMM_PROTOCOL_PCIE;
+  flume_io_t* unsupported_hcomm_probe = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
+                                                nullptr,
+                                                &unsupported_hcomm_probe) ==
+                   FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(unsupported_hcomm_probe, 0) ==
+                   FLUME_ERR_UNSUPPORTED);
+  FLUME_TEST_CHECK(flume_io_release(unsupported_hcomm_probe) == FLUME_OK);
 
   flume_io_t* bad_hcomm_probe = nullptr;
   FLUME_TEST_CHECK(flume_hcomm_channel_probe(clients[0], 0, nullptr,

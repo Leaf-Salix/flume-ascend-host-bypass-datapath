@@ -60,6 +60,9 @@
 #ifndef FLUME_HAVE_HCOMM_PRIMITIVES
 #define FLUME_HAVE_HCOMM_PRIMITIVES 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
+#define FLUME_HAVE_HCOMM_RANK_GRAPH 0
+#endif
 #ifndef FLUME_HAVE_ACL_VMM
 #define FLUME_HAVE_ACL_VMM 0
 #endif
@@ -88,9 +91,10 @@ struct RankContext {
   bool a3_symmetric = false;
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
-  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AICPU;
+  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
+  bool hcomm_require_thread_export = false;
   uint64_t sym_win_gb = 1;
   int status = 0;
   std::string error;
@@ -417,7 +421,11 @@ bool ParseHcommEngine(const std::string& text,
   if (out == nullptr || error == nullptr) {
     return false;
   }
-  if (text == "auto" || text == "aicpu") {
+  if (text == "auto") {
+    *out = FLUME_HCOMM_ENGINE_AUTO;
+    return true;
+  }
+  if (text == "aicpu") {
     *out = FLUME_HCOMM_ENGINE_AICPU;
     return true;
   }
@@ -429,7 +437,11 @@ bool ParseHcommEngine(const std::string& text,
     *out = FLUME_HCOMM_ENGINE_CPU;
     return true;
   }
-  *error = "invalid --hcomm-channel-engine, expected auto, aicpu, aicpu-ts, or cpu";
+  if (text == "cpu-ts") {
+    *out = FLUME_HCOMM_ENGINE_CPU_TS;
+    return true;
+  }
+  *error = "invalid --hcomm-channel-engine, expected auto, aicpu, aicpu-ts, cpu, or cpu-ts";
   return false;
 }
 
@@ -441,6 +453,8 @@ const char* HcommEngineName(flume_hcomm_engine_t engine) {
       return "aicpu-ts";
     case FLUME_HCOMM_ENGINE_CPU:
       return "cpu";
+    case FLUME_HCOMM_ENGINE_CPU_TS:
+      return "cpu-ts";
     case FLUME_HCOMM_ENGINE_AUTO:
       return "auto";
   }
@@ -469,7 +483,11 @@ bool ParseHcommProtocol(const std::string& text,
     *out = FLUME_HCOMM_PROTOCOL_SIO;
     return true;
   }
-  *error = "invalid --hcomm-channel-protocol, expected auto, hccs, roce, pcie, or sio";
+  if (text == "hccs-only") {
+    *out = FLUME_HCOMM_PROTOCOL_HCCS_ONLY;
+    return true;
+  }
+  *error = "invalid --hcomm-channel-protocol, expected auto, hccs, roce, pcie, sio, or hccs-only";
   return false;
 }
 
@@ -483,10 +501,23 @@ const char* HcommProtocolName(flume_hcomm_protocol_t protocol) {
       return "pcie";
     case FLUME_HCOMM_PROTOCOL_SIO:
       return "sio";
+    case FLUME_HCOMM_PROTOCOL_HCCS_ONLY:
+      return "hccs-only";
     case FLUME_HCOMM_PROTOCOL_AUTO:
       return "auto";
   }
   return "unknown";
+}
+
+flume_hcomm_engine_t ResolveHcommSmokeEngine(flume_hcomm_engine_t engine) {
+  if (engine != FLUME_HCOMM_ENGINE_AUTO) {
+    return engine;
+  }
+#if FLUME_HAVE_HCOMM_THREAD_EXPORT
+  return FLUME_HCOMM_ENGINE_AICPU_TS;
+#else
+  return FLUME_HCOMM_ENGINE_CPU_TS;
+#endif
 }
 
 const char* A3UnavailableReason(HcclInitMode init_mode) {
@@ -1014,6 +1045,7 @@ void RankMain(RankContext* ctx) {
       options.notify_num = ctx->hcomm_notify_num;
       options.engine = ctx->hcomm_engine;
       options.protocol = ctx->hcomm_protocol;
+      options.require_thread_export = ctx->hcomm_require_thread_export ? 1U : 0U;
       if (!CheckFlume(flume_hcomm_channel_probe_ex(client, peer_rank, &options,
                                                    stream, &hcomm_channel_io),
                       "flume_hcomm_channel_probe", &error) ||
@@ -1026,13 +1058,21 @@ void RankMain(RankContext* ctx) {
            << " hcomm channel probe passed: peer_rank=" << peer_rank
            << " usable_hccl_buffer_bytes="
            << flume_io_bytes(hcomm_channel_io)
-           << " engine=" << HcommEngineName(ctx->hcomm_engine)
+           << " requested_engine=" << HcommEngineName(ctx->hcomm_engine)
+           << " resolved_engine="
+           << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " require_thread_export="
+           << (ctx->hcomm_require_thread_export ? "on" : "off")
            << " thread_export="
            << (FLUME_HAVE_HCOMM_THREAD_EXPORT ? "available" : "not-built")
            << " primitives="
            << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built");
+      const char* detail = flume_io_error_message(hcomm_channel_io);
+      if (detail != nullptr && detail[0] != '\0') {
+        line << " detail=\"" << detail << "\"";
+      }
       LogLine(line.str());
     }
   }
@@ -1116,9 +1156,10 @@ int main(int argc, char** argv) {
   bool a3_symmetric = false;
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
-  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AICPU;
+  flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
+  bool hcomm_require_thread_export = false;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
   std::string rank_table_path;
@@ -1148,6 +1189,8 @@ int main(int argc, char** argv) {
       p2p_copy = true;
     } else if (arg == "--hcomm-channel-probe") {
       hcomm_channel_probe = true;
+    } else if (arg == "--hcomm-require-thread-export") {
+      hcomm_require_thread_export = true;
     } else if (arg.rfind("--hcomm-channel-engine=", 0) == 0) {
       if (!ParseHcommEngine(
               arg.substr(std::string("--hcomm-channel-engine=").size()),
@@ -1216,9 +1259,10 @@ int main(int argc, char** argv) {
                 << " [--a3-symmetric]"
                 << " [--p2p-copy]"
                 << " [--hcomm-channel-probe]"
-                << " [--hcomm-channel-engine=aicpu]"
+                << " [--hcomm-channel-engine=auto]"
                 << " [--hcomm-channel-protocol=hccs]"
                 << " [--hcomm-notify-num=2]"
+                << " [--hcomm-require-thread-export]"
                 << " [--sym-win-gb=1]\n";
       return 2;
     }
@@ -1310,6 +1354,12 @@ int main(int argc, char** argv) {
   }
   const uint32_t global_rank_size =
       single_rank_mode ? single_rank_size : static_cast<uint32_t>(devices.size());
+  if ((p2p_copy || hcomm_channel_probe) && global_rank_size != 2) {
+    std::cerr << "--p2p-copy and --hcomm-channel-probe are pair-only smokes "
+                 "and require exactly two ranks for now\n";
+    (void)aclFinalize();
+    return 2;
+  }
   const char* visible_devices = std::getenv("ASCEND_RT_VISIBLE_DEVICES");
   std::cout << "hccl smoke config: init=" << HcclInitModeName(init_mode)
             << " acl_device_count=" << device_count
@@ -1325,8 +1375,12 @@ int main(int argc, char** argv) {
             << " process_mode=" << (single_rank_mode ? "single-rank" : "local")
             << " rank_size=" << global_rank_size
             << " hcomm_engine=" << HcommEngineName(hcomm_engine)
+            << " resolved_hcomm_engine="
+            << HcommEngineName(ResolveHcommSmokeEngine(hcomm_engine))
             << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
             << " hcomm_notify_num=" << hcomm_notify_num
+            << " hcomm_require_thread_export="
+            << (hcomm_require_thread_export ? "on" : "off")
             << "\n";
   std::cout << "hccl feature probe: root_info=" << FLUME_HAVE_HCCL_ROOT_INFO
             << " root_info_config=" << FLUME_HAVE_HCCL_ROOT_INFO_CONFIG
@@ -1337,6 +1391,7 @@ int main(int argc, char** argv) {
             << " hcomm_channel_res=" << FLUME_HAVE_HCOMM_CHANNEL_RES
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
+            << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
   std::set<int32_t> unique_devices;
@@ -1504,6 +1559,8 @@ int main(int argc, char** argv) {
     contexts[local_index].hcomm_engine = hcomm_engine;
     contexts[local_index].hcomm_protocol = hcomm_protocol;
     contexts[local_index].hcomm_notify_num = hcomm_notify_num;
+    contexts[local_index].hcomm_require_thread_export =
+        hcomm_require_thread_export;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
   }
@@ -1539,7 +1596,11 @@ int main(int argc, char** argv) {
             << " hcomm_channel_probe="
             << (hcomm_channel_probe ? "on" : "off")
             << " hcomm_engine=" << HcommEngineName(hcomm_engine)
+            << " resolved_hcomm_engine="
+            << HcommEngineName(ResolveHcommSmokeEngine(hcomm_engine))
             << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
-            << " hcomm_notify_num=" << hcomm_notify_num << "\n";
+            << " hcomm_notify_num=" << hcomm_notify_num
+            << " hcomm_require_thread_export="
+            << (hcomm_require_thread_export ? "on" : "off") << "\n";
   return 0;
 }

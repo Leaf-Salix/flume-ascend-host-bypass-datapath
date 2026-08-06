@@ -612,6 +612,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
             command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
+            if args.hcomm_require_thread_export:
+                command.append("--hcomm-require-thread-export")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -687,7 +689,11 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--run-hcomm-channel-probe to validate the HCOMM Channel resource "
         "stage used by the future AICPU/HCOMM primitive data path; "
         "--hcomm-channel-engine, --hcomm-channel-protocol, and "
-        "--hcomm-notify-num select the resource probe strategy.\n",
+        "--hcomm-notify-num select the resource probe strategy. The default "
+        "HCOMM probe validates channel resources only; add "
+        "--hcomm-require-thread-export for a strict payload-ready prerequisite "
+        "check, which is expected to report unsupported on CANN builds without "
+        "hccl_res_expt.h such as CANN 8.5.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -722,15 +728,20 @@ def parse_args() -> argparse.Namespace:
                         help=("Run the optional Stage 2 HCOMM Channel resource "
                               "probe after the collective smoke"))
     parser.add_argument("--hcomm-channel-engine",
-                        choices=["auto", "aicpu", "aicpu-ts", "cpu"],
-                        default="aicpu",
+                        choices=["auto", "aicpu", "aicpu-ts", "cpu", "cpu-ts"],
+                        default="auto",
                         help="HCOMM channel engine for --run-hcomm-channel-probe")
     parser.add_argument("--hcomm-channel-protocol",
-                        choices=["auto", "hccs", "roce", "pcie", "sio"],
+                        choices=["auto", "hccs", "roce", "pcie", "sio",
+                                 "hccs-only"],
                         default="hccs",
                         help="HCOMM channel protocol for --run-hcomm-channel-probe")
     parser.add_argument("--hcomm-notify-num", type=int, default=2,
                         help="HCOMM notify count for --run-hcomm-channel-probe")
+    parser.add_argument("--hcomm-require-thread-export", action="store_true",
+                        help=("Require HcclThreadExportToCommEngine in the "
+                              "HCOMM channel probe; CANN 8.5 is expected to "
+                              "report unsupported"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",
@@ -803,9 +814,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--run-hccl-p2p-smoke currently cannot be combined with "
                      "--run-a3-symmetric-smoke")
     try:
-        ParseDeviceList(args.hccl_devices)
+        parsed_hccl_devices = ParseDeviceList(args.hccl_devices)
     except ValueError as exc:
         parser.error(str(exc))
+    if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe) and
+            args.hccl_devices and len(parsed_hccl_devices) != 2):
+        parser.error("--run-hccl-p2p-smoke and --run-hcomm-channel-probe "
+                     "require exactly two --hccl-devices entries")
     return args
 
 

@@ -126,7 +126,7 @@ rank HBM
 - Stage 2 P2P baseline 已经接入公开 HCCL API：`flume_p2p_send_async` / `flume_p2p_recv_async` 在 HCCL backend 调用 `HcclSend` / `HcclRecv`，在 sim backend 验证成对收发、pending 和释放约束。
 - 真机 smoke app：`flume-hccl-collective-smoke`，只在 `FLUME_ENABLE_HCCL=ON` 时构建。
 - 真机 P2P smoke：`tools/flume_tool.py --run-hccl-p2p-smoke` 会追加 rank0 HBM -> rank1 HBM 的 `HcclSend` / `HcclRecv` 校验。
-- HCOMM Channel resource probe：`tools/flume_tool.py --run-hcomm-channel-probe` 会追加 HCCL Buffer、thread、thread export、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询。
+- HCOMM Channel resource probe：`tools/flume_tool.py --run-hcomm-channel-probe` 会追加 HCCL Buffer、CPU_TS/AICPU_TS thread resource、rank graph / legacy descriptor、可选 thread export、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询；默认成功只代表 channel resource path ready。
 - Atlas A3 HCCS 模式可加 `--a3-symmetric`：当 CMake 探测到 ACL VMM 和 HCCL symmetric window 能力时，用 ACL mapped HBM + `flume_a3_register_symmetric_memory` 包装 `HcclCommSymWinRegister`，再跑 AllReduce / AllGather。
 - 目标是证明 NPU HBM collective 不经过 host memory staging；host 仍负责通信域初始化、任务下发和 stream 同步。
 - 后续参考自定义 P2P 示例实现 AICPU/HCOMM primitive payload backend，替换或补充公开 HCCL P2P baseline。
@@ -365,7 +365,7 @@ int flume_wait(flume_io_t *io, int timeout_ms);
 8. 增加 base HCCL collective wrapper 与可选真机 smoke app。
 9. 增加 A3 symmetric memory API wrapper、sim 回归和可选 A3 真机 smoke。
 10. 增加公开 HCCL P2P baseline：`HcclSend` / `HcclRecv` wrapper、sim 回归和可选真机 P2P smoke。
-11. 增加 HCOMM Channel resource probe：HCCL Buffer、thread、thread export、HCCS Channel、远端 HCCL Buffer。
+11. 增加 HCOMM Channel resource probe：HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、HCCS/HCCS_ONLY/SIO Channel、远端 HCCL Buffer。默认 probe 只证明 channel resource path；严格 payload-ready 检查需要显式加 `--hcomm-require-thread-export`。
 12. 继续实现 AICPU/HCOMM primitive payload backend 的 HBM-HBM demo。
 13. 再实现 Storage Proxy -> HCCL/HCOMM demo。
 14. Runtime fallback 和 HIXL reference 作为对照实现。
@@ -387,10 +387,11 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 python3 tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe
 python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe
+python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe
 python3 tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-devices 0,1 ascend-probe
 ```
 
-默认 `ascend-probe` 做环境、编译、链接和 mock/sim 回归探测。加 `--run-hccl-smoke` 且传入 `--hccl-devices` 后，`auto` 初始化默认走一进程一 rank 的 HCCL root-info 路径，优先复用官方 HCCL 已验证过的 bring-up 策略来运行 base HCCL AllReduce/AllGather 真机 smoke；加 `--run-hccl-p2p-smoke` 后会在 collective 之后追加公开 HCCL `Send/Recv` 的 HBM-HBM P2P copy smoke；加 `--run-hcomm-channel-probe` 后会追加 HCOMM Channel resource probe；加 `--run-a3-symmetric-smoke` 后会在 Atlas A3 HCCS 场景尝试 symmetric memory collective。rank-table 初始化暂存为未通过真机验证的诊断路径，用来继续定位 VNIC/P2P memory-share 问题。AICPU/HCOMM primitive payload copy / storage->HBM 真数据面仍要等后续 backend。
+默认 `ascend-probe` 做环境、编译、链接和 mock/sim 回归探测。加 `--run-hccl-smoke` 且传入 `--hccl-devices` 后，`auto` 初始化默认走一进程一 rank 的 HCCL root-info 路径，优先复用官方 HCCL 已验证过的 bring-up 策略来运行 base HCCL AllReduce/AllGather 真机 smoke；加 `--run-hccl-p2p-smoke` 后会在 collective 之后追加公开 HCCL `Send/Recv` 的 HBM-HBM P2P copy smoke；加 `--run-hcomm-channel-probe` 后会追加 HCOMM Channel resource probe，默认 `engine=auto` 在 CANN 8.5 这类缺少 `hccl_res_expt.h` 的环境会降级到 `cpu-ts`，只证明 channel resource，不声明 AICPU payload-ready。若要验证未来 AICPU/HCOMM payload backend 的前置能力，需要显式追加 `--hcomm-require-thread-export`，CANN 8.5 预期返回 unsupported。加 `--run-a3-symmetric-smoke` 后会在 Atlas A3 HCCS 场景尝试 symmetric memory collective。rank-table 初始化暂存为未通过真机验证的诊断路径，用来继续定位 VNIC/P2P memory-share 问题。AICPU/HCOMM primitive payload copy / storage->HBM 真数据面仍要等后续 backend。
 
 ## 成功标准
 

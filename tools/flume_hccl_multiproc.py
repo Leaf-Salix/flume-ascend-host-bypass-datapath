@@ -41,11 +41,14 @@ def parse_args() -> argparse.Namespace:
                         help="Run rank0->rank1 HCCL Send/Recv P2P copy smoke")
     parser.add_argument("--hcomm-channel-probe", action="store_true",
                         help="Run rank0/rank1 HCOMM Channel resource probe")
-    parser.add_argument("--hcomm-channel-engine", default="aicpu",
-                        choices=["auto", "aicpu", "aicpu-ts", "cpu"])
+    parser.add_argument("--hcomm-channel-engine", default="auto",
+                        choices=["auto", "aicpu", "aicpu-ts", "cpu", "cpu-ts"])
     parser.add_argument("--hcomm-channel-protocol", default="hccs",
-                        choices=["auto", "hccs", "roce", "pcie", "sio"])
+                        choices=["auto", "hccs", "roce", "pcie", "sio",
+                                 "hccs-only"])
     parser.add_argument("--hcomm-notify-num", type=int, default=2)
+    parser.add_argument("--hcomm-require-thread-export", action="store_true",
+                        help="Require HcclThreadExportToCommEngine for payload-ready probe")
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -62,6 +65,8 @@ def parse_args() -> argparse.Namespace:
         args.devices_list = parse_devices(args.devices)
     except ValueError as exc:
         parser.error(str(exc))
+    if (args.p2p_copy or args.hcomm_channel_probe) and len(args.devices_list) != 2:
+        parser.error("--p2p-copy and --hcomm-channel-probe require exactly two ranks")
     if not Path(args.binary).exists():
         parser.error(f"--binary does not exist: {args.binary}")
     if args.init == "rank-table" and not args.rank_table:
@@ -99,6 +104,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
         command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
         command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
+        if args.hcomm_require_thread_export:
+            command.append("--hcomm-require-thread-export")
     return command
 
 

@@ -64,22 +64,28 @@ python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-de
 python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-该模式会在 base AllReduce / AllGather 之后追加 `--hcomm-channel-probe`。probe 会调用 Flume 的 `flume_hcomm_channel_probe`，在已 attach 的 HCCL comm 上尝试获取本端 HCCL Buffer、CPU_TS/AICPU_TS thread、可用时做 thread export、用 `HcclChannelAcquire(COMM_ENGINE_AICPU, COMM_PROTOCOL_HCCS)` 建立到 peer rank 的 Channel，并通过 `HcclChannelGetHcclBuffer` 查询远端 HCCL Buffer。它验证的是 HCOMM 自定义 P2P backend 的资源准备阶段；当前还不执行 AICPU kernel，也不调用 `HcommReadOnThread` 搬 payload。
+该模式会在 base AllReduce / AllGather 之后追加 `--hcomm-channel-probe`。probe 会调用 Flume 的 `flume_hcomm_channel_probe_ex`，在已 attach 的 HCCL comm 上尝试获取本端 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、HCOMM Channel，以及 peer rank 的远端 HCCL Buffer。它优先通过 `HcclRankGraphGetLinks` 构造官方 link descriptor；如果当前 CANN 没有 rank graph 能力，才退回 legacy `remoteRank/channelProtocol/notifyNum` descriptor，并在 smoke 日志里标明。它验证的是 HCOMM 自定义 P2P backend 的 channel resource 准备阶段；当前还不执行 AICPU kernel，也不调用 `HcommReadOnThread` 搬 payload。
 
-默认 HCOMM probe 使用 `engine=aicpu`、`protocol=hccs`、`channel notify_num=2`，贴近 CANN 自定义 P2P 示例在 Atlas A2/A3 上的资源准备路径。thread acquire 的 notify 数保持示例里的 1；需要定位现场差异时可以显式切换 channel 策略：
+默认 HCOMM probe 使用 `engine=auto`、`protocol=hccs`、`channel notify_num=2`。`auto` 会按 CANN 能力选择最终 engine：如果探测到 `hccl_res_expt.h` / thread-export 能力，则选择 `aicpu-ts`；如果像 CANN 8.5 一样没有该扩展头，则选择 `cpu-ts`，只验证 channel resource path，不声明 payload-ready。需要定位现场差异时可以显式切换 channel 策略：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-sio --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-protocol sio ascend-probe
-python3 tools/flume_tool.py --build-dir build-hcomm-cpu --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-engine cpu --hcomm-channel-protocol hccs ascend-probe
+python3 tools/flume_tool.py --build-dir build-hcomm-cpu-ts --run-hcomm-channel-probe --hccl-devices <device-a>,<device-b> --hcomm-channel-engine cpu-ts --hcomm-channel-protocol hccs ascend-probe
+python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-probe --hcomm-require-thread-export --hccl-devices <device-a>,<device-b> ascend-probe
 ```
+
+`--hcomm-require-thread-export` 是严格 payload-ready 前置检查：它要求当前 CANN 同时支持 thread export，并且最终 engine 是 `aicpu` / `aicpu-ts`。CANN 8.5 缺少 `hccl_res_expt.h` 是正常版本差异，该模式应清晰返回 unsupported，而不是编译失败或误报 success。
+
+`pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs`、`hccs-only` 或现场拓扑对应的 `sio`。
 
 可选值：
 
 | 参数 | 默认 | 可选值 |
 | --- | --- | --- |
-| `--hcomm-channel-engine` | `aicpu` | `auto`, `aicpu`, `aicpu-ts`, `cpu` |
-| `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `roce`, `pcie`, `sio` |
+| `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
+| `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |
+| `--hcomm-require-thread-export` | off | 严格要求 thread-export / AICPU payload-ready 前置能力 |
 
 可以和 P2P baseline 合在一起跑：
 

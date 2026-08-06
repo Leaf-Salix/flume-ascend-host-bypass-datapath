@@ -67,7 +67,8 @@ typedef enum {
   FLUME_HCOMM_ENGINE_AUTO = 0,
   FLUME_HCOMM_ENGINE_AICPU = 1,
   FLUME_HCOMM_ENGINE_AICPU_TS = 2,
-  FLUME_HCOMM_ENGINE_CPU = 3
+  FLUME_HCOMM_ENGINE_CPU = 3,
+  FLUME_HCOMM_ENGINE_CPU_TS = 4
 } flume_hcomm_engine_t;
 
 typedef enum {
@@ -75,7 +76,8 @@ typedef enum {
   FLUME_HCOMM_PROTOCOL_HCCS = 1,
   FLUME_HCOMM_PROTOCOL_ROCE = 2,
   FLUME_HCOMM_PROTOCOL_PCIE = 3,
-  FLUME_HCOMM_PROTOCOL_SIO = 4
+  FLUME_HCOMM_PROTOCOL_SIO = 4,
+  FLUME_HCOMM_PROTOCOL_HCCS_ONLY = 5
 } flume_hcomm_protocol_t;
 
 typedef struct {
@@ -83,6 +85,7 @@ typedef struct {
   uint32_t notify_num;
   flume_hcomm_engine_t engine;
   flume_hcomm_protocol_t protocol;
+  uint32_t require_thread_export;
 } flume_hcomm_channel_probe_options_t;
 
 const char *flume_status_string(int status);

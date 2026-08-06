@@ -60,6 +60,11 @@ if(FLUME_ENABLE_HCCL)
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
     PATH_SUFFIXES include include/external runtime/include/external
   )
+  find_library(SECUREC_LIBRARY
+    NAMES c_sec libc_sec securec
+    PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
+    PATH_SUFFIXES lib64 lib
+  )
   find_library(ASCENDCL_LIBRARY
     NAMES ascendcl
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
@@ -68,13 +73,13 @@ if(FLUME_ENABLE_HCCL)
 
   if(NOT HCCL_INCLUDE_DIR OR NOT HCCL_LIBRARY OR
      NOT HCOMM_INCLUDE_DIR OR NOT HCOMM_LIBRARY OR
-     NOT ACL_INCLUDE_DIR OR NOT SECUREC_INCLUDE_DIR OR
+     NOT ACL_INCLUDE_DIR OR NOT SECUREC_INCLUDE_DIR OR NOT SECUREC_LIBRARY OR
      NOT ASCENDCL_LIBRARY)
     message(FATAL_ERROR
       "FLUME_ENABLE_HCCL=ON requires a CANN/HCCL/HCOMM installation. "
       "Set ASCEND_HOME_PATH or pass HCCL_INCLUDE_DIR/HCCL_LIBRARY/"
       "HCOMM_INCLUDE_DIR/HCOMM_LIBRARY/ACL_INCLUDE_DIR/"
-      "SECUREC_INCLUDE_DIR/ASCENDCL_LIBRARY.")
+      "SECUREC_INCLUDE_DIR/SECUREC_LIBRARY/ASCENDCL_LIBRARY.")
   endif()
 
   set(_FLUME_HCCL_CHECK_INCLUDE "
@@ -113,6 +118,14 @@ ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 #error no hcomm_primitives header
 #endif
 ")
+  set(_FLUME_HCOMM_RANK_GRAPH_CHECK_INCLUDE "
+${_FLUME_HCOMM_RES_CHECK_INCLUDE}
+#if __has_include(<hccl/hccl_rank_graph.h>)
+#include <hccl/hccl_rank_graph.h>
+#else
+#error no hccl_rank_graph header
+#endif
+")
   set(_FLUME_OLD_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
   set(_FLUME_OLD_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
   set(_FLUME_OLD_TRY_COMPILE_TARGET_TYPE "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
@@ -126,6 +139,7 @@ ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
     ${HCCL_LIBRARY}
     ${HCOMM_LIBRARY}
     ${ASCENDCL_LIBRARY}
+    ${SECUREC_LIBRARY}
   )
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
 
@@ -234,32 +248,36 @@ int main() {
 }
 " FLUME_HAVE_HCCL_P2P)
 
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 int main() {
-  HcclComm comm = nullptr;
-  aclrtStream stream = nullptr;
-  void *local_buffer = nullptr;
-  uint64_t local_size = 0;
-  ThreadHandle cpu_ts_thread = 0;
-  ThreadHandle aicpu_ts_thread = 0;
-  HcclChannelDesc desc;
-  ChannelHandle channel = 0;
-  (void)HcclGetHcclBuffer(comm, &local_buffer, &local_size);
-  (void)HcclThreadAcquireWithStream(
-      comm, COMM_ENGINE_CPU_TS, stream, 1, &cpu_ts_thread);
-  (void)HcclThreadAcquire(
-      comm, COMM_ENGINE_AICPU_TS, 1, 1, &aicpu_ts_thread);
-  (void)HcclChannelDescInit(&desc, 1);
-  desc.remoteRank = 1;
-  desc.channelProtocol = COMM_PROTOCOL_HCCS;
-  desc.notifyNum = 2;
-  (void)HcclChannelAcquire(comm, COMM_ENGINE_AICPU, &desc, 1, &channel);
-  (void)HcclChannelGetHcclBuffer(comm, channel, &local_buffer, &local_size);
+  static_assert(sizeof(CommEngine) > 0, \"CommEngine missing\");
+  static_assert(sizeof(CommProtocol) > 0, \"CommProtocol missing\");
+  static_assert(sizeof(HcclChannelDesc) > 0, \"HcclChannelDesc missing\");
+  static_assert(sizeof(ThreadHandle) > 0, \"ThreadHandle missing\");
+  static_assert(sizeof(ChannelHandle) > 0, \"ChannelHandle missing\");
+  CommEngine engine = COMM_ENGINE_CPU_TS;
+  CommProtocol protocol = COMM_PROTOCOL_HCCS_ONLY;
+  auto get_buffer = &HcclGetHcclBuffer;
+  auto acquire_thread = &HcclThreadAcquire;
+  auto acquire_thread_with_stream = &HcclThreadAcquireWithStream;
+  auto init_desc = &HcclChannelDescInit;
+  auto acquire_channel = &HcclChannelAcquire;
+  auto get_channel_buffer = &HcclChannelGetHcclBuffer;
+  (void)engine;
+  (void)protocol;
+  (void)get_buffer;
+  (void)acquire_thread;
+  (void)acquire_thread_with_stream;
+  (void)init_desc;
+  (void)acquire_channel;
+  (void)get_channel_buffer;
   return 0;
 }
 " FLUME_HAVE_HCOMM_CHANNEL_RES)
 
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_RES_EXPT_CHECK_INCLUDE}
 int main() {
@@ -272,21 +290,46 @@ int main() {
 }
 " FLUME_HAVE_HCOMM_THREAD_EXPORT)
 
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
 int main() {
   ThreadHandle thread = 0;
   ChannelHandle channel = 0;
   void *ptr = nullptr;
-  (void)HcommLocalCopyOnThread(thread, ptr, ptr, 0);
-  (void)HcommReadOnThread(thread, channel, ptr, ptr, 0);
-  (void)HcommChannelNotifyRecordOnThread(thread, channel, 0);
-  (void)HcommChannelNotifyWaitOnThread(thread, channel, 0, 0);
-  (void)HcommChannelDrainOnThread(thread, channel);
+  auto local_copy = &HcommLocalCopyOnThread;
+  auto read = &HcommReadOnThread;
+  auto notify_record = &HcommChannelNotifyRecordOnThread;
+  auto notify_wait = &HcommChannelNotifyWaitOnThread;
+  auto drain = &HcommChannelDrainOnThread;
+  (void)thread;
+  (void)channel;
+  (void)ptr;
+  (void)local_copy;
+  (void)read;
+  (void)notify_record;
+  (void)notify_wait;
+  (void)drain;
   return 0;
 }
 " FLUME_HAVE_HCOMM_PRIMITIVES)
 
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_RANK_GRAPH_CHECK_INCLUDE}
+int main() {
+  static_assert(sizeof(CommLink) > 0, \"CommLink missing\");
+  auto get_layers = &HcclRankGraphGetLayers;
+  auto get_links = &HcclRankGraphGetLinks;
+  CommLink link;
+  CommLinkInit(&link, 1);
+  (void)get_layers;
+  (void)get_links;
+  (void)link;
+  return 0;
+}
+" FLUME_HAVE_HCOMM_RANK_GRAPH)
+
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles("
 #include <acl/acl.h>
 int main() {
@@ -347,6 +390,7 @@ int main() {
       FLUME_HAVE_HCOMM_CHANNEL_RES
       FLUME_HAVE_HCOMM_THREAD_EXPORT
       FLUME_HAVE_HCOMM_PRIMITIVES
+      FLUME_HAVE_HCOMM_RANK_GRAPH
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -373,6 +417,7 @@ int main() {
     ${HCCL_LIBRARY}
     ${HCOMM_LIBRARY}
     ${ASCENDCL_LIBRARY}
+    ${SECUREC_LIBRARY}
   )
   target_compile_definitions(flume PUBLIC
     FLUME_ENABLE_HCCL=1
@@ -389,6 +434,7 @@ int main() {
     FLUME_HAVE_HCOMM_CHANNEL_RES=${FLUME_HAVE_HCOMM_CHANNEL_RES_VALUE}
     FLUME_HAVE_HCOMM_THREAD_EXPORT=${FLUME_HAVE_HCOMM_THREAD_EXPORT_VALUE}
     FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
+    FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -409,6 +455,7 @@ else()
     FLUME_HAVE_HCOMM_CHANNEL_RES=0
     FLUME_HAVE_HCOMM_THREAD_EXPORT=0
     FLUME_HAVE_HCOMM_PRIMITIVES=0
+    FLUME_HAVE_HCOMM_RANK_GRAPH=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0
