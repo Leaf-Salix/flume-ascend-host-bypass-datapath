@@ -205,6 +205,18 @@ int flume_hcomm_payload_probe_ex(
     void *acl_stream,
     flume_io_t **out);
 
+int flume_hcomm_custom_op_launch_smoke(flume_client_t *client,
+                                       uint32_t peer_rank,
+                                       void *acl_stream,
+                                       flume_io_t **out);
+
+int flume_hcomm_custom_op_launch_smoke_ex(
+    flume_client_t *client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t *options,
+    void *acl_stream,
+    flume_io_t **out);
+
 int flume_hcomm_payload_send_async(flume_client_t *client,
                                   flume_buffer_t *src,
                                   size_t src_offset,

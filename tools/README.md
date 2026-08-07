@@ -109,6 +109,14 @@ python3 tools/flume_tool.py --build-dir build-stage3b-customop --build-hcomm-cus
 
 当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `custom-op/AICPU scheduler launch missing`，说明下一步缺的是真实 custom-op/AICPU launcher，而不是前置资源或编译分支。
 
+也可以只跑 Stage 3B.1 no-op launch readiness，不跑 payload readiness：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-stage3b1 --run-hcomm-custom-op-launch-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+成功诊断 marker 是 `hcomm custom-op launch smoke unsupported` 加 `stage3b1_launch_plan=noop-custom-op`。当前 unsupported 是预期结果；它说明 Flume 已经完成 channel resource 和 no-op launch plan 的诊断链路，但真实 custom-op/AICPU launcher 还没有实现。
+
 可选 Stage 3A storage proxy HBM smoke：
 
 ```bash
@@ -149,6 +157,7 @@ rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging ...
 | 参数 | 默认 | 可选值 |
 | --- | --- | --- |
 | `--build-hcomm-custom-op` | off | 配置 `FLUME_BUILD_HCOMM_CUSTOM_OP=ON`，只打开 Stage 3B custom-op/AICPU scheduler 编译分支；当前 launcher 仍预期返回 unsupported |
+| `--run-hcomm-custom-op-launch-smoke` | off | 运行 Stage 3B.1 no-op custom-op launch readiness smoke |
 | `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |

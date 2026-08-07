@@ -1718,6 +1718,21 @@ std::string MakeHcommPayloadPlanDetail(
          channel_detail + "\"";
 }
 
+std::string MakeHcommCustomOpLaunchSmokeDetail(
+    const CommState& state,
+    uint32_t peer_rank,
+    const std::string& channel_detail) {
+  flume::hcomm_payload::CustomOpLaunchSmokePlan plan;
+  std::string error;
+  if (!flume::hcomm_payload::BuildCustomOpLaunchSmokePlan(
+          state.rank, peer_rank, state.rank_size, &plan, &error)) {
+    return std::string("stage3b1_launch=invalid error=\"") + error +
+           "\" channel_detail=\"" + channel_detail + "\"";
+  }
+  return flume::hcomm_payload::DescribeCustomOpLaunchSmokePlan(plan) +
+         " channel_detail=\"" + channel_detail + "\"";
+}
+
 }  // namespace
 
 const char* flume_status_string(int status) {
@@ -2647,6 +2662,112 @@ int flume_hcomm_payload_probe_ex(
                 std::string("HCOMM channel resources are unavailable in this "
                             "build; fallback=") +
                     fallback_path);
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_custom_op_launch_smoke(flume_client_t* client,
+                                       uint32_t peer_rank,
+                                       void* acl_stream,
+                                       flume_io_t** out) {
+  flume_hcomm_channel_probe_options_t options = {};
+  options.size = sizeof(options);
+  options.notify_num = 2;
+  options.engine = FLUME_HCOMM_ENGINE_AUTO;
+  options.protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  options.require_thread_export = 0;
+  return flume_hcomm_custom_op_launch_smoke_ex(client, peer_rank, &options,
+                                               acl_stream, out);
+}
+
+int flume_hcomm_custom_op_launch_smoke_ex(
+    flume_client_t* client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t* options,
+    void* acl_stream,
+    flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  HcommProbeOptions normalized_options;
+  std::string option_error;
+  if (!NormalizeHcommProbeOptions(options, &normalized_options,
+                                  &option_error)) {
+    (void)option_error;
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (normalized_options.protocol == FLUME_HCOMM_PROTOCOL_PCIE) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM custom-op launch smoke does not support pcie protocol");
+    return FLUME_OK;
+  }
+
+  CommState state = SnapshotCommState(client);
+  if (state.sim_comm_attached) {
+    if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+        peer_rank == state.rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    (void)acl_stream;
+    flume::hcomm_payload::CustomOpLaunchSmokePlan plan;
+    std::string error;
+    if (!flume::hcomm_payload::BuildCustomOpLaunchSmokePlan(
+            state.rank, peer_rank, state.rank_size, &plan, &error)) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    *out = MakeIo(FLUME_OK, 0, 0,
+                  std::string("sim custom-op launch smoke passed; "
+                              "stage3b1_launch=passed ") +
+                      flume::hcomm_payload::DescribeCustomOpLaunchSmokePlan(
+                          plan));
+    return FLUME_OK;
+  }
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string detail;
+  std::string error;
+  if (!ProbeHcommChannelResources(state, peer_rank, normalized_options,
+                                  acl_stream, &usable_buffer_bytes,
+                                  &probe_status, &detail, &error)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+  std::string launch_detail =
+      MakeHcommCustomOpLaunchSmokeDetail(state, peer_rank, detail);
+  flume::hcomm_payload::SchedulerStatus scheduler_status =
+      flume::hcomm_payload::CurrentSchedulerStatus();
+  if (scheduler_status == flume::hcomm_payload::SchedulerStatus::kReady) {
+    *out = MakeIo(FLUME_OK, usable_buffer_bytes, 0,
+                  std::string("HCOMM custom-op no-op launch smoke passed; "
+                              "stage3b1_launch=passed ") +
+                      launch_detail);
+    return FLUME_OK;
+  }
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM custom-op no-op launch smoke unavailable: ") +
+          flume::hcomm_payload::SchedulerStatusMessage(scheduler_status) +
+          "; stage3b1_launch=unsupported " + launch_detail);
+  return FLUME_OK;
+#else
+  (void)peer_rank;
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCOMM channel resources are unavailable in this build; "
+                "custom-op launch smoke cannot run");
   return FLUME_OK;
 #endif
 }

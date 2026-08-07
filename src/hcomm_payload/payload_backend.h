@@ -29,6 +29,13 @@ enum class PayloadStep {
   kChannelNotifyRecordDone = 5,
 };
 
+enum class CustomOpLaunchSmokeStep {
+  kResolveScheduler = 0,
+  kPackageNoopKernelArgs = 1,
+  kSubmitNoopCustomOp = 2,
+  kSyncStream = 3,
+};
+
 struct PayloadPlan {
   PayloadRole role = PayloadRole::kSend;
   uint32_t local_rank = 0;
@@ -40,10 +47,18 @@ struct PayloadPlan {
   std::vector<PayloadStep> steps;
 };
 
+struct CustomOpLaunchSmokePlan {
+  uint32_t local_rank = 0;
+  uint32_t peer_rank = 0;
+  uint32_t rank_size = 0;
+  std::vector<CustomOpLaunchSmokeStep> steps;
+};
+
 SchedulerStatus CurrentSchedulerStatus();
 const char* SchedulerStatusMessage(SchedulerStatus status);
 const char* PayloadRoleName(PayloadRole role);
 const char* PayloadStepName(PayloadStep step);
+const char* CustomOpLaunchSmokeStepName(CustomOpLaunchSmokeStep step);
 
 bool BuildPairCopyPlan(PayloadRole role,
                        uint32_t local_rank,
@@ -54,6 +69,15 @@ bool BuildPairCopyPlan(PayloadRole role,
                        std::string* error);
 
 std::string DescribePlan(const PayloadPlan& plan);
+
+bool BuildCustomOpLaunchSmokePlan(uint32_t local_rank,
+                                  uint32_t peer_rank,
+                                  uint32_t rank_size,
+                                  CustomOpLaunchSmokePlan* out,
+                                  std::string* error);
+
+std::string DescribeCustomOpLaunchSmokePlan(
+    const CustomOpLaunchSmokePlan& plan);
 
 }  // namespace flume::hcomm_payload
 

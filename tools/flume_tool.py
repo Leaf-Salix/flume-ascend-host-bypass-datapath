@@ -649,6 +649,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
                         args.run_hcomm_channel_probe or
+                        args.run_hcomm_custom_op_launch_smoke or
                         args.run_hcomm_payload_smoke or
                         args.run_storage_hbm_smoke):
         hccl_smoke = str(Path(build_dir) / "flume-hccl-collective-smoke")
@@ -749,6 +750,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append("--p2p-copy")
         if args.run_hcomm_channel_probe:
             command.append("--hcomm-channel-probe")
+        if args.run_hcomm_custom_op_launch_smoke:
+            command.append("--hcomm-custom-op-launch-smoke")
         if args.run_hcomm_payload_smoke:
             command.append("--hcomm-payload-smoke")
         if args.run_storage_hbm_smoke:
@@ -759,7 +762,9 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append(f"--storage-smoke-offset={args.storage_smoke_offset}")
             command.append(f"--storage-smoke-bytes={args.storage_smoke_bytes}")
             command.append(f"--storage-smoke-checksum={storage_smoke_checksum}")
-        if args.run_hcomm_channel_probe or args.run_hcomm_payload_smoke:
+        if (args.run_hcomm_channel_probe or
+                args.run_hcomm_custom_op_launch_smoke or
+                args.run_hcomm_payload_smoke):
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
             command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
@@ -846,7 +851,10 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--hcomm-channel-engine, --hcomm-channel-protocol, and "
         "--hcomm-notify-num select the resource probe strategy. The default "
         "HCOMM probe validates channel resources only and the smoke log prints "
-        "a FLUME_BACKEND_CAPS line. Pass --run-hcomm-payload-smoke to run the "
+        "a FLUME_BACKEND_CAPS line. Pass --run-hcomm-custom-op-launch-smoke "
+        "to run the Stage 3B.1 no-op custom-op launch readiness check; it "
+        "is expected to report unsupported until the custom-op/AICPU launcher "
+        "is implemented. Pass --run-hcomm-payload-smoke to run the "
         "Stage 2.5 payload-readiness probe: it checks Channel resources and "
         "HCOMM primitive capability, then reports unsupported/fallback clearly "
         "until Flume implements the custom-op/AICPU payload scheduler. Add "
@@ -886,6 +894,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hccl_ok = "hccl collective smoke passed" in smoke
     p2p_ok = "p2p_copy=on" in smoke and "hccl collective smoke passed" in smoke
     hcomm_channel_ok = "hcomm channel probe passed" in smoke
+    hcomm_custom_op_launch_ok = "hcomm custom-op launch smoke passed" in smoke
+    hcomm_custom_op_launch_unsupported = (
+        "hcomm custom-op launch smoke unsupported" in smoke)
     hcomm_payload_ok = "hcomm payload smoke passed" in smoke
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
     storage_hbm_ok = "storage HBM smoke passed" in smoke
@@ -908,6 +919,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCCL P2P fallback ok? | {'yes' if p2p_ok else 'no'} | `p2p_copy=on` marker |")
     lines.append(
         f"| HCOMM channel ok? | {'yes' if hcomm_channel_ok else 'no'} | `hcomm channel probe passed` marker |")
+    lines.append(
+        f"| HCOMM custom-op launch readiness? | "
+        f"{'pass' if hcomm_custom_op_launch_ok else ('unsupported' if hcomm_custom_op_launch_unsupported else 'no signal')} | "
+        "`hcomm custom-op launch smoke` marker |")
     lines.append(
         f"| HCOMM primitives present? | {primitives} | `hcomm_primitives` in caps |")
     lines.append(
@@ -964,6 +979,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     matrix_args.run_a3_symmetric_smoke = False
     matrix_args.run_hccl_p2p_smoke = True
     matrix_args.run_hcomm_channel_probe = True
+    matrix_args.run_hcomm_custom_op_launch_smoke = True
     matrix_args.run_hcomm_payload_smoke = True
     matrix_args.run_storage_hbm_smoke = True
     matrix_args.hcomm_require_payload_copy = False
@@ -1074,6 +1090,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hcomm-channel-probe", action="store_true",
                         help=("Run the optional Stage 2 HCOMM Channel resource "
                               "probe after the collective smoke"))
+    parser.add_argument("--run-hcomm-custom-op-launch-smoke", action="store_true",
+                        help=("Run the optional Stage 3B.1 HCOMM custom-op "
+                              "no-op launch readiness smoke after the "
+                              "channel resource path"))
     parser.add_argument("--run-hcomm-payload-smoke", action="store_true",
                         help=("Run the optional Stage 2.5 HCOMM payload "
                               "readiness probe after the collective smoke"))
@@ -1197,9 +1217,11 @@ def parse_args() -> argparse.Namespace:
     except ValueError as exc:
         parser.error(str(exc))
     if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe or
-         args.run_hcomm_payload_smoke or args.run_storage_hbm_smoke) and
+         args.run_hcomm_custom_op_launch_smoke or args.run_hcomm_payload_smoke or
+         args.run_storage_hbm_smoke) and
             args.hccl_devices and len(parsed_hccl_devices) != 2):
         parser.error("--run-hccl-p2p-smoke, --run-hcomm-channel-probe, and "
+                     "--run-hcomm-custom-op-launch-smoke, "
                      "--run-hcomm-payload-smoke, --run-storage-hbm-smoke "
                      "require exactly two --hccl-devices entries")
     return args

@@ -62,6 +62,15 @@ int main() {
                        .find("scheduler=sim") != std::string::npos);
   FLUME_TEST_CHECK(flume_io_release(probe) == FLUME_OK);
 
+  flume_io_t* custom_op_launch = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_custom_op_launch_smoke(
+                       clients[0], 1, nullptr, &custom_op_launch) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(custom_op_launch, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(custom_op_launch))
+                       .find("stage3b1_launch_plan=noop-custom-op") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(flume_io_release(custom_op_launch) == FLUME_OK);
+
   flume_buffer_t* src0 = nullptr;
   flume_buffer_t* dst1 = nullptr;
   FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[0], kBytes,

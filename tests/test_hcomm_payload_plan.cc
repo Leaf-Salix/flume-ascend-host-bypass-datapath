@@ -6,7 +6,10 @@
 
 int main() {
   using flume::hcomm_payload::BuildPairCopyPlan;
+  using flume::hcomm_payload::BuildCustomOpLaunchSmokePlan;
+  using flume::hcomm_payload::CustomOpLaunchSmokePlan;
   using flume::hcomm_payload::CurrentSchedulerStatus;
+  using flume::hcomm_payload::DescribeCustomOpLaunchSmokePlan;
   using flume::hcomm_payload::DescribePlan;
   using flume::hcomm_payload::PayloadPlan;
   using flume::hcomm_payload::PayloadRole;
@@ -60,6 +63,19 @@ int main() {
   FLUME_TEST_CHECK(!BuildPairCopyPlan(PayloadRole::kSend, 0, 1, 2, 0,
                                       &invalid, &error));
   FLUME_TEST_CHECK(error.find("non-zero bytes") != std::string::npos);
+
+  CustomOpLaunchSmokePlan launch;
+  FLUME_TEST_CHECK(BuildCustomOpLaunchSmokePlan(0, 1, 2, &launch, &error));
+  FLUME_TEST_CHECK(launch.local_rank == 0);
+  FLUME_TEST_CHECK(launch.peer_rank == 1);
+  FLUME_TEST_CHECK(launch.steps.size() == 4);
+  std::string launch_desc = DescribeCustomOpLaunchSmokePlan(launch);
+  FLUME_TEST_CHECK(launch_desc.find("stage3b1_launch_plan=noop-custom-op") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(launch_desc.find("submit no-op custom-op") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(!BuildCustomOpLaunchSmokePlan(0, 1, 3, &launch, &error));
+  FLUME_TEST_CHECK(error.find("exactly two ranks") != std::string::npos);
 
   SchedulerStatus status = CurrentSchedulerStatus();
   FLUME_TEST_CHECK(status == SchedulerStatus::kCustomOpBuildDisabled ||
