@@ -629,6 +629,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         build_dir,
         f"-DFLUME_BUILD_TESTS={'ON' if not args.skip_tests else 'OFF'}",
         f"-DFLUME_ENABLE_HCCL={'ON' if enable_hccl else 'OFF'}",
+        f"-DFLUME_BUILD_HCOMM_CUSTOM_OP={'ON' if args.build_hcomm_custom_op else 'OFF'}",
     ]
     commands: list[CommandSpec] = [
         CommandSpec("cmake-configure", configure, True, {}),
@@ -898,7 +899,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     elif "hcomm_primitives=off" in caps:
         primitives = "absent"
     scheduler_missing = ("hcomm_payload_scheduler=not-implemented" in caps or
-                         "custom-op/AICPU scheduler missing" in smoke)
+                         "custom-op/AICPU scheduler" in smoke or
+                         "custom-op launch" in smoke)
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
@@ -1055,6 +1057,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jobs", type=int, default=DEFAULT_BUILD_JOBS,
                         help="Parallel build jobs; defaults to min(cpu_count, 32)")
     parser.add_argument("--skip-tests", action="store_true", help="Configure without CTest targets")
+    parser.add_argument("--build-hcomm-custom-op", action="store_true",
+                        help=("Configure with FLUME_BUILD_HCOMM_CUSTOM_OP=ON. "
+                              "This only enables the Stage 3B custom-op/AICPU "
+                              "scheduler compile branch; the launcher is still "
+                              "expected to report unsupported."))
     parser.add_argument("--step-timeout-sec", type=int, default=600,
                         help="Timeout for regular helper steps; 0 disables it")
     parser.add_argument("--run-hccl-smoke", action="store_true",

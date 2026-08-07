@@ -86,10 +86,10 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-
 
 ```text
 hcomm payload smoke unsupported ... primitives=available fallback=hccl-p2p
-detail="HCOMM payload primitive symbols are available, but Flume Stage 2.5 has not implemented the custom-op/AICPU payload scheduler yet; fallback=hccl-p2p; ..."
+detail="HCOMM payload primitive symbols are available, but Flume Stage 3B has not implemented custom-op launch yet; fallback=hccl-p2p; stage3b_plan=pair-copy ..."
 ```
 
-这表示：HCOMM primitive 符号存在、Channel 前置资源可探测，但 Flume 还没有实现真正的 custom-op/AICPU payload scheduler。默认情况下这不会被当作 CANN 环境失败。只有在未来已经实现真实 HCOMM payload copy 后，才应该追加严格模式：
+这表示：HCOMM primitive 符号存在、Channel 前置资源可探测，Flume 也已经生成 pair-copy primitive 编排计划，但还没有实现真正的 custom-op/AICPU launch。默认情况下这不会被当作 CANN 环境失败。只有在未来已经实现真实 HCOMM payload copy 后，才应该追加严格模式：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
@@ -100,6 +100,14 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 ```bash
 python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
+
+如果要验证 Stage 3B custom-op/AICPU scheduler 分支已经进入编译产物，可以追加：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-stage3b-customop --build-hcomm-custom-op --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `custom-op/AICPU scheduler launch missing`，说明下一步缺的是真实 custom-op/AICPU launcher，而不是前置资源或编译分支。
 
 可选 Stage 3A storage proxy HBM smoke：
 
@@ -140,6 +148,7 @@ rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging ...
 
 | 参数 | 默认 | 可选值 |
 | --- | --- | --- |
+| `--build-hcomm-custom-op` | off | 配置 `FLUME_BUILD_HCOMM_CUSTOM_OP=ON`，只打开 Stage 3B custom-op/AICPU scheduler 编译分支；当前 launcher 仍预期返回 unsupported |
 | `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |

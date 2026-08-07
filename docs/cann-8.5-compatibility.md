@@ -206,10 +206,10 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-cann85 \
 
 ```text
 hcomm payload smoke unsupported ... primitives=available fallback=hccl-p2p
-detail="HCOMM payload primitive symbols are available, but Flume Stage 2.5 has not implemented the custom-op/AICPU payload scheduler yet; fallback=hccl-p2p; ..."
+detail="HCOMM payload primitive symbols are available, but Flume Stage 3B has not implemented custom-op launch yet; fallback=hccl-p2p; stage3b_plan=pair-copy ..."
 ```
 
-这证明 Channel 前置资源和 HCOMM primitive 符号探测链路已经接好。只有未来实现真实 custom-op/AICPU payload scheduler 后，`--hcomm-require-payload-copy` 才应通过；当前 CANN 8.5 下严格模式预期返回 unsupported。
+这证明 Channel 前置资源、HCOMM primitive 符号探测链路和 Stage 3B pair-copy plan 都已经接好。只有未来实现真实 custom-op/AICPU payload scheduler launch 后，`--hcomm-require-payload-copy` 才应通过；当前 CANN 8.5 下严格模式预期返回 unsupported。
 
 ### 6.4 AICPU thread-export 扩展检查
 

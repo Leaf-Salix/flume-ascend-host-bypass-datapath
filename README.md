@@ -52,7 +52,7 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers. Verified with `p2p_copy=on`.
 - Optional rank0/rank1 HCOMM Channel resource probe smoke. Verified as channel-resource readiness; it does not yet move payload with HCOMM primitives.
 - Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus primitive symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
-- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM payload readiness, and strict expected-negative logs in one run. Verified on a CANN 9.0 host with HCCS_SW device pairs `HCCS_SW pair A` and `HCCS_SW pair B`; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler is not implemented.
+- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM payload readiness, Stage 3A storage-HBM fallback, and strict expected-negative logs in one run. Verified on Host B (CANN 9.0) with HCCS_SW device pairs; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler launch is not implemented.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not implemented yet:
@@ -167,6 +167,24 @@ python3 tools/flume_tool.py \
 This validates the first real storage-integrated fallback path. Rank 0 acts as the storage proxy: it reads a file slice from local storage, copies that slice into proxy-rank HBM, then uses `HcclSend` to send bytes to rank 1 compute HBM. Rank 1 receives with `HcclRecv` and verifies the checksum that `flume_tool.py` computed before launch. The success marker is `storage_hbm=hccl-p2p-staging`. This is not full storage-direct DMA; host CPU still performs the SSD file read and H2D staging into proxy HBM.
 
 If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
+
+Status: Host B (CANN 9.0) has validated this path with a local SSD input file and a 16 MiB byte payload. The marker `storage_hbm=hccl-p2p-staging` appeared on both ranks and the rank1 checksum matched the source slice.
+
+Stage 3B HCOMM payload scheduler skeleton:
+
+```text
+send rank:
+  HcommLocalCopyOnThread(input -> local HCCL Buffer)
+  HcommChannelNotifyRecordOnThread(ready)
+  HcommChannelNotifyWaitOnThread(done)
+
+recv rank:
+  HcommChannelNotifyWaitOnThread(ready)
+  HcommReadOnThread(remote HCCL Buffer -> output)
+  HcommChannelNotifyRecordOnThread(done)
+```
+
+The current code now has a library-level plan model for this pair-copy scheduler and a reserved `custom_ops/hcomm_payload_copy/` implementation surface. It still reports unsupported until the host launcher and AICPU kernel are implemented.
 
 Full two-rank Ascend matrix:
 

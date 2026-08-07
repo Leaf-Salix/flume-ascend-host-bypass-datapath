@@ -1,15 +1,59 @@
 #ifndef FLUME_HCOMM_PAYLOAD_PAYLOAD_BACKEND_H_
 #define FLUME_HCOMM_PAYLOAD_PAYLOAD_BACKEND_H_
 
+#include <stdint.h>
+
+#include <string>
+#include <vector>
+
 namespace flume::hcomm_payload {
 
 enum class SchedulerStatus {
   kUnavailable = 0,
-  kCustomOpMissing = 1,
+  kCustomOpBuildDisabled = 1,
+  kCustomOpLaunchMissing = 2,
+  kReady = 3,
+};
+
+enum class PayloadRole {
+  kSend = 0,
+  kRecv = 1,
+};
+
+enum class PayloadStep {
+  kLocalCopyInputToHcclBuffer = 0,
+  kChannelNotifyRecordReady = 1,
+  kChannelNotifyWaitReady = 2,
+  kChannelReadRemoteToOutput = 3,
+  kChannelNotifyWaitDone = 4,
+  kChannelNotifyRecordDone = 5,
+};
+
+struct PayloadPlan {
+  PayloadRole role = PayloadRole::kSend;
+  uint32_t local_rank = 0;
+  uint32_t peer_rank = 0;
+  uint32_t rank_size = 0;
+  uint64_t bytes = 0;
+  uint32_t ready_notify_idx = 0;
+  uint32_t done_notify_idx = 1;
+  std::vector<PayloadStep> steps;
 };
 
 SchedulerStatus CurrentSchedulerStatus();
 const char* SchedulerStatusMessage(SchedulerStatus status);
+const char* PayloadRoleName(PayloadRole role);
+const char* PayloadStepName(PayloadStep step);
+
+bool BuildPairCopyPlan(PayloadRole role,
+                       uint32_t local_rank,
+                       uint32_t peer_rank,
+                       uint32_t rank_size,
+                       uint64_t bytes,
+                       PayloadPlan* out,
+                       std::string* error);
+
+std::string DescribePlan(const PayloadPlan& plan);
 
 }  // namespace flume::hcomm_payload
 

@@ -1701,6 +1701,23 @@ bool ProbeHcommChannelResources(const CommState& state,
 #endif
 #endif
 
+std::string MakeHcommPayloadPlanDetail(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    uint64_t bytes,
+    const std::string& channel_detail) {
+  flume::hcomm_payload::PayloadPlan plan;
+  std::string error;
+  if (!flume::hcomm_payload::BuildPairCopyPlan(
+          role, state.rank, peer_rank, state.rank_size, bytes, &plan, &error)) {
+    return std::string("stage3b_plan=invalid error=\"") + error +
+           "\" channel_detail=\"" + channel_detail + "\"";
+  }
+  return flume::hcomm_payload::DescribePlan(plan) + " channel_detail=\"" +
+         channel_detail + "\"";
+}
+
 }  // namespace
 
 const char* flume_status_string(int status) {
@@ -2602,22 +2619,25 @@ int flume_hcomm_payload_probe_ex(
     *out = MakeIo(probe_status, 0, 0, error);
     return FLUME_OK;
   }
+  std::string plan_detail = MakeHcommPayloadPlanDetail(
+      state.rank == 0 ? flume::hcomm_payload::PayloadRole::kSend :
+                        flume::hcomm_payload::PayloadRole::kRecv,
+      state, peer_rank, usable_buffer_bytes == 0 ? 1 : usable_buffer_bytes,
+      detail);
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
       std::string("HCOMM payload primitive symbols are available, but Flume "
-                  "Stage 2.5 has not implemented the custom-op/AICPU payload "
-                  "scheduler yet; fallback=") +
-          fallback_path + "; channel_detail=\"" +
-          detail + "\"");
+                  "Stage 3B has not implemented custom-op launch yet; "
+                  "fallback=") +
+          fallback_path + "; " + plan_detail);
   return FLUME_OK;
 #else
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
       std::string("HCOMM payload primitives are unavailable in this build; "
                   "fallback=") +
-          fallback_path + "; channel_detail=\"" +
-          detail + "\"");
+          fallback_path + "; " + plan_detail);
   return FLUME_OK;
 #endif
 #else
@@ -2689,13 +2709,16 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
     *out = MakeIo(probe_status, 0, 0, error);
     return FLUME_OK;
   }
+  std::string plan_detail = MakeHcommPayloadPlanDetail(
+      flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, bytes,
+      detail);
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
       std::string("HCOMM payload send reached ChannelReady/PrimitiveReady, "
-                  "but custom-op/AICPU scheduler missing; fallback=") +
+                  "but custom-op launch is not implemented; fallback=") +
           (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; channel_detail=\"" + detail + "\"");
+          "; " + plan_detail);
   return FLUME_OK;
 #else
   *out = MakeIo(
@@ -2703,7 +2726,7 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
       std::string("HCOMM payload primitives are unavailable in this build; "
                   "fallback=") +
           (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; channel_detail=\"" + detail + "\"");
+          "; " + plan_detail);
   return FLUME_OK;
 #endif
 #else
@@ -2774,13 +2797,16 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
     *out = MakeIo(probe_status, 0, 0, error);
     return FLUME_OK;
   }
+  std::string plan_detail = MakeHcommPayloadPlanDetail(
+      flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, bytes,
+      detail);
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
       std::string("HCOMM payload recv reached ChannelReady/PrimitiveReady, "
-                  "but custom-op/AICPU scheduler missing; fallback=") +
+                  "but custom-op launch is not implemented; fallback=") +
           (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; channel_detail=\"" + detail + "\"");
+          "; " + plan_detail);
   return FLUME_OK;
 #else
   *out = MakeIo(
@@ -2788,7 +2814,7 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
       std::string("HCOMM payload primitives are unavailable in this build; "
                   "fallback=") +
           (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; channel_detail=\"" + detail + "\"");
+          "; " + plan_detail);
   return FLUME_OK;
 #endif
 #else
