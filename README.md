@@ -1,8 +1,25 @@
 # Flume: Host-Bypass Data Path for Ascend NPU
 
-Flume is an experimental C++/C project for exploring host-bypass data movement into and across Ascend NPU HBM. The current implementation is CANN HCCL/HCOMM-first: host CPU remains responsible for setup and task submission, while the target data path avoids host memory staging whenever the backend supports it.
+Flume is an experimental C++/C project for exploring host-bypass data movement from storage into Ascend NPU HBM, then across NPU HBM through CANN HCCL/HCOMM. The current implementation is HCCL/HCOMM-first: host CPU remains responsible for setup, capability probing, task submission, logs, and fallback decisions, while the target payload path avoids host memory staging whenever the backend supports it.
 
 The public C ABI uses the `flume_` prefix.
+
+## What Flume Adds Beyond HCCL
+
+HCCL already solves NPU tensor communication. For normal collective or point-to-point communication, HCCL can move payload directly between NPU HBM buffers over HCCS/RoCE/PCIe without staging tensor data through host memory. Flume does not try to reimplement AllReduce, AllGather, or HCCL Send/Recv.
+
+Flume focuses on the part HCCL does not cover: making storage data become part of the NPU data path and exposing that through a stable, capability-aware runtime.
+
+| Area | HCCL provides | Flume responsibility |
+| --- | --- | --- |
+| HBM-to-HBM collectives | Yes: `HcclAllReduce`, `HcclAllGather`, topology-selected HCCS/RoCE/PCIe payload path | Reuse as correctness/performance baseline and framework-facing fallback |
+| HBM-to-HBM P2P copy | Yes: public `HcclSend` / `HcclRecv` where exported | Reuse as Stage 2 verified baseline |
+| HCOMM Channel resources | Low-level resource APIs for custom communication operators | Probe, wrap, diagnose, and turn into a future payload backend |
+| Storage block -> NPU HBM | Not a HCCL feature | Core Flume target: storage proxy, HCCL/HCOMM visible buffers, future RDMA/storage direct path |
+| CANN version fallback | Partly exposed by headers/libraries | Feature-probed runtime that supports CANN 8.5 baseline and high-version optional paths |
+| Application transparency | Framework-specific | Stable `flume_` ABI and future framework integration hooks |
+
+In short: HCCL is the communication substrate; Flume is the storage-aware host-bypass data-path layer built around that substrate.
 
 ## Status
 
@@ -17,19 +34,25 @@ Implemented and testable on macOS/Linux without NPU hardware:
 - Simulated multi-rank `AllReduce` / `AllGather`.
 - Simulated paired P2P send/recv through `flume_p2p_send_async` / `flume_p2p_recv_async`.
 - Simulated HCOMM Channel resource probe through `flume_hcomm_channel_probe`.
+- Structured backend capability query through `flume_get_backend_caps`.
+- Simulated HCOMM payload pair copy through `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`.
+- Simulated storage partial-direct path:
+  `file offset -> SIM_HCCL_COMM staging -> SIM_HBM`.
 - Simulated A3 symmetric-memory lifecycle checks.
 - Tooling for local and Ascend-host validation under `tools/`.
 
-Implemented but still requires Ascend hardware validation:
+Implemented and validated on Ascend hardware in the current test environment:
 
 - HCCL-enabled build path with CANN/HCCL/HCOMM/ACL discovery.
 - `flume_attach_hccl_comm` for reusing an external `HcclComm`.
 - `flume_allreduce_async` / `flume_allgather_async` wrappers over `HcclAllReduce` / `HcclAllGather`.
 - `flume_p2p_send_async` / `flume_p2p_recv_async` wrappers over `HcclSend` / `HcclRecv` when those APIs are exported by the installed HCCL headers and library.
-- `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` wrappers for the HCOMM Channel resource stage: local HCCL Buffer, CPU_TS/AICPU_TS thread resources, optional thread export, configurable channel engine/protocol, channel acquire, and remote HCCL Buffer query.
-- Optional single-node multi-card HCCL smoke test on Ascend HBM buffers.
-- Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers.
-- Optional rank0/rank1 HCOMM Channel resource probe smoke.
+- `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` wrappers for the HCOMM Channel resource stage: local HCCL Buffer, CPU_TS/AICPU_TS thread resources, optional thread export, configurable channel engine/protocol, channel acquire, and remote HCCL Buffer query. On CANN 8.5 the default `auto` engine resolves to `cpu-ts`; strict thread-export is an optional high-version check.
+- Optional single-node multi-card HCCL smoke test on Ascend HBM buffers. Verified with `root-info` and `init-all`.
+- Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers. Verified with `p2p_copy=on`.
+- Optional rank0/rank1 HCOMM Channel resource probe smoke. Verified as channel-resource readiness; it does not yet move payload with HCOMM primitives.
+- Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus primitive symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
+- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM payload readiness, and strict expected-negative logs in one run.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not implemented yet:
@@ -120,6 +143,32 @@ diagnostic path. On tested single-node HCCS_SW pairs it can enter HCCL
 VNIC/P2P memory-share setup and has not passed hardware validation yet.
 `tools/README.md` documents host NIC pinning, rank-table caveats, topology
 collection, and `HCCL_SMOKE_DIAGNOSTICS.txt`.
+
+Stage 2.5 HCOMM payload readiness smoke:
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-smoke --hccl-devices 0,1 ascend-probe
+```
+
+This probes whether the current CANN build exposes the HCOMM primitive symbols needed by the future payload backend. The current implementation intentionally does not claim payload copy success; it should report `hcomm payload smoke unsupported ... fallback=hccl-p2p` unless a future custom-op/AICPU scheduler is implemented. Add `--hcomm-require-payload-copy` only when testing that future strict path.
+
+Full two-rank Ascend matrix:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-full \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-full-matrix
+```
+
+This builds once, runs local regression tests, then runs HCCL collective,
+HCCL P2P baseline, HCOMM Channel probe, and HCOMM payload readiness in one
+two-rank smoke. It also runs a strict payload-copy check as an optional expected
+negative until the custom-op/AICPU scheduler exists. The log directory includes
+`ASCEND_FULL_MATRIX_DECISION_TREE.md`.
 
 Atlas A3 HCCS symmetric-memory smoke:
 

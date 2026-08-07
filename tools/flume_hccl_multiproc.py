@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
                         help="Run rank0->rank1 HCCL Send/Recv P2P copy smoke")
     parser.add_argument("--hcomm-channel-probe", action="store_true",
                         help="Run rank0/rank1 HCOMM Channel resource probe")
+    parser.add_argument("--hcomm-payload-smoke", action="store_true",
+                        help="Run Stage 2.5 HCOMM payload readiness probe")
     parser.add_argument("--hcomm-channel-engine", default="auto",
                         choices=["auto", "aicpu", "aicpu-ts", "cpu", "cpu-ts"])
     parser.add_argument("--hcomm-channel-protocol", default="hccs",
@@ -49,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hcomm-notify-num", type=int, default=2)
     parser.add_argument("--hcomm-require-thread-export", action="store_true",
                         help="Require HcclThreadExportToCommEngine for AICPU thread-export extension check")
+    parser.add_argument("--hcomm-require-payload-copy", action="store_true",
+                        help="Fail if HCOMM payload copy is not implemented/available")
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -65,8 +69,10 @@ def parse_args() -> argparse.Namespace:
         args.devices_list = parse_devices(args.devices)
     except ValueError as exc:
         parser.error(str(exc))
-    if (args.p2p_copy or args.hcomm_channel_probe) and len(args.devices_list) != 2:
-        parser.error("--p2p-copy and --hcomm-channel-probe require exactly two ranks")
+    if (args.p2p_copy or args.hcomm_channel_probe or args.hcomm_payload_smoke) and len(args.devices_list) != 2:
+        parser.error("--p2p-copy, --hcomm-channel-probe, and --hcomm-payload-smoke require exactly two ranks")
+    if args.hcomm_require_payload_copy and not args.hcomm_payload_smoke:
+        parser.error("--hcomm-require-payload-copy requires --hcomm-payload-smoke")
     if not Path(args.binary).exists():
         parser.error(f"--binary does not exist: {args.binary}")
     if args.init == "rank-table" and not args.rank_table:
@@ -101,11 +107,16 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append("--p2p-copy")
     if args.hcomm_channel_probe:
         command.append("--hcomm-channel-probe")
+    if args.hcomm_payload_smoke:
+        command.append("--hcomm-payload-smoke")
+    if args.hcomm_channel_probe or args.hcomm_payload_smoke:
         command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
         command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
         command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
         if args.hcomm_require_thread_export:
             command.append("--hcomm-require-thread-export")
+        if args.hcomm_require_payload_copy:
+            command.append("--hcomm-require-payload-copy")
     return command
 
 

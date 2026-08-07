@@ -76,6 +76,31 @@ python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-p
 
 `--hcomm-require-thread-export` 是严格 AICPU thread-export 前置检查：它要求当前 CANN 同时支持 thread export，并且最终 engine 是 `aicpu` / `aicpu-ts`。CANN 8.5 缺少 `hccl_res_expt.h` 是正常版本差异，该模式应清晰返回 unsupported，而不是编译失败或误报 success。
 
+可选 Stage 2.5 HCOMM payload readiness smoke：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+该模式会追加 `--hcomm-payload-smoke`。它不是完整 payload copy；当前 Stage 2.5 骨架会复用 HCOMM Channel resource probe，再检查 `HcommLocalCopyOnThread` / `HcommReadOnThread` / Notify / Drain 这类 primitive 是否被当前 CANN 头文件暴露。CANN 8.5 上的预期结果是清晰的 readiness/unsupported 诊断：
+
+```text
+hcomm payload smoke unsupported ... primitives=available fallback=hccl-p2p
+detail="HCOMM payload primitive symbols are available, but Flume Stage 2.5 has not implemented the custom-op/AICPU payload scheduler yet; fallback=hccl-p2p; ..."
+```
+
+这表示：HCOMM primitive 符号存在、Channel 前置资源可探测，但 Flume 还没有实现真正的 custom-op/AICPU payload scheduler。默认情况下这不会被当作 CANN 环境失败。只有在未来已经实现真实 HCOMM payload copy 后，才应该追加严格模式：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
+```
+
+当前代码下严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
 `pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs` 或现场拓扑对应的 `sio`。`hccs-only` 是 Flume 侧保留的诊断别名，在当前 CANN 8.5/9.0 头文件里会映射到 `COMM_PROTOCOL_HCCS`。
 
 可选值：
@@ -86,6 +111,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-p
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |
 | `--hcomm-require-thread-export` | off | 严格要求 thread-export / AICPU thread-export-ready 前置能力 |
+| `--hcomm-require-payload-copy` | off | 严格要求真实 HCOMM payload copy；当前 Stage 2.5 skeleton 预期 unsupported |
 
 可以和 P2P baseline 合在一起跑：
 
@@ -149,7 +175,36 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
 
-HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。
+
+完整两卡矩阵建议用：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-full \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-full-matrix
+```
+
+`ascend-full-matrix` 会一次构建，然后跑 local tests/sim、HCCL collective、
+HCCL P2P baseline、HCOMM Channel probe、HCOMM payload readiness，并追加
+`--hcomm-require-payload-copy` strict negative。当前预期是 readiness 返回
+`unsupported` / `fallback=hccl-p2p`，strict negative 失败但在 summary 中标为
+optional；这说明缺的是 Flume custom-op/AICPU payload scheduler，而不是 HCCL
+collective 或 HCCL P2P baseline。
+
+如果要同时采集 CANN fixture：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-full \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --collect-cann-compat-label cann-8.5.0-aarch64 \
+  ascend-full-matrix
+```
 
 如果需要把现场 CANN 8.5 能力固化成文本 fixture，先跑一次 `ascend-probe`，再执行：
 

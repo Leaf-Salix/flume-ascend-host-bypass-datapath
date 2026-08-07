@@ -39,6 +39,12 @@
 #ifndef FLUME_HAVE_HCCL_P2P
 #define FLUME_HAVE_HCCL_P2P 0
 #endif
+#ifndef FLUME_HAVE_HCCL_ROOT_INFO
+#define FLUME_HAVE_HCCL_ROOT_INFO 0
+#endif
+#ifndef FLUME_HAVE_HCCL_COMM_INIT_ALL
+#define FLUME_HAVE_HCCL_COMM_INIT_ALL 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_CHANNEL_RES
 #define FLUME_HAVE_HCOMM_CHANNEL_RES 0
 #endif
@@ -80,6 +86,7 @@
 #endif
 
 #include "protocol/framing.h"
+#include "hcomm_payload/payload_backend.h"
 
 struct flume_client {
   int fd = -1;
@@ -95,6 +102,8 @@ struct flume_client {
   uint64_t sim_allgather_seq = 0;
   uint64_t sim_p2p_send_seq = 0;
   uint64_t sim_p2p_recv_seq = 0;
+  uint64_t sim_hcomm_payload_send_seq = 0;
+  uint64_t sim_hcomm_payload_recv_seq = 0;
   uint64_t sim_a3_register_seq = 0;
 };
 
@@ -122,6 +131,13 @@ struct flume_a3_symmetric_window {
   size_t offset = 0;
   size_t len = 0;
   bool sim = false;
+};
+
+struct flume_storage_block {
+  flume_client_t* client = nullptr;
+  std::vector<uint8_t> payload;
+  uint64_t file_offset = 0;
+  bool sim_partial = true;
 };
 
 struct flume_io {
@@ -663,6 +679,17 @@ std::map<SimP2pKey, std::unique_ptr<PendingSimP2p>>& SimP2ps() {
   return *p2ps;
 }
 
+std::mutex& SimHcommPayloadMutex() {
+  static auto* mu = new std::mutex;
+  return *mu;
+}
+
+std::map<SimP2pKey, std::unique_ptr<PendingSimP2p>>& SimHcommPayloads() {
+  static auto* payloads =
+      new std::map<SimP2pKey, std::unique_ptr<PendingSimP2p>>;
+  return *payloads;
+}
+
 bool PendingSimP2pMatches(const PendingSimP2p& pending,
                           uint64_t count,
                           flume_data_type_t data_type,
@@ -1097,6 +1124,126 @@ int SubmitSimP2p(flume_client_t* client,
       map.erase(inserted.first);
       CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
                  "duplicate sim p2p recv submission");
+      return FLUME_OK;
+    }
+    RetainPendingBuffer(buffer);
+    RetainPendingIo(io);
+    pending.has_recv = true;
+    pending.dst = buffer;
+    pending.dst_offset = offset;
+    pending.recv_io = io;
+  }
+
+  if (pending.has_send && pending.has_recv) {
+    CompletePendingSimP2p(pending);
+    map.erase(inserted.first);
+  }
+  return FLUME_OK;
+}
+
+int SubmitSimHcommPayload(flume_client_t* client,
+                          SimP2pRole role,
+                          flume_buffer_t* buffer,
+                          size_t offset,
+                          uint64_t count,
+                          flume_data_type_t data_type,
+                          uint32_t peer_rank,
+                          flume_io_t** out) {
+  std::string comm_name;
+  uint32_t rank = 0;
+  uint32_t rank_size = 0;
+  {
+    std::lock_guard<std::mutex> lock(client->mu);
+    if (!client->sim_comm_attached || client->rank_size == 0) {
+      *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                    "sim HCOMM payload requires flume_attach_sim_comm");
+      return FLUME_OK;
+    }
+    comm_name = client->sim_comm_name;
+    rank = client->rank;
+    rank_size = client->rank_size;
+  }
+
+  if (rank_size != 2) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "sim HCOMM payload copy is pair-only and requires exactly two ranks");
+    return FLUME_OK;
+  }
+  if (peer_rank >= rank_size || peer_rank == rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(buffer, offset, bytes)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (buffer->client != client || buffer->type != FLUME_BUFFER_SIM_HBM) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  uint64_t seq = 0;
+  {
+    std::lock_guard<std::mutex> lock(client->mu);
+    seq = role == SimP2pRole::kSend ?
+              client->sim_hcomm_payload_send_seq++ :
+              client->sim_hcomm_payload_recv_seq++;
+  }
+
+  std::vector<uint8_t> staging;
+  if (role == SimP2pRole::kSend) {
+    staging.resize(bytes);
+    memcpy(staging.data(), static_cast<const uint8_t*>(buffer->ptr) + offset,
+           bytes);
+  }
+
+  auto* io = MakePendingIo();
+  *out = io;
+
+  SimP2pKey key{
+      comm_name,
+      rank_size,
+      role == SimP2pRole::kSend ? rank : peer_rank,
+      role == SimP2pRole::kSend ? peer_rank : rank,
+      seq,
+  };
+  auto& map = SimHcommPayloads();
+  std::lock_guard<std::mutex> lock(SimHcommPayloadMutex());
+  auto inserted = map.emplace(key, nullptr);
+  if (inserted.second) {
+    inserted.first->second = std::make_unique<PendingSimP2p>();
+  }
+
+  PendingSimP2p& pending = *inserted.first->second;
+  if (!PendingSimP2pMatches(pending, count, data_type, bytes)) {
+    FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                      "sim HCOMM payload parameters do not match peer submission");
+    map.erase(inserted.first);
+    CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+               "sim HCOMM payload parameters do not match peer submission");
+    return FLUME_OK;
+  }
+  MaybeSetPendingSimP2pMetadata(&pending, count, data_type, bytes);
+
+  if (role == SimP2pRole::kSend) {
+    if (pending.has_send) {
+      FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                        "duplicate sim HCOMM payload send submission");
+      map.erase(inserted.first);
+      CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+                 "duplicate sim HCOMM payload send submission");
+      return FLUME_OK;
+    }
+    RetainPendingIo(io);
+    pending.has_send = true;
+    pending.payload = std::move(staging);
+    pending.send_io = io;
+  } else {
+    if (pending.has_recv) {
+      FailPendingSimP2p(pending, FLUME_ERR_INVALID_ARGUMENT,
+                        "duplicate sim HCOMM payload recv submission");
+      map.erase(inserted.first);
+      CompleteIo(io, FLUME_ERR_INVALID_ARGUMENT, 0, 0,
+                 "duplicate sim HCOMM payload recv submission");
       return FLUME_OK;
     }
     RetainPendingBuffer(buffer);
@@ -1677,7 +1824,49 @@ int flume_attach_sim_comm(flume_client_t* client, const char* comm_name,
   client->sim_allgather_seq = 0;
   client->sim_p2p_send_seq = 0;
   client->sim_p2p_recv_seq = 0;
+  client->sim_hcomm_payload_send_seq = 0;
+  client->sim_hcomm_payload_recv_seq = 0;
   client->sim_a3_register_seq = 0;
+  return FLUME_OK;
+}
+
+int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
+  if (out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (out->size != 0 && out->size < sizeof(flume_backend_caps_t)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  bool sim_attached = false;
+  bool hccl_attached = false;
+  if (client != nullptr) {
+    CommState state = SnapshotCommState(client);
+    sim_attached = state.sim_comm_attached;
+    hccl_attached = state.hccl_attached;
+  }
+
+  flume_backend_caps_t caps = {};
+  caps.size = sizeof(caps);
+  caps.hccl_root_info = FLUME_HAVE_HCCL_ROOT_INFO ? 1U : 0U;
+  caps.hccl_init_all = FLUME_HAVE_HCCL_COMM_INIT_ALL ? 1U : 0U;
+  caps.hccl_p2p = (FLUME_HAVE_HCCL_P2P || sim_attached) ? 1U : 0U;
+  caps.hcomm_channel_res = (FLUME_HAVE_HCOMM_CHANNEL_RES || sim_attached) ? 1U : 0U;
+  caps.hcomm_primitives = FLUME_HAVE_HCOMM_PRIMITIVES ? 1U : 0U;
+  caps.hcomm_thread_export = FLUME_HAVE_HCOMM_THREAD_EXPORT ? 1U : 0U;
+  caps.hcomm_rank_graph = FLUME_HAVE_HCOMM_RANK_GRAPH ? 1U : 0U;
+  caps.hcomm_payload_probe =
+      ((FLUME_HAVE_HCOMM_CHANNEL_RES && FLUME_HAVE_HCOMM_PRIMITIVES) ||
+       sim_attached) ? 1U : 0U;
+  caps.hcomm_payload_scheduler = sim_attached ? 1U : 0U;
+  caps.storage_hbm = sim_attached ? 1U : 0U;
+  caps.fallback_hccl_p2p = (FLUME_HAVE_HCCL_P2P || sim_attached) ? 1U : 0U;
+  caps.fallback_runtime_staging = (!sim_attached && hccl_attached) ? 1U : 0U;
+#if FLUME_HAVE_HCOMM_THREAD_EXPORT
+  caps.hcomm_default_engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+#else
+  caps.hcomm_default_engine = FLUME_HCOMM_ENGINE_CPU_TS;
+#endif
+  *out = caps;
   return FLUME_OK;
 }
 
@@ -2334,6 +2523,377 @@ int flume_hcomm_channel_probe_ex(
                 "HCOMM channel resources are unavailable in this build");
   return FLUME_OK;
 #endif
+}
+
+int flume_hcomm_payload_probe(flume_client_t* client,
+                              uint32_t peer_rank,
+                              void* acl_stream,
+                              flume_io_t** out) {
+  flume_hcomm_channel_probe_options_t options = {};
+  options.size = sizeof(options);
+  options.notify_num = 2;
+  options.engine = FLUME_HCOMM_ENGINE_AUTO;
+  options.protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  options.require_thread_export = 0;
+  return flume_hcomm_payload_probe_ex(client, peer_rank, &options, acl_stream,
+                                      out);
+}
+
+int flume_hcomm_payload_probe_ex(
+    flume_client_t* client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t* options,
+    void* acl_stream,
+    flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  HcommProbeOptions normalized_options;
+  std::string option_error;
+  if (!NormalizeHcommProbeOptions(options, &normalized_options,
+                                  &option_error)) {
+    (void)option_error;
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+#if FLUME_HAVE_HCCL_P2P
+  const char* fallback_path = "hccl-p2p";
+#else
+  const char* fallback_path = "none";
+#endif
+  if (normalized_options.protocol == FLUME_HCOMM_PROTOCOL_PCIE) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  std::string("HCOMM payload probe does not support pcie "
+                              "protocol; fallback=") +
+                      fallback_path);
+    return FLUME_OK;
+  }
+
+  CommState state = SnapshotCommState(client);
+  if (state.sim_comm_attached) {
+    if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+        peer_rank == state.rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    (void)acl_stream;
+    *out = MakeIo(FLUME_OK, 0, 0,
+                  "sim HCOMM payload backend ready; scheduler=sim");
+    return FLUME_OK;
+  }
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string detail;
+  std::string error;
+  if (!ProbeHcommChannelResources(state, peer_rank, normalized_options,
+                                  acl_stream, &usable_buffer_bytes,
+                                  &probe_status, &detail, &error)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+#if FLUME_HAVE_HCOMM_PRIMITIVES
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload primitive symbols are available, but Flume "
+                  "Stage 2.5 has not implemented the custom-op/AICPU payload "
+                  "scheduler yet; fallback=") +
+          fallback_path + "; channel_detail=\"" +
+          detail + "\"");
+  return FLUME_OK;
+#else
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload primitives are unavailable in this build; "
+                  "fallback=") +
+          fallback_path + "; channel_detail=\"" +
+          detail + "\"");
+  return FLUME_OK;
+#endif
+#else
+  (void)peer_rank;
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                std::string("HCOMM channel resources are unavailable in this "
+                            "build; fallback=") +
+                    fallback_path);
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_payload_send_async(flume_client_t* client,
+                                  flume_buffer_t* src,
+                                  size_t src_offset,
+                                  uint64_t count,
+                                  flume_data_type_t data_type,
+                                  uint32_t dest_rank,
+                                  void* acl_stream,
+                                  flume_io_t** out) {
+  if (client == nullptr || src == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(src, src_offset, bytes) || src->client != client) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (src->type == FLUME_BUFFER_SIM_HBM) {
+    (void)acl_stream;
+    return SubmitSimHcommPayload(client, SimP2pRole::kSend, src, src_offset,
+                                 count, data_type, dest_rank, out);
+  }
+  if (!IsRealHcclBufferType(src->type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  CommState state = SnapshotCommState(client);
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM payload send requires flume_attach_hccl_comm");
+    return FLUME_OK;
+  }
+  if (state.rank_size != 2) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM payload copy is pair-only and requires exactly two ranks");
+    return FLUME_OK;
+  }
+  if (dest_rank >= state.rank_size || dest_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  HcommProbeOptions options;
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string detail;
+  std::string error;
+  if (!ProbeHcommChannelResources(state, dest_rank, options, acl_stream,
+                                  &usable_buffer_bytes, &probe_status,
+                                  &detail, &error)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+#if FLUME_HAVE_HCOMM_PRIMITIVES
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload send reached ChannelReady/PrimitiveReady, "
+                  "but custom-op/AICPU scheduler missing; fallback=") +
+          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
+          "; channel_detail=\"" + detail + "\"");
+  return FLUME_OK;
+#else
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload primitives are unavailable in this build; "
+                  "fallback=") +
+          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
+          "; channel_detail=\"" + detail + "\"");
+  return FLUME_OK;
+#endif
+#else
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                std::string("HCOMM channel resources are unavailable in this "
+                            "build; fallback=") +
+                    (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none"));
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_payload_recv_async(flume_client_t* client,
+                                  flume_buffer_t* dst,
+                                  size_t dst_offset,
+                                  uint64_t count,
+                                  flume_data_type_t data_type,
+                                  uint32_t src_rank,
+                                  void* acl_stream,
+                                  flume_io_t** out) {
+  if (client == nullptr || dst == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  size_t bytes = 0;
+  if (!CheckedBytes(count, data_type, &bytes) ||
+      !ValidateRange(dst, dst_offset, bytes) || dst->client != client) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (dst->type == FLUME_BUFFER_SIM_HBM) {
+    (void)acl_stream;
+    return SubmitSimHcommPayload(client, SimP2pRole::kRecv, dst, dst_offset,
+                                 count, data_type, src_rank, out);
+  }
+  if (!IsRealHcclBufferType(dst->type)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  CommState state = SnapshotCommState(client);
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM payload recv requires flume_attach_hccl_comm");
+    return FLUME_OK;
+  }
+  if (state.rank_size != 2) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM payload copy is pair-only and requires exactly two ranks");
+    return FLUME_OK;
+  }
+  if (src_rank >= state.rank_size || src_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  HcommProbeOptions options;
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string detail;
+  std::string error;
+  if (!ProbeHcommChannelResources(state, src_rank, options, acl_stream,
+                                  &usable_buffer_bytes, &probe_status,
+                                  &detail, &error)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+#if FLUME_HAVE_HCOMM_PRIMITIVES
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload recv reached ChannelReady/PrimitiveReady, "
+                  "but custom-op/AICPU scheduler missing; fallback=") +
+          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
+          "; channel_detail=\"" + detail + "\"");
+  return FLUME_OK;
+#else
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM payload primitives are unavailable in this build; "
+                  "fallback=") +
+          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
+          "; channel_detail=\"" + detail + "\"");
+  return FLUME_OK;
+#endif
+#else
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                std::string("HCOMM channel resources are unavailable in this "
+                            "build; fallback=") +
+                    (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none"));
+  return FLUME_OK;
+#endif
+}
+
+int flume_prepare_storage_block_async(flume_file_t* file,
+                                     uint64_t file_offset,
+                                     size_t len,
+                                     flume_storage_block_t** out_block,
+                                     flume_io_t** out) {
+  if (file == nullptr || out_block == nullptr || out == nullptr || len == 0) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out_block = nullptr;
+  *out = nullptr;
+  if (file->client == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  auto* block = new flume_storage_block;
+  block->client = file->client;
+  block->file_offset = file_offset;
+  block->payload.assign(len, 0);
+
+  flume_buffer temp;
+  temp.client = file->client;
+  temp.ptr = block->payload.data();
+  temp.len = block->payload.size();
+  temp.type = FLUME_BUFFER_SIM_HCCL_COMM;
+
+  flume_io_t* read_io = nullptr;
+  int submit_ret = flume_pread_async(file, &temp, len, file_offset, 0, nullptr,
+                                     &read_io);
+  if (submit_ret != FLUME_OK) {
+    delete block;
+    return submit_ret;
+  }
+  int wait_ret = flume_wait(read_io, -1);
+  size_t bytes = flume_io_bytes(read_io);
+  uint32_t checksum = flume_io_checksum(read_io);
+  const char* detail = flume_io_error_message(read_io);
+  std::string error = detail == nullptr ? "" : detail;
+  (void)flume_io_release(read_io);
+  if (wait_ret != FLUME_OK) {
+    delete block;
+    *out = MakeIo(wait_ret, bytes, checksum, error);
+    return FLUME_OK;
+  }
+  block->payload.resize(bytes);
+  *out_block = block;
+  *out = MakeIo(FLUME_OK, bytes, checksum,
+                "storage_hbm=sim-partial path=file->SIM_HCCL_COMM");
+  return FLUME_OK;
+}
+
+size_t flume_storage_block_size(flume_storage_block_t* block) {
+  return block == nullptr ? 0 : block->payload.size();
+}
+
+int flume_storage_block_release(flume_storage_block_t* block) {
+  delete block;
+  return FLUME_OK;
+}
+
+int flume_read_to_hbm_async(flume_client_t* client,
+                           flume_storage_block_t* block,
+                           flume_buffer_t* dst,
+                           size_t dst_offset,
+                           void* acl_stream,
+                           flume_io_t** out) {
+  if (client == nullptr || block == nullptr || dst == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  if (block->client != client || dst->client != client ||
+      !ValidateRange(dst, dst_offset, block->payload.size())) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (dst->type == FLUME_BUFFER_SIM_HBM) {
+    (void)acl_stream;
+    auto* dst_ptr = static_cast<uint8_t*>(dst->ptr) + dst_offset;
+    if (!block->payload.empty()) {
+      memcpy(dst_ptr, block->payload.data(), block->payload.size());
+    }
+    *out = MakeIo(FLUME_OK, block->payload.size(),
+                  flume::protocol::Checksum32(dst_ptr, block->payload.size()),
+                  "storage_hbm=sim-partial path=SIM_HCCL_COMM->SIM_HBM");
+    return FLUME_OK;
+  }
+
+  if (IsRealHcclBufferType(dst->type)) {
+    *out = MakeIo(
+        FLUME_ERR_UNSUPPORTED, 0, 0,
+        "storage->HBM direct path not implemented; fallback=runtime-staging|none");
+    return FLUME_OK;
+  }
+  return FLUME_ERR_INVALID_ARGUMENT;
 }
 
 int flume_allreduce_async(flume_client_t* client, flume_buffer_t* dst,

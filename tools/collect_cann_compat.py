@@ -334,7 +334,9 @@ def extract_flume_log_signals(flume_log_dir: Optional[Path]) -> tuple[str, str]:
             if FEATURE_LINE_RE.search(line):
                 rel = log.name
                 feature_lines.append(f"{rel}: {line}")
-                if "FLUME_BACKEND_CAPS" in line or "hcomm channel probe" in line:
+                if ("FLUME_BACKEND_CAPS" in line or
+                        "hcomm channel probe" in line or
+                        "hcomm payload smoke" in line):
                     caps_lines.append(f"{rel}: {line}")
     if not feature_lines:
         feature_lines.append("no Flume feature lines found")

@@ -6,6 +6,18 @@
 
 Base HCCL 可以用于单机多卡 AllReduce / AllGather，且标准用法下输入输出都是 NPU device/HBM buffer，数据搬运不需要经过 host 内存。
 
+这说明 **HCCL 本身已经支持 NPU tensor 通信的 host-memory-bypass**。如果问题只是“1 卡算子进程的 HBM tensor 和 2 卡算子进程的 HBM tensor 交互”，HCCL 是现成主路径；Flume 不应该重复实现这部分通信算法。
+
+Flume 的核心价值在于 HCCL 没覆盖的另一半：**远端存储数据如何进入 NPU HBM，并接入 HCCL/HCOMM 已经存在的 NPU 数据面**。因此本文的 base HCCL collective、`HcclSend` / `HcclRecv` P2P smoke 和 HCOMM Channel probe 都是 baseline / fallback / 下钻验证，不是最终产品边界。
+
+| 问题 | HCCL 是否解决 | Flume 应如何处理 |
+| --- | --- | --- |
+| NPU HBM tensor AllReduce / AllGather | 是 | 复用，不重做 |
+| NPU HBM tensor Send/Recv | 是，若公开 P2P API 可用 | 复用为 Stage 2 baseline |
+| host 是否参与每次通信任务提交 | 参与 | Flume 不能把 HCCL 包装成完全 hostless |
+| storage block 如何进 NPU HBM | 否 | Flume 的核心目标 |
+| CANN 8.5/高版本能力差异 | 不提供统一上层 fallback | Flume 做 feature probe、fallback 和诊断 |
+
 如果进一步要求“尽量不经过 HCCL 内部通信 buffer 中转”，Atlas A3 HCCS 场景可以使用 HCCL 对称内存窗口：用 ACL advanced memory API 预留虚拟地址、申请 HBM 物理内存并映射，再调用 `HcclCommSymWinRegister`。这条路径仍需要 host 在每次 collective 时 enqueue 任务，但 collective 的输入输出可以是注册后的业务 HBM 窗口。
 
 但如果目标被严格定义为：
@@ -53,9 +65,17 @@ flowchart LR
 - `flume_attach_sim_comm` 和 sim collective world，可以在无 NPU Mac/Linux 上验证 4-rank AllReduce / AllGather 的 API、等待和结果布局。
 - `flume-hccl-collective-smoke` 可选真机程序，用于单机多卡 HBM collective smoke；加 `--a3-symmetric` 后在 ACL VMM 和 HCCL symmetric window 均可用时走 mapped HBM + symmetric window。
 
-未实现：
+已验证或已接入但边界明确：
 
-- HCOMM Channel / custom op 版本的 HBM-HBM copy；当前只实现公开 HCCL P2P baseline。
+- Host A HCCS_SW pair A 上，root-info 和 init-all HCCL collective 已通过。
+- Host A HCCS_SW pair A 上，公开 HCCL `HcclSend` / `HcclRecv` 的 rank0 HBM -> rank1 HBM P2P copy 已通过，`p2p_copy=on`。
+- CANN 8.5 上 HCOMM Channel resource probe 已通过：`HCCL Buffer`、`CPU_TS` thread resource、Channel acquire、远端 HCCL Buffer 查询可作为下一步 payload backend 的资源入口。
+- CANN 8.5 缺 `hccl_res_expt.h` / thread export 是正常版本差异；严格 thread-export 检查应返回 unsupported，不代表主路径失败。
+- 本地无 NPU 环境已实现结构化 backend caps、HCOMM payload pair-copy sim backend、storage partial-direct sim path 和 `ascend-full-matrix` 工具入口。
+
+仍未实现：
+
+- 真实 HCOMM primitive / custom-op 版本的 HBM-HBM payload copy；当前真实 Ascend backend 只实现 HCOMM Channel resource probe、payload readiness 诊断和公开 HCCL P2P fallback。
 - 独立通信 daemon 与计算进程跨进程共享 HBM。
 - storage RDMA/NVMe-oF 直接写入 NPU HBM 或 activated comm memory。
 
@@ -171,7 +191,7 @@ each process calls HcclAllReduce / HcclAllGather on its stream
 - 数据不经过 host memory。
 - 链路由 HCCL 根据拓扑选择 HCCS / RoCE / PCIe 等。
 
-这已经满足大多数训练框架所谓“通信不经过 host”的含义。
+这已经满足大多数训练框架所谓“tensor 通信不经过 host memory”的含义。它不等价于“host 不参与控制面”，也不等价于“存储数据可以直接进入 HBM”。
 
 ### 场景 B：单进程多卡通信线程管理 HBM
 
@@ -228,7 +248,7 @@ base HCCL 没有直接提供这种模型。要做需要额外解决：
 3. **Bridge API proxy**
    - 我们的 `flume_allreduce_async` / `flume_allgather_async` 已经包装 base HCCL。
    - A3 场景可先打开 `flume_a3_register_symmetric_memory`，验证注册后业务 HBM 窗口可直接作为 collective 输入输出。
-   - `flume_hcomm_channel_probe` 已接入 HCOMM Channel resource acquisition；`flume_hbm_copy_async` 的 AICPU/HCOMM primitive payload 版本仍待实现。
+   - `flume_hcomm_channel_probe` 已接入 HCOMM Channel resource acquisition；`flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` 已有本地 sim backend；真实 AICPU/HCOMM primitive payload scheduler 仍待实现。
    - 先让计算进程显式调用 bridge API，但隐藏 HCCL 细节。
    - 再探索是否能通过框架 plugin/hook 做“上层无感”。
 
@@ -245,15 +265,19 @@ flume_allreduce_async
 flume_allgather_async
 flume_p2p_send_async / flume_p2p_recv_async
 flume_hcomm_channel_probe
+flume_get_backend_caps
+flume_hcomm_payload_send_async / flume_hcomm_payload_recv_async  # sim backend
+flume_prepare_storage_block_async / flume_read_to_hbm_async      # sim partial-direct
 ```
 
 短期下一步：
 
 ```text
-flume_hbm_copy_async 的 AICPU/HCOMM primitive payload backend
+CANN 8.5 HCOMM primitive payload scheduler
+真实 storage proxy -> HCCL/HCOMM/RDMA backend
 ```
 
-其中 `flume_allreduce_async` 和 `flume_allgather_async` 第一版直接调用 base HCCL public API。这样能最快在真机上验证：
+其中 `flume_allreduce_async` 和 `flume_allgather_async` 第一版直接调用 base HCCL public API。这样做的价值不是替代 HCCL，而是最快在真机上验证：
 
 - HCCL 环境。
 - 单机多卡通信域。

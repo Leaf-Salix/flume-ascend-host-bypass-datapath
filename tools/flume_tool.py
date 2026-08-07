@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import json
 import os
@@ -231,6 +232,15 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 re.IGNORECASE,
             ),
         ),
+        (
+            "HCOMM Payload Probe",
+            re.compile(
+                r"(hcomm payload smoke|HCOMM payload|HcommLocalCopyOnThread|"
+                r"HcommReadOnThread|HCOMM primitive|payload scheduler|"
+                r"fallback=hccl-p2p)",
+                re.IGNORECASE,
+            ),
+        ),
     ]
     signal_matches: list[tuple[str, list[tuple[int, str]]]] = []
     for title, pattern in signal_specs:
@@ -277,6 +287,14 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
             "HCCL failed while loading its operator binary. Check that "
             "ASCEND_HOME_PATH points at the CANN toolkit root that contains "
             "lib64/*.o, not an architecture subdirectory or stale symlink."
+        )
+    if re.search(r"payload scheduler.*not implemented|hcomm payload smoke unsupported",
+                 joined, re.IGNORECASE):
+        hints.append(
+            "HCOMM payload smoke reached the Stage 2.5 readiness probe but "
+            "Flume has not implemented the custom-op/AICPU payload scheduler "
+            "yet. This is an expected unsupported/fallback result for the "
+            "current skeleton, not a CANN environment failure."
         )
 
     with diag.open("w", encoding="utf-8") as f:
@@ -523,7 +541,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                                 True, {}))
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
-                        args.run_hcomm_channel_probe):
+                        args.run_hcomm_channel_probe or
+                        args.run_hcomm_payload_smoke):
         hccl_smoke = str(Path(build_dir) / "flume-hccl-collective-smoke")
         init_mode = ResolveHcclInitMode(args)
         command = [hccl_smoke, f"--count={args.hccl_count}",
@@ -609,11 +628,16 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append("--p2p-copy")
         if args.run_hcomm_channel_probe:
             command.append("--hcomm-channel-probe")
+        if args.run_hcomm_payload_smoke:
+            command.append("--hcomm-payload-smoke")
+        if args.run_hcomm_channel_probe or args.run_hcomm_payload_smoke:
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
             command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
             if args.hcomm_require_thread_export:
                 command.append("--hcomm-require-thread-export")
+            if args.hcomm_require_payload_copy:
+                command.append("--hcomm-require-payload-copy")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -638,7 +662,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                required=True, timeout_seconds=args.step_timeout_sec)
     requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                             args.run_hccl_p2p_smoke or
-                            args.run_hcomm_channel_probe)
+                            args.run_hcomm_channel_probe or
+                            args.run_hcomm_payload_smoke)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
@@ -691,13 +716,184 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--hcomm-channel-engine, --hcomm-channel-protocol, and "
         "--hcomm-notify-num select the resource probe strategy. The default "
         "HCOMM probe validates channel resources only and the smoke log prints "
-        "a FLUME_BACKEND_CAPS line. Add --hcomm-require-thread-export for a "
-        "strict AICPU thread-export prerequisite check, which is expected to "
-        "report unsupported on CANN builds without hccl_res_expt.h such as "
-        "CANN 8.5.\n",
+        "a FLUME_BACKEND_CAPS line. Pass --run-hcomm-payload-smoke to run the "
+        "Stage 2.5 payload-readiness probe: it checks Channel resources and "
+        "HCOMM primitive capability, then reports unsupported/fallback clearly "
+        "until Flume implements the custom-op/AICPU payload scheduler. Add "
+        "--hcomm-require-thread-export for a strict AICPU thread-export "
+        "prerequisite check, which is expected to report unsupported on CANN "
+        "builds without hccl_res_expt.h such as CANN 8.5. Add "
+        "--hcomm-require-payload-copy only when a future build is expected to "
+        "complete real HCOMM payload copy.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
+    return runner.write_summary()
+
+
+def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
+                            strict_log: Optional[Path]) -> Path:
+    def read(path: Optional[Path]) -> str:
+      if path is None:
+          return ""
+      try:
+          return path.read_text(encoding="utf-8", errors="replace")
+      except OSError:
+          return ""
+
+    smoke = read(smoke_log)
+    strict = read(strict_log)
+    lines = [
+        "# Flume Ascend Full Matrix Decision Tree",
+        "",
+        "| Check | Result | Evidence |",
+        "| --- | --- | --- |",
+    ]
+    hccl_ok = "hccl collective smoke passed" in smoke
+    p2p_ok = "p2p_copy=on" in smoke and "hccl collective smoke passed" in smoke
+    hcomm_channel_ok = "hcomm channel probe passed" in smoke
+    hcomm_payload_ok = "hcomm payload smoke passed" in smoke
+    hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
+    strict_expected = ("HCOMM payload copy required but unavailable" in strict or
+                       "unsupported" in strict)
+    caps_match = re.search(r"FLUME_BACKEND_CAPS .+", smoke)
+    caps = caps_match.group(0) if caps_match else "missing FLUME_BACKEND_CAPS"
+    primitives = "unknown"
+    if "hcomm_primitives=on" in caps:
+        primitives = "present"
+    elif "hcomm_primitives=off" in caps:
+        primitives = "absent"
+    scheduler_missing = ("hcomm_payload_scheduler=not-implemented" in caps or
+                         "custom-op/AICPU scheduler missing" in smoke)
+
+    lines.append(
+        f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
+    lines.append(
+        f"| HCCL P2P fallback ok? | {'yes' if p2p_ok else 'no'} | `p2p_copy=on` marker |")
+    lines.append(
+        f"| HCOMM channel ok? | {'yes' if hcomm_channel_ok else 'no'} | `hcomm channel probe passed` marker |")
+    lines.append(
+        f"| HCOMM primitives present? | {primitives} | `hcomm_primitives` in caps |")
+    lines.append(
+        f"| HCOMM payload readiness? | "
+        f"{'pass' if hcomm_payload_ok else ('unsupported' if hcomm_payload_unsupported else 'no signal')} | "
+        "`hcomm payload smoke` marker |")
+    lines.append(
+        f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
+    lines.append(
+        f"| Strict payload negative expected? | {'yes' if strict_expected else 'no'} | `hcomm-payload-strict-negative` log |")
+    next_action = (
+        "implement custom-op/AICPU HCOMM payload scheduler"
+        if hccl_ok and p2p_ok and hcomm_channel_ok and hcomm_payload_unsupported
+        else "inspect first failed required matrix step"
+    )
+    lines.extend(["", f"next action: {next_action}", ""])
+    path = run_dir / "ASCEND_FULL_MATRIX_DECISION_TREE.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[ok] matrix decision tree -> {path}")
+    return path
+
+
+def run_ascend_full_matrix(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
+               required=True, timeout_seconds=args.step_timeout_sec)
+    hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    if len(hccl_devices) != 2:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "ascend-full-matrix requires exactly two --hccl-devices entries\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+    if shutil.which("npu-smi"):
+        runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
+                   required=False, timeout_seconds=args.step_timeout_sec)
+        runner.run(
+            "npu-topo-check",
+            [sys.executable, "tools/flume_npu_topo_check.py",
+             f"--devices={','.join(hccl_devices)}"],
+            required=False,
+            timeout_seconds=args.step_timeout_sec,
+        )
+
+    matrix_args = copy.copy(args)
+    matrix_args.run_hccl_smoke = False
+    matrix_args.run_a3_symmetric_smoke = False
+    matrix_args.run_hccl_p2p_smoke = True
+    matrix_args.run_hcomm_channel_probe = True
+    matrix_args.run_hcomm_payload_smoke = True
+    matrix_args.hcomm_require_payload_copy = False
+    matrix_args.hcomm_require_thread_export = False
+    try:
+        command_specs = build_commands(matrix_args, enable_hccl=True,
+                                       run_dir=runner.run_dir)
+    except RuntimeError as exc:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(str(exc) + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    WriteHcclSmokeSetupNotes(
+        runner.run_dir,
+        CollectHcclSmokeSetupNotes(matrix_args, ResolveHcclInitMode(matrix_args)),
+    )
+
+    smoke_result: Optional[StepResult] = None
+    smoke_spec: Optional[CommandSpec] = None
+    for spec in command_specs:
+        timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
+                   else args.step_timeout_sec)
+        result = runner.run(spec.name, spec.command, required=spec.required,
+                            timeout_seconds=timeout, env_updates=spec.env_updates)
+        if spec.name == "hccl-collective-smoke":
+            smoke_result = result
+            smoke_spec = spec
+            if result.returncode != 0:
+                WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+
+    strict_result: Optional[StepResult] = None
+    if smoke_spec is not None:
+        strict_command = list(smoke_spec.command)
+        strict_command.append("--hcomm-require-payload-copy")
+        strict_result = runner.run(
+            "hcomm-payload-strict-negative",
+            strict_command,
+            required=False,
+            timeout_seconds=args.hccl_smoke_timeout_sec,
+            env_updates=smoke_spec.env_updates,
+        )
+        if strict_result.returncode != 0:
+            WriteHcclSmokeDiagnostics(runner.run_dir, strict_result.log_path)
+
+    if args.collect_cann_compat_label:
+        runner.run(
+            "collect-cann-compat",
+            [sys.executable, "tools/collect_cann_compat.py",
+             "--label", args.collect_cann_compat_label,
+             "--flume-log-dir", str(runner.run_dir),
+             "--devices", ",".join(hccl_devices)],
+            required=False,
+            timeout_seconds=args.step_timeout_sec,
+        )
+
+    WriteMatrixDecisionTree(
+        runner.run_dir,
+        smoke_result.log_path if smoke_result is not None else None,
+        strict_result.log_path if strict_result is not None else None,
+    )
+    note = runner.run_dir / "ASCEND_FULL_MATRIX_SCOPE.txt"
+    note.write_text(
+        "ascend-full-matrix builds once, runs local tests/sim, then runs a "
+        "two-rank root-info smoke with HCCL collective, HCCL P2P fallback, "
+        "HCOMM channel resource probe, and HCOMM payload readiness. It then "
+        "runs --hcomm-require-payload-copy as an optional expected negative "
+        "until the custom-op/AICPU payload scheduler is implemented.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] matrix scope -> {note}")
     return runner.write_summary()
 
 
@@ -728,6 +924,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hcomm-channel-probe", action="store_true",
                         help=("Run the optional Stage 2 HCOMM Channel resource "
                               "probe after the collective smoke"))
+    parser.add_argument("--run-hcomm-payload-smoke", action="store_true",
+                        help=("Run the optional Stage 2.5 HCOMM payload "
+                              "readiness probe after the collective smoke"))
     parser.add_argument("--hcomm-channel-engine",
                         choices=["auto", "aicpu", "aicpu-ts", "cpu", "cpu-ts"],
                         default="auto",
@@ -744,6 +943,10 @@ def parse_args() -> argparse.Namespace:
                               "HCOMM channel probe as an AICPU thread-export "
                               "extension check; CANN 8.5 is expected to "
                               "report unsupported for this extension"))
+    parser.add_argument("--hcomm-require-payload-copy", action="store_true",
+                        help=("Require real HCOMM payload copy in "
+                              "--run-hcomm-payload-smoke; current Stage 2.5 "
+                              "skeleton is expected to report unsupported"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",
@@ -793,11 +996,15 @@ def parse_args() -> argparse.Namespace:
                         help="Per-rank HCCL symmetric window reservation in GB")
     parser.add_argument("--hccl-smoke-timeout-sec", type=int, default=600,
                         help="Timeout for the optional real HCCL smoke step")
+    parser.add_argument("--collect-cann-compat-label", default="",
+                        help=("Optional label for ascend-full-matrix to collect "
+                              "CANN/HCCL compatibility fixtures"))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")
     subparsers.add_parser("local", help="Run no-NPU local configure/build/tests/sim demo")
     subparsers.add_parser("ascend-probe", help="Probe CANN/HCCL discovery and compile/link on Ascend host")
+    subparsers.add_parser("ascend-full-matrix", help="Run the full two-rank Ascend readiness matrix")
 
     args = parser.parse_args()
     args.hccl_host_ifname = args.hccl_host_ifname.strip()
@@ -815,14 +1022,19 @@ def parse_args() -> argparse.Namespace:
     if args.run_hccl_p2p_smoke and args.run_a3_symmetric_smoke:
         parser.error("--run-hccl-p2p-smoke currently cannot be combined with "
                      "--run-a3-symmetric-smoke")
+    if args.hcomm_require_payload_copy and not args.run_hcomm_payload_smoke:
+        parser.error("--hcomm-require-payload-copy requires "
+                     "--run-hcomm-payload-smoke")
     try:
         parsed_hccl_devices = ParseDeviceList(args.hccl_devices)
     except ValueError as exc:
         parser.error(str(exc))
-    if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe) and
+    if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe or
+         args.run_hcomm_payload_smoke) and
             args.hccl_devices and len(parsed_hccl_devices) != 2):
-        parser.error("--run-hccl-p2p-smoke and --run-hcomm-channel-probe "
-                     "require exactly two --hccl-devices entries")
+        parser.error("--run-hccl-p2p-smoke, --run-hcomm-channel-probe, and "
+                     "--run-hcomm-payload-smoke require exactly two "
+                     "--hccl-devices entries")
     return args
 
 
@@ -834,6 +1046,8 @@ def main() -> int:
         return run_local(args)
     if args.command == "ascend-probe":
         return run_ascend_probe(args)
+    if args.command == "ascend-full-matrix":
+        return run_ascend_full_matrix(args)
     raise AssertionError(args.command)
 
 

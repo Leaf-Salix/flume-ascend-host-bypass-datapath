@@ -8,12 +8,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(FLUME_ENABLE_HCCL "Enable the future HCCL/HCOMM-backed transport." OFF)
 option(FLUME_BUILD_TESTS "Build tests." ON)
+option(FLUME_BUILD_HCOMM_CUSTOM_OP "Build experimental HCOMM custom-op/AICPU payload scheduler." OFF)
 
 find_package(Threads REQUIRED)
 
 add_library(flume STATIC
   src/agent/storage_agent.cc
   src/core/client.cc
+  src/hcomm_payload/payload_backend.cc
   src/protocol/framing.cc
   src/storage/posix_file.cc
 )
@@ -517,6 +519,21 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_sim_p2p_copy PRIVATE flume)
   target_include_directories(test_sim_p2p_copy PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME sim_p2p_copy COMMAND test_sim_p2p_copy)
+
+  add_executable(test_backend_caps tests/test_backend_caps.cc)
+  target_link_libraries(test_backend_caps PRIVATE flume)
+  target_include_directories(test_backend_caps PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME backend_caps COMMAND test_backend_caps)
+
+  add_executable(test_sim_hcomm_payload_copy tests/test_sim_hcomm_payload_copy.cc)
+  target_link_libraries(test_sim_hcomm_payload_copy PRIVATE flume)
+  target_include_directories(test_sim_hcomm_payload_copy PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME sim_hcomm_payload_copy COMMAND test_sim_hcomm_payload_copy)
+
+  add_executable(test_sim_hcomm_payload_failures tests/test_sim_hcomm_payload_failures.cc)
+  target_link_libraries(test_sim_hcomm_payload_failures PRIVATE flume)
+  target_include_directories(test_sim_hcomm_payload_failures PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME sim_hcomm_payload_failures COMMAND test_sim_hcomm_payload_failures)
 
   add_executable(test_sim_collective_failures tests/test_sim_collective_failures.cc)
   target_link_libraries(test_sim_collective_failures PRIVATE flume)

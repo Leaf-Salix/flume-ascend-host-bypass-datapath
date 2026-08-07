@@ -13,6 +13,7 @@ typedef struct flume_file flume_file_t;
 typedef struct flume_buffer flume_buffer_t;
 typedef struct flume_io flume_io_t;
 typedef struct flume_a3_symmetric_window flume_a3_symmetric_window_t;
+typedef struct flume_storage_block flume_storage_block_t;
 
 typedef enum {
   FLUME_OK = 0,
@@ -88,6 +89,23 @@ typedef struct {
   uint32_t require_thread_export;
 } flume_hcomm_channel_probe_options_t;
 
+typedef struct {
+  uint32_t size;
+  uint32_t hccl_root_info;
+  uint32_t hccl_init_all;
+  uint32_t hccl_p2p;
+  uint32_t hcomm_channel_res;
+  uint32_t hcomm_primitives;
+  uint32_t hcomm_thread_export;
+  uint32_t hcomm_rank_graph;
+  uint32_t hcomm_payload_probe;
+  uint32_t hcomm_payload_scheduler;
+  uint32_t storage_hbm;
+  uint32_t fallback_hccl_p2p;
+  uint32_t fallback_runtime_staging;
+  flume_hcomm_engine_t hcomm_default_engine;
+} flume_backend_caps_t;
+
 const char *flume_status_string(int status);
 
 int flume_client_open(const char *endpoint, flume_client_t **out);
@@ -97,6 +115,7 @@ int flume_attach_hccl_comm(flume_client_t *client, void *hccl_comm,
                           uint32_t rank, uint32_t rank_size);
 int flume_attach_sim_comm(flume_client_t *client, const char *comm_name,
                          uint32_t rank, uint32_t rank_size);
+int flume_get_backend_caps(flume_client_t *client, flume_backend_caps_t *out);
 
 int flume_open(flume_client_t *client, const char *path, flume_file_t **out);
 int flume_close(flume_file_t *file);
@@ -173,6 +192,52 @@ int flume_hcomm_channel_probe_ex(
     const flume_hcomm_channel_probe_options_t *options,
     void *acl_stream,
     flume_io_t **out);
+
+int flume_hcomm_payload_probe(flume_client_t *client,
+                              uint32_t peer_rank,
+                              void *acl_stream,
+                              flume_io_t **out);
+
+int flume_hcomm_payload_probe_ex(
+    flume_client_t *client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t *options,
+    void *acl_stream,
+    flume_io_t **out);
+
+int flume_hcomm_payload_send_async(flume_client_t *client,
+                                  flume_buffer_t *src,
+                                  size_t src_offset,
+                                  uint64_t count,
+                                  flume_data_type_t data_type,
+                                  uint32_t dest_rank,
+                                  void *acl_stream,
+                                  flume_io_t **out);
+
+int flume_hcomm_payload_recv_async(flume_client_t *client,
+                                  flume_buffer_t *dst,
+                                  size_t dst_offset,
+                                  uint64_t count,
+                                  flume_data_type_t data_type,
+                                  uint32_t src_rank,
+                                  void *acl_stream,
+                                  flume_io_t **out);
+
+int flume_prepare_storage_block_async(flume_file_t *file,
+                                     uint64_t file_offset,
+                                     size_t len,
+                                     flume_storage_block_t **out_block,
+                                     flume_io_t **out);
+
+size_t flume_storage_block_size(flume_storage_block_t *block);
+int flume_storage_block_release(flume_storage_block_t *block);
+
+int flume_read_to_hbm_async(flume_client_t *client,
+                           flume_storage_block_t *block,
+                           flume_buffer_t *dst,
+                           size_t dst_offset,
+                           void *acl_stream,
+                           flume_io_t **out);
 
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,

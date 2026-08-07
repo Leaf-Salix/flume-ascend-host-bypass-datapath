@@ -12,6 +12,7 @@ Flume 的 Ascend backend 应以 **CANN 8.5 作为 baseline ABI**。高版本 CAN
 - 高版本接口只通过 feature probe 启用。
 - 缺少高版本扩展时必须走 fallback，而不是编译失败或误报成功。
 - 兼容判断依据是实际 header、`.so` symbol 和 runtime smoke，不是单纯版本号。
+- HCCL collective/P2P 是 baseline 和 fallback；CANN 8.5 适配的最终目的，是让后续 HCOMM payload 和 storage->HBM 路径也能在最低可用 ABI 上工作。
 
 ```text
 CANN 8.5 baseline
@@ -63,7 +64,7 @@ Higher CANN optional extensions
 真机 smoke 会打印一行机器可解析的能力：
 
 ```text
-FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=on hcomm_default_engine=cpu-ts hcomm_rank_graph=off hcomm_aicpu_thread_export=off hcomm_primitives=on hcomm_payload=not-implemented storage_hbm=not-implemented cann85_baseline=feature-probed
+FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=on hcomm_default_engine=cpu-ts hcomm_rank_graph=off hcomm_aicpu_thread_export=off hcomm_primitives=on hcomm_payload_probe=on hcomm_payload_scheduler=not-implemented hcomm_payload=not-implemented storage_hbm=not-implemented fallback_hccl_p2p=on fallback_runtime_staging=off cann85_baseline=feature-probed
 ```
 
 判读：
@@ -75,8 +76,12 @@ FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=
 | `hcomm_default_engine=cpu-ts` | 当前默认 HCOMM probe 走 CANN 8.5 baseline engine |
 | `hcomm_aicpu_thread_export=off` | 当前没有高版本 thread-export 扩展，CANN 8.5 正常 |
 | `hcomm_rank_graph=off` | 没有 rank graph 时应 fallback legacy descriptor |
+| `hcomm_payload_probe=on` | 当前 build 暴露 HCOMM primitive 符号并可运行 payload readiness probe |
+| `hcomm_payload_scheduler=not-implemented` | Flume 还没有 custom-op/AICPU payload scheduler |
 | `hcomm_payload=not-implemented` | 还没有真正 HCOMM primitive payload copy |
 | `storage_hbm=not-implemented` | 还没有 storage -> HBM direct path |
+| `fallback_hccl_p2p=on` | 当前可回退到已验证的 HCCL Send/Recv P2P baseline |
+| `fallback_runtime_staging=off` | 当前 smoke 没有启用 runtime staging fallback |
 
 `hcomm_aicpu_thread_export=off` 不是 CANN 8.5 不支持的信号。它只说明不能走高版本 AICPU thread-export path。
 
@@ -173,7 +178,28 @@ detail="resolved_engine=cpu-ts ... channel_desc=rank-graph|legacy-desc ... threa
 
 这证明 CANN 8.5 的 HCOMM Channel resource path 可用。
 
-### 6.3 AICPU thread-export 扩展检查
+### 6.3 HCOMM payload readiness probe
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-cann85 \
+  --run-hcomm-payload-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-probe
+```
+
+当前 Stage 2.5 骨架预期返回 probe-only unsupported，而不是误报 payload success：
+
+```text
+hcomm payload smoke unsupported ... primitives=available fallback=hccl-p2p
+detail="HCOMM payload primitive symbols are available, but Flume Stage 2.5 has not implemented the custom-op/AICPU payload scheduler yet; fallback=hccl-p2p; ..."
+```
+
+这证明 Channel 前置资源和 HCOMM primitive 符号探测链路已经接好。只有未来实现真实 custom-op/AICPU payload scheduler 后，`--hcomm-require-payload-copy` 才应通过；当前 CANN 8.5 下严格模式预期返回 unsupported。
+
+### 6.4 AICPU thread-export 扩展检查
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-thread-export-check \

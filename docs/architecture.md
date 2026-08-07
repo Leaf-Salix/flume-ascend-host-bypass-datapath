@@ -4,10 +4,14 @@
 
 ## 1. 背景与定位
 
-Flume 的目标不是单纯做一个“远端文件读取库”，而是基于 Ascend CANN 开源 HCCL/HCOMM 通信体系，探索两类 host-bypass 数据路径：
+Flume 的目标不是单纯做一个“远端文件读取库”，也不是重做 HCCL collective。HCCL 本身已经支持 NPU HBM 之间的 host-memory-bypass 通信：正常 AllReduce、AllGather、Send/Recv 的 payload 可以走 HCCS/RoCE/PCIe 数据面，不需要先搬到 host DRAM。
+
+Flume 要补的是 HCCL 没有覆盖的部分：**把存储数据接入 NPU HBM 数据路径，并在 CANN/HCCL/HCOMM 能力差异下给上层一个稳定、可诊断、可降级的 runtime**。
+
+本项目基于 Ascend CANN 开源 HCCL/HCOMM 通信体系，探索两类数据路径：
 
 - 远端存储到 NPU HBM：远端存储数据通过 RDMA/存储侧 DMA/HCCL-HCOMM 通信链路进入目标 NPU HBM。
-- NPU HBM 到 NPU HBM：不同 NPU rank 的 HBM 之间通过 HCCL/HCOMM 互通，host CPU 只参与控制面和任务下发。
+- NPU HBM 到 NPU HBM：不同 NPU rank 的 HBM 之间通过 HCCL/HCOMM 互通；这部分 HCCL 已经提供主能力，Flume 只把它作为 baseline、fallback 和 HCOMM 下钻前的验证路径。
 
 因此本项目主线应是 **HCCL/HCOMM-first**。HIXL 不作为第一优先实现基座，而作为 one-sided transfer、内存注册、异步请求状态和能力协商的参考样板。
 
@@ -33,6 +37,19 @@ HcommReadOnThread
 ```
 
 这比 HIXL 更贴近本项目真正要改造和扩展的底层。
+
+### 1.1 Flume 与 HCCL 的职责边界
+
+| 问题 | HCCL 已覆盖 | Flume 应覆盖 |
+| --- | --- | --- |
+| NPU tensor AllReduce / AllGather | 已覆盖，且 payload 通常不经过 host memory staging | 不重复实现，只包装、探测、对齐错误语义和作为 fallback |
+| NPU HBM 点对点拷贝 | `HcclSend` / `HcclRecv` 可覆盖公开 P2P baseline | 暴露成 Flume P2P API，作为 HCOMM payload backend 的对照 |
+| HCCS/RoCE/PCIe fabric 选择 | HCCL 根据拓扑和初始化路径选择 | 记录、诊断、避免把 rank-table/VNIC 失败误判成 Flume 数据面失败 |
+| HCOMM Channel / HCCL Buffer | HCOMM 提供底层资源接口 | 封装 resource probe，后续实现 HCOMM primitive payload copy |
+| 远端存储块如何进入 HBM | 不是 HCCL 职责 | Flume 核心目标：storage proxy、HCCL/HCOMM visible buffer、未来 RDMA/storage direct path |
+| CANN 8.5 与高版本差异 | 由安装环境暴露 header/symbol | Flume feature probe + fallback，缺能力返回 unsupported |
+
+因此本文档中的 “host-bypass” 不是指 host 完全退出系统，而是指 **payload 不经 host memory staging**。host 仍负责初始化、建链、任务下发、错误诊断和 fallback 决策。最终目标是在 storage->HBM payload 上也达到类似 HCCL tensor 通信的数据路径属性。
 
 ## 2. 目标与非目标
 
@@ -71,10 +88,13 @@ HcommReadOnThread
 | Base HCCL collectives | 初版已实现，root-info 为首选真机打通路径 | `tools/flume_tool.py --build-dir build-ascend --run-hccl-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装 `HcclAllReduce` / `HcclAllGather`，输入输出为 Ascend HBM；rank-table 保留为 VNIC/P2P 诊断路径，单机 HCCS_SW 暂未通过真机验证 |
 | HCCL P2P HBM copy | 初版已实现，待更多卡对验证 | `tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-devices 0,1 ascend-probe` | Flume 包装公开 `HcclSend` / `HcclRecv`，当前 smoke 测 rank0 HBM -> rank1 HBM；这是 HCOMM payload backend 前的公开 HCCL baseline |
 | A3 symmetric memory collectives | 初版已实现，按 CANN/HCCL 能力位启用 | `tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-devices 0,1 ascend-probe` | 需要 ACL VMM、`HcclCommInitRootInfoConfig`、symmetric-window config 字段和 `HcclCommSymWinRegister` 均存在 |
-| HCOMM Channel resource probe | 初版已实现，待真机验证 | `tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe` | Flume 会探测 `HcclGetHcclBuffer`、CPU_TS/AICPU_TS thread resource、rank graph / legacy descriptor、可选 thread export、可配置 engine/protocol 的 `HcclChannelAcquire` 和 `HcclChannelGetHcclBuffer`；默认成功只代表 channel resource path，尚未 launch AICPU kernel 或执行 `HcommReadOnThread` payload copy |
+| HCOMM Channel resource probe | CANN 8.5 真机已验证 resource path | `tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe` | Flume 会探测 `HcclGetHcclBuffer`、CPU_TS/AICPU_TS thread resource、rank graph / legacy descriptor、可选 thread export、可配置 engine/protocol 的 `HcclChannelAcquire` 和 `HcclChannelGetHcclBuffer`；CANN 8.5 默认 `engine=auto -> cpu-ts`，严格 thread-export 返回 unsupported；默认成功只代表 channel resource path，尚未 launch AICPU kernel 或执行 `HcommReadOnThread` payload copy |
+| HCOMM payload copy sim | 本地已实现 rank-pair sim backend | `ctest --test-dir build-local-next -R sim_hcomm_payload` | `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` 验证 send-first / recv-first、peer 校验、pending IO 和 buffer 生命周期；真实 HCOMM primitive scheduler 仍返回 unsupported |
+| storage partial-direct sim | 本地已实现最小骨架 | `ctest --test-dir build-local-next -R sim_hcomm_payload_failures` | `flume_prepare_storage_block_async` / `flume_read_to_hbm_async` 当前模拟 `file offset -> SIM_HCCL_COMM -> SIM_HBM`；真实 storage->Ascend HBM direct path 仍返回 unsupported |
+| Ascend full matrix | 工具已接入，待下一次真机验证 | `tools/flume_tool.py --build-dir build-full --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> --hccl-debug-logs ascend-full-matrix` | 一次构建后收集 HCCL collective、HCCL P2P、HCOMM Channel、payload readiness 和 strict negative，并输出 decision tree |
 | storage/RDMA->NPU HBM | 待探索 | 暂不可真实测试 | 依赖外部 RDMA/NVMe-oF 与 NPU HBM/comm memory 的注册和同步能力 |
 
-因此，理论层面现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”、base HCCL AllReduce/AllGather HBM collective smoke、公开 HCCL `Send/Recv` 的 P2P HBM copy smoke，以及 HCOMM Channel resource probe。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。还不能宣称已经可以测试 HCOMM primitive/custom-op payload copy 或 storage->HBM 数据搬运。
+因此，现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”、base HCCL AllReduce/AllGather HBM collective smoke、公开 HCCL `Send/Recv` 的 P2P HBM copy smoke、CANN 8.5 HCOMM Channel resource probe，以及 payload readiness strict negative。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。当前只能本地模拟 HCOMM payload copy 和 storage partial-direct；还不能宣称真实 HCOMM primitive/custom-op payload copy 或真实 storage->Ascend HBM direct path 已打通。
 
 ### 3.1 HCCL/HCOMM 是主线
 
@@ -720,9 +740,9 @@ store-agent pread
 - 增加 `flume-sim-collective-demo` 和 `test_sim_collectives`，验证 4-rank AllReduce/AllGather。
 - 校验 storage offset、buffer offset、checksum、最终字节内容和错误路径。
 
-### Stage 2：HCCL/HCOMM HBM-HBM
+### Stage 2：HCCL/HCOMM HBM-HBM baseline
 
-目的：先验证 base HCCL collective 数据面，再进入 HCOMM Channel / custom backend。
+目的：先确认 HCCL 已经提供的 HBM-HBM host-memory-bypass 能力在目标机器上可用，再进入 HCOMM Channel / custom backend。这个阶段不是 Flume 的最终差异化价值，而是避免在 storage path 尚未实现前误判 CANN/HCCL 基础能力。
 
 任务：
 
@@ -736,8 +756,12 @@ store-agent pread
 - 已增加可选真机 smoke app `flume-hccl-collective-smoke`。
 - 已给 smoke 增加 `--p2p-copy`，当前测试 rank0 HBM -> rank1 HBM 的公开 HCCL P2P baseline。
 - 已给 smoke 增加 `--hcomm-channel-probe`，当前测试 HCOMM 自定义 backend 的资源准备阶段。
-- 后续实现 AICPU/custom-op payload backend，把 `HcommReadOnThread`、Notify 和 HCCL Buffer 串到真正的 HBM-HBM copy。
-- 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`。
+- 已给 smoke 增加 `--hcomm-payload-smoke`，当前测试 Channel resource + HCOMM primitive capability，并在 custom-op/AICPU scheduler 未实现时输出 unsupported / `fallback=hccl-p2p`。
+- 已增加 `flume_get_backend_caps`，让 smoke app 和 tools 从库内结构化能力模型生成判断依据。
+- 已增加本地 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` sim backend，以及 `file offset -> SIM_HCCL_COMM -> SIM_HBM` storage partial-direct 骨架。
+- 已增加 `ascend-full-matrix`，下一次真机会一次性收集 collective、P2P fallback、HCOMM Channel、payload readiness、strict negative 和 decision tree。
+- 下一步实现 CANN 8.5 可用的 HCOMM primitive payload microcopy scheduler，把 `HcommReadOnThread`、Notify 和 HCCL Buffer 串到真正的 HBM-HBM copy。
+- 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`，并保留公开 HCCL P2P fallback。
 - 测量不同 block size 的 HBM-HBM bandwidth、latency、CPU usage。
 
 ### Stage 3：HCCL 通信内存零拷贝探索
@@ -854,7 +878,7 @@ python3 tools/flume_tool.py --build-dir build-p2p --run-hccl-p2p-smoke --hccl-de
 python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe
 ```
 
-`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory/P2P/HCOMM/rank-graph 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；加 `--run-hccl-p2p-smoke` 会在 collective 之后追加 rank0 到 rank1 的 `HcclSend` / `HcclRecv` HBM copy smoke；加 `--run-hcomm-channel-probe` 会追加 HCOMM Channel resource 探测，默认只证明 channel resource path，不声明 AICPU thread-export-ready。当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。该 smoke 仍不验证 HCOMM primitive payload copy 或 storage->HBM。
+`ascend-probe` 的默认含义要严格限定：它验证 CANN/HCCL 环境发现、CMake 配置和链接，以及当前 mock/sim 回归；CMake 会打印 A3/comm-memory/P2P/HCOMM/rank-graph 试用接口是否存在。加 `--run-hccl-smoke` 后才运行真实 base HCCL collective smoke；加 `--run-hccl-p2p-smoke` 会在 collective 之后追加 rank0 到 rank1 的 `HcclSend` / `HcclRecv` HBM copy smoke；加 `--run-hcomm-channel-probe` 会追加 HCOMM Channel resource 探测，默认只证明 channel resource path，不声明 AICPU thread-export-ready；加 `--run-hcomm-payload-smoke` 会做 payload readiness 并在 scheduler 缺失时返回 unsupported/fallback。当传入 `--hccl-devices` 时，`auto` 初始化优先使用一进程一 rank 的 root-info 策略，作为当前首选真机打通路径。`rank-table` 初始化暂存为诊断路径，当前单机 HCCS_SW 真机未通过。`ascend-full-matrix` 是下一次远端推荐入口。真实 HCOMM primitive payload copy 和真实 storage->HBM direct path 仍未实现。
 
 ### 14.1 本地无 NPU
 
