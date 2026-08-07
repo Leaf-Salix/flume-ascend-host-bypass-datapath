@@ -71,6 +71,15 @@ int main() {
                    std::string::npos);
   FLUME_TEST_CHECK(flume_io_release(custom_op_launch) == FLUME_OK);
 
+  flume_io_t* descriptor = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_resource_descriptor_smoke(
+                       clients[0], 1, nullptr, &descriptor) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(descriptor, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(descriptor))
+                       .find("stage3b2_resource_descriptor=host-packaged") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(flume_io_release(descriptor) == FLUME_OK);
+
   flume_buffer_t* src0 = nullptr;
   flume_buffer_t* dst1 = nullptr;
   FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[0], kBytes,

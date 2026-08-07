@@ -35,7 +35,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | Stage | Goal | Success Marker | Expected Failure Before Done |
 | --- | --- | --- | --- |
 | 3B.1 | no-op custom-op/AICPU launch readiness | `hcomm custom-op launch smoke passed` | `custom-op/AICPU scheduler build disabled` or `custom-op/AICPU scheduler launch missing` |
-| 3B.2 | pass HCOMM resources into custom-op kernel | `hcomm_resource_descriptor=on` and notify no-op succeeds | invalid resource handle / notify wait timeout |
+| 3B.2 | package HCOMM resource descriptor and prepare custom-op handoff | `stage3b2_resource_descriptor=host-packaged` | `custom-op/AICPU descriptor handoff is missing` |
 | 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -80,7 +80,7 @@ caller stream. It still would not prove payload copy.
 
 ## Stage 3B.2: Resource Descriptor Smoke
 
-3B.2 passes the resource descriptor needed by the payload kernel:
+3B.2 packages the resource descriptor needed by the payload kernel:
 
 ```text
 HCCL comm
@@ -91,7 +91,19 @@ ready/done notify indices
 rank metadata
 ```
 
-The kernel should only perform a notify no-op:
+The current 3B.2 implementation stops at host-side packaging and reports the
+handoff boundary honestly:
+
+```text
+hcomm resource descriptor smoke unsupported
+stage3b2_resource_descriptor=host-packaged
+stage3b2_descriptor_handoff=missing
+```
+
+This means HCOMM Channel acquisition and descriptor packaging worked, but the
+descriptor has not yet been consumed by a custom-op/AICPU kernel.
+
+The next 3B.2 completion step is for the kernel to perform a notify no-op:
 
 ```text
 rank0: record ready -> wait done
@@ -188,3 +200,41 @@ custom-op/AICPU scheduler launch missing
 This second result is useful: it proves the build switch reached the runtime
 diagnostic path, so the next missing piece is the real custom-op/AICPU launcher.
 
+Stage 3B.2 resource descriptor smoke:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-stage3b2 \
+  --run-hcomm-resource-descriptor-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-probe
+```
+
+Expected current result:
+
+```text
+hcomm resource descriptor smoke unsupported
+stage3b2_resource_descriptor=host-packaged
+stage3b2_descriptor_handoff=missing
+```
+
+Compile-branch descriptor check:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-stage3b2-customop \
+  --build-hcomm-custom-op \
+  --run-hcomm-resource-descriptor-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-probe
+```
+
+Expected current result still reports unsupported, but the detail should include
+`custom-op/AICPU scheduler launch missing`, proving the descriptor path reached
+the custom-op build branch.

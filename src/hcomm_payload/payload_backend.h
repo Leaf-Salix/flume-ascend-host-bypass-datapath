@@ -54,6 +54,25 @@ struct CustomOpLaunchSmokePlan {
   std::vector<CustomOpLaunchSmokeStep> steps;
 };
 
+struct ResourceDescriptor {
+  uint32_t local_rank = 0;
+  uint32_t peer_rank = 0;
+  uint32_t rank_size = 0;
+  uint32_t channel_count = 0;
+  uint32_t notify_num = 0;
+  uint32_t ready_notify_idx = 0;
+  uint32_t done_notify_idx = 1;
+  uint64_t local_hccl_buffer_bytes = 0;
+  uint64_t remote_hccl_buffer_bytes = 0;
+  uint64_t usable_hccl_buffer_bytes = 0;
+  bool local_hccl_buffer_acquired = false;
+  bool remote_hccl_buffer_acquired = false;
+  bool thread_export_required = false;
+  std::string resolved_engine;
+  std::string resolved_protocol;
+  std::string channel_desc_source;
+};
+
 SchedulerStatus CurrentSchedulerStatus();
 const char* SchedulerStatusMessage(SchedulerStatus status);
 const char* PayloadRoleName(PayloadRole role);
@@ -78,6 +97,22 @@ bool BuildCustomOpLaunchSmokePlan(uint32_t local_rank,
 
 std::string DescribeCustomOpLaunchSmokePlan(
     const CustomOpLaunchSmokePlan& plan);
+
+bool BuildResourceDescriptor(uint32_t local_rank,
+                             uint32_t peer_rank,
+                             uint32_t rank_size,
+                             uint32_t channel_count,
+                             uint32_t notify_num,
+                             uint64_t local_hccl_buffer_bytes,
+                             uint64_t remote_hccl_buffer_bytes,
+                             bool thread_export_required,
+                             std::string resolved_engine,
+                             std::string resolved_protocol,
+                             std::string channel_desc_source,
+                             ResourceDescriptor* out,
+                             std::string* error);
+
+std::string DescribeResourceDescriptor(const ResourceDescriptor& descriptor);
 
 }  // namespace flume::hcomm_payload
 

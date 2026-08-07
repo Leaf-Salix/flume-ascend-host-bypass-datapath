@@ -11,9 +11,12 @@ int main() {
   using flume::hcomm_payload::CurrentSchedulerStatus;
   using flume::hcomm_payload::DescribeCustomOpLaunchSmokePlan;
   using flume::hcomm_payload::DescribePlan;
+  using flume::hcomm_payload::DescribeResourceDescriptor;
   using flume::hcomm_payload::PayloadPlan;
   using flume::hcomm_payload::PayloadRole;
   using flume::hcomm_payload::PayloadStep;
+  using flume::hcomm_payload::BuildResourceDescriptor;
+  using flume::hcomm_payload::ResourceDescriptor;
   using flume::hcomm_payload::SchedulerStatus;
   using flume::hcomm_payload::SchedulerStatusMessage;
 
@@ -76,6 +79,24 @@ int main() {
                    std::string::npos);
   FLUME_TEST_CHECK(!BuildCustomOpLaunchSmokePlan(0, 1, 3, &launch, &error));
   FLUME_TEST_CHECK(error.find("exactly two ranks") != std::string::npos);
+
+  ResourceDescriptor descriptor;
+  FLUME_TEST_CHECK(BuildResourceDescriptor(
+      0, 1, 2, 1, 2, 8192, 4096, false, "cpu-ts", "hccs",
+      "rank-graph", &descriptor, &error));
+  FLUME_TEST_CHECK(descriptor.usable_hccl_buffer_bytes == 4096);
+  std::string descriptor_desc = DescribeResourceDescriptor(descriptor);
+  FLUME_TEST_CHECK(descriptor_desc.find(
+                       "stage3b2_resource_descriptor=host-packaged") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(descriptor_desc.find("local_hccl_buffer=acquired") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(descriptor_desc.find("handoff=missing") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(!BuildResourceDescriptor(
+      0, 1, 2, 1, 1, 8192, 4096, false, "cpu-ts", "hccs", "rank-graph",
+      &descriptor, &error));
+  FLUME_TEST_CHECK(error.find("two notifies") != std::string::npos);
 
   SchedulerStatus status = CurrentSchedulerStatus();
   FLUME_TEST_CHECK(status == SchedulerStatus::kCustomOpBuildDisabled ||

@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
                         help="Run rank0/rank1 HCOMM Channel resource probe")
     parser.add_argument("--hcomm-custom-op-launch-smoke", action="store_true",
                         help="Run Stage 3B.1 HCOMM custom-op no-op launch smoke")
+    parser.add_argument("--hcomm-resource-descriptor-smoke", action="store_true",
+                        help="Run Stage 3B.2 HCOMM resource descriptor smoke")
     parser.add_argument("--hcomm-payload-smoke", action="store_true",
                         help="Run Stage 2.5 HCOMM payload readiness probe")
     parser.add_argument("--storage-hbm-smoke", action="store_true",
@@ -83,8 +85,8 @@ def parse_args() -> argparse.Namespace:
         args.devices_list = parse_devices(args.devices)
     except ValueError as exc:
         parser.error(str(exc))
-    if (args.p2p_copy or args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or args.hcomm_payload_smoke or args.storage_hbm_smoke) and len(args.devices_list) != 2:
-        parser.error("--p2p-copy, --hcomm-channel-probe, --hcomm-custom-op-launch-smoke, --hcomm-payload-smoke, and --storage-hbm-smoke require exactly two ranks")
+    if (args.p2p_copy or args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or args.hcomm_resource_descriptor_smoke or args.hcomm_payload_smoke or args.storage_hbm_smoke) and len(args.devices_list) != 2:
+        parser.error("--p2p-copy, --hcomm-channel-probe, --hcomm-custom-op-launch-smoke, --hcomm-resource-descriptor-smoke, --hcomm-payload-smoke, and --storage-hbm-smoke require exactly two ranks")
     if args.storage_hbm_smoke and not args.storage_smoke_file:
         parser.error("--storage-hbm-smoke requires --storage-smoke-file")
     if args.storage_smoke_file and not Path(args.storage_smoke_file).exists():
@@ -127,6 +129,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append("--hcomm-channel-probe")
     if args.hcomm_custom_op_launch_smoke:
         command.append("--hcomm-custom-op-launch-smoke")
+    if args.hcomm_resource_descriptor_smoke:
+        command.append("--hcomm-resource-descriptor-smoke")
     if args.hcomm_payload_smoke:
         command.append("--hcomm-payload-smoke")
     if args.storage_hbm_smoke:
@@ -136,7 +140,7 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append(f"--storage-smoke-bytes={args.storage_smoke_bytes}")
         if args.storage_smoke_checksum:
             command.append(f"--storage-smoke-checksum={args.storage_smoke_checksum}")
-    if args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or args.hcomm_payload_smoke:
+    if args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or args.hcomm_resource_descriptor_smoke or args.hcomm_payload_smoke:
         command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
         command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
         command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")

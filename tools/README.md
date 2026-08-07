@@ -117,6 +117,14 @@ python3 tools/flume_tool.py --build-dir build-stage3b1 --run-hcomm-custom-op-lau
 
 成功诊断 marker 是 `hcomm custom-op launch smoke unsupported` 加 `stage3b1_launch_plan=noop-custom-op`。当前 unsupported 是预期结果；它说明 Flume 已经完成 channel resource 和 no-op launch plan 的诊断链路，但真实 custom-op/AICPU launcher 还没有实现。
 
+Stage 3B.2 resource descriptor smoke：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-stage3b2 --run-hcomm-resource-descriptor-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
+```
+
+当前预期仍是 unsupported，但 detail 应包含 `stage3b2_resource_descriptor=host-packaged` 和 `stage3b2_descriptor_handoff=missing`。这表示 HCOMM Channel、local/remote HCCL Buffer、notify 索引、rank 元数据、engine/protocol 和 desc source 已经被整理成稳定 descriptor；下一步缺的是把该 descriptor 传给 custom-op/AICPU kernel 并执行 notify no-op。
+
 可选 Stage 3A storage proxy HBM smoke：
 
 ```bash
@@ -158,6 +166,7 @@ rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging ...
 | --- | --- | --- |
 | `--build-hcomm-custom-op` | off | 配置 `FLUME_BUILD_HCOMM_CUSTOM_OP=ON`，只打开 Stage 3B custom-op/AICPU scheduler 编译分支；当前 launcher 仍预期返回 unsupported |
 | `--run-hcomm-custom-op-launch-smoke` | off | 运行 Stage 3B.1 no-op custom-op launch readiness smoke |
+| `--run-hcomm-resource-descriptor-smoke` | off | 运行 Stage 3B.2 resource descriptor packaging smoke |
 | `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |

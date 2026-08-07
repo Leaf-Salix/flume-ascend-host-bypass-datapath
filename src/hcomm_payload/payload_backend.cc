@@ -1,5 +1,6 @@
 #include "hcomm_payload/payload_backend.h"
 
+#include <algorithm>
 #include <sstream>
 #include <utility>
 
@@ -204,6 +205,106 @@ std::string DescribeCustomOpLaunchSmokePlan(
     out << CustomOpLaunchSmokeStepName(plan.steps[i]);
   }
   out << "]";
+  return out.str();
+}
+
+bool BuildResourceDescriptor(uint32_t local_rank,
+                             uint32_t peer_rank,
+                             uint32_t rank_size,
+                             uint32_t channel_count,
+                             uint32_t notify_num,
+                             uint64_t local_hccl_buffer_bytes,
+                             uint64_t remote_hccl_buffer_bytes,
+                             bool thread_export_required,
+                             std::string resolved_engine,
+                             std::string resolved_protocol,
+                             std::string channel_desc_source,
+                             ResourceDescriptor* out,
+                             std::string* error) {
+  if (out == nullptr) {
+    if (error != nullptr) {
+      *error = "resource descriptor destination is null";
+    }
+    return false;
+  }
+  if (rank_size != 2) {
+    if (error != nullptr) {
+      *error = "HCOMM resource descriptor smoke requires exactly two ranks";
+    }
+    return false;
+  }
+  if (local_rank >= rank_size || peer_rank >= rank_size ||
+      local_rank == peer_rank) {
+    if (error != nullptr) {
+      *error = "invalid HCOMM resource descriptor peer rank";
+    }
+    return false;
+  }
+  if (channel_count == 0) {
+    if (error != nullptr) {
+      *error = "HCOMM resource descriptor requires at least one channel";
+    }
+    return false;
+  }
+  if (notify_num < 2) {
+    if (error != nullptr) {
+      *error = "HCOMM resource descriptor requires at least two notifies";
+    }
+    return false;
+  }
+  if (local_hccl_buffer_bytes == 0 || remote_hccl_buffer_bytes == 0) {
+    if (error != nullptr) {
+      *error = "HCOMM resource descriptor requires non-empty HCCL buffers";
+    }
+    return false;
+  }
+  if (resolved_engine.empty() || resolved_protocol.empty() ||
+      channel_desc_source.empty()) {
+    if (error != nullptr) {
+      *error = "HCOMM resource descriptor metadata is incomplete";
+    }
+    return false;
+  }
+
+  ResourceDescriptor descriptor;
+  descriptor.local_rank = local_rank;
+  descriptor.peer_rank = peer_rank;
+  descriptor.rank_size = rank_size;
+  descriptor.channel_count = channel_count;
+  descriptor.notify_num = notify_num;
+  descriptor.local_hccl_buffer_bytes = local_hccl_buffer_bytes;
+  descriptor.remote_hccl_buffer_bytes = remote_hccl_buffer_bytes;
+  descriptor.usable_hccl_buffer_bytes =
+      std::min(local_hccl_buffer_bytes, remote_hccl_buffer_bytes);
+  descriptor.local_hccl_buffer_acquired = true;
+  descriptor.remote_hccl_buffer_acquired = true;
+  descriptor.thread_export_required = thread_export_required;
+  descriptor.resolved_engine = std::move(resolved_engine);
+  descriptor.resolved_protocol = std::move(resolved_protocol);
+  descriptor.channel_desc_source = std::move(channel_desc_source);
+  *out = std::move(descriptor);
+  return true;
+}
+
+std::string DescribeResourceDescriptor(const ResourceDescriptor& descriptor) {
+  std::ostringstream out;
+  out << "stage3b2_resource_descriptor=host-packaged"
+      << " local_rank=" << descriptor.local_rank
+      << " peer_rank=" << descriptor.peer_rank
+      << " channel_count=" << descriptor.channel_count
+      << " notify_num=" << descriptor.notify_num
+      << " ready_notify_idx=" << descriptor.ready_notify_idx
+      << " done_notify_idx=" << descriptor.done_notify_idx
+      << " local_hccl_buffer=acquired"
+      << " remote_hccl_buffer=acquired"
+      << " usable_hccl_buffer_bytes="
+      << descriptor.usable_hccl_buffer_bytes
+      << " resolved_engine=" << descriptor.resolved_engine
+      << " resolved_protocol=" << descriptor.resolved_protocol
+      << " channel_desc=" << descriptor.channel_desc_source
+      << " thread_export="
+      << (descriptor.thread_export_required ? "required" : "not-required")
+      << " handoff=missing";
   return out.str();
 }
 

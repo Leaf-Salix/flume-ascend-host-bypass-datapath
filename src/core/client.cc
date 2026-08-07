@@ -183,6 +183,18 @@ struct HcommProbeOptions {
   bool require_thread_export = false;
 };
 
+struct HcommChannelResourceInfo {
+  size_t usable_buffer_bytes = 0;
+  uint64_t local_buffer_bytes = 0;
+  uint64_t remote_buffer_bytes = 0;
+  uint32_t channel_count = 0;
+  uint32_t notify_num = 0;
+  flume_hcomm_engine_t resolved_engine = FLUME_HCOMM_ENGINE_AUTO;
+  flume_hcomm_protocol_t resolved_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  bool thread_export_required = false;
+  std::string channel_desc_source;
+};
+
 bool SetSocketTimeouts(int fd) {
   timeval timeout = {};
   timeout.tv_sec = kSocketTimeoutSeconds;
@@ -316,6 +328,40 @@ bool IsSupportedReduceOp(flume_reduce_op_t op) {
     default:
       return false;
   }
+}
+
+const char* FlumeHcommEngineName(flume_hcomm_engine_t engine) {
+  switch (engine) {
+    case FLUME_HCOMM_ENGINE_AUTO:
+      return "auto";
+    case FLUME_HCOMM_ENGINE_AICPU:
+      return "aicpu";
+    case FLUME_HCOMM_ENGINE_AICPU_TS:
+      return "aicpu-ts";
+    case FLUME_HCOMM_ENGINE_CPU:
+      return "cpu";
+    case FLUME_HCOMM_ENGINE_CPU_TS:
+      return "cpu-ts";
+  }
+  return "unknown";
+}
+
+const char* FlumeHcommProtocolName(flume_hcomm_protocol_t protocol) {
+  switch (protocol) {
+    case FLUME_HCOMM_PROTOCOL_AUTO:
+      return "auto";
+    case FLUME_HCOMM_PROTOCOL_HCCS:
+      return "hccs";
+    case FLUME_HCOMM_PROTOCOL_ROCE:
+      return "roce";
+    case FLUME_HCOMM_PROTOCOL_PCIE:
+      return "pcie";
+    case FLUME_HCOMM_PROTOCOL_SIO:
+      return "sio";
+    case FLUME_HCOMM_PROTOCOL_HCCS_ONLY:
+      return "hccs-only";
+  }
+  return "unknown";
 }
 
 size_t DataTypeBytes(flume_data_type_t data_type) {
@@ -1526,7 +1572,9 @@ bool ProbeHcommChannelResources(const CommState& state,
                                 size_t* usable_buffer_bytes,
                                 int* status,
                                 std::string* detail,
-                                std::string* error) {
+                                std::string* error,
+                                HcommChannelResourceInfo* resource_info =
+                                    nullptr) {
   if (usable_buffer_bytes == nullptr || status == nullptr ||
       detail == nullptr || error == nullptr) {
     return false;
@@ -1688,6 +1736,17 @@ bool ProbeHcommChannelResources(const CommState& state,
     usable = std::numeric_limits<size_t>::max();
   }
   *usable_buffer_bytes = static_cast<size_t>(usable);
+  if (resource_info != nullptr) {
+    resource_info->usable_buffer_bytes = *usable_buffer_bytes;
+    resource_info->local_buffer_bytes = local_size;
+    resource_info->remote_buffer_bytes = remote_size;
+    resource_info->channel_count = static_cast<uint32_t>(descs.size());
+    resource_info->notify_num = options.notify_num;
+    resource_info->resolved_engine = resolved_engine;
+    resource_info->resolved_protocol = options.protocol;
+    resource_info->thread_export_required = options.require_thread_export;
+    resource_info->channel_desc_source = desc_source;
+  }
   *status = FLUME_OK;
   *detail = std::string("resolved_engine=") +
             HcommProbeEngineName(resolved_engine) +
@@ -1730,6 +1789,28 @@ std::string MakeHcommCustomOpLaunchSmokeDetail(
            "\" channel_detail=\"" + channel_detail + "\"";
   }
   return flume::hcomm_payload::DescribeCustomOpLaunchSmokePlan(plan) +
+         " channel_detail=\"" + channel_detail + "\"";
+}
+
+std::string MakeHcommResourceDescriptorDetail(
+    const CommState& state,
+    uint32_t peer_rank,
+    const HcommChannelResourceInfo& resource_info,
+    const std::string& channel_detail) {
+  flume::hcomm_payload::ResourceDescriptor descriptor;
+  std::string error;
+  if (!flume::hcomm_payload::BuildResourceDescriptor(
+          state.rank, peer_rank, state.rank_size, resource_info.channel_count,
+          resource_info.notify_num, resource_info.local_buffer_bytes,
+          resource_info.remote_buffer_bytes,
+          resource_info.thread_export_required,
+          FlumeHcommEngineName(resource_info.resolved_engine),
+          FlumeHcommProtocolName(resource_info.resolved_protocol),
+          resource_info.channel_desc_source, &descriptor, &error)) {
+    return std::string("stage3b2_resource_descriptor=invalid error=\"") +
+           error + "\" channel_detail=\"" + channel_detail + "\"";
+  }
+  return flume::hcomm_payload::DescribeResourceDescriptor(descriptor) +
          " channel_detail=\"" + channel_detail + "\"";
 }
 
@@ -2768,6 +2849,119 @@ int flume_hcomm_custom_op_launch_smoke_ex(
   *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
                 "HCOMM channel resources are unavailable in this build; "
                 "custom-op launch smoke cannot run");
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_resource_descriptor_smoke(flume_client_t* client,
+                                          uint32_t peer_rank,
+                                          void* acl_stream,
+                                          flume_io_t** out) {
+  flume_hcomm_channel_probe_options_t options = {};
+  options.size = sizeof(options);
+  options.notify_num = 2;
+  options.engine = FLUME_HCOMM_ENGINE_AUTO;
+  options.protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  options.require_thread_export = 0;
+  return flume_hcomm_resource_descriptor_smoke_ex(client, peer_rank, &options,
+                                                  acl_stream, out);
+}
+
+int flume_hcomm_resource_descriptor_smoke_ex(
+    flume_client_t* client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t* options,
+    void* acl_stream,
+    flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  HcommProbeOptions normalized_options;
+  std::string option_error;
+  if (!NormalizeHcommProbeOptions(options, &normalized_options,
+                                  &option_error)) {
+    (void)option_error;
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (normalized_options.protocol == FLUME_HCOMM_PROTOCOL_PCIE) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM resource descriptor smoke does not support pcie "
+                  "protocol");
+    return FLUME_OK;
+  }
+
+  CommState state = SnapshotCommState(client);
+  if (state.sim_comm_attached) {
+    if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+        peer_rank == state.rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    (void)acl_stream;
+    flume::hcomm_payload::ResourceDescriptor descriptor;
+    std::string error;
+    if (!flume::hcomm_payload::BuildResourceDescriptor(
+            state.rank, peer_rank, state.rank_size, 1,
+            normalized_options.notify_num, 4096, 4096,
+            normalized_options.require_thread_export, "sim",
+            FlumeHcommProtocolName(normalized_options.protocol),
+            "sim-desc", &descriptor, &error)) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    *out = MakeIo(FLUME_OK, descriptor.usable_hccl_buffer_bytes, 0,
+                  std::string("sim HCOMM resource descriptor smoke passed; ") +
+                      flume::hcomm_payload::DescribeResourceDescriptor(
+                          descriptor));
+    return FLUME_OK;
+  }
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string channel_detail;
+  std::string error;
+  HcommChannelResourceInfo resource_info;
+  if (!ProbeHcommChannelResources(state, peer_rank, normalized_options,
+                                  acl_stream, &usable_buffer_bytes,
+                                  &probe_status, &channel_detail, &error,
+                                  &resource_info)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+  std::string descriptor_detail = MakeHcommResourceDescriptorDetail(
+      state, peer_rank, resource_info, channel_detail);
+  flume::hcomm_payload::SchedulerStatus scheduler_status =
+      flume::hcomm_payload::CurrentSchedulerStatus();
+  if (scheduler_status == flume::hcomm_payload::SchedulerStatus::kReady) {
+    *out = MakeIo(FLUME_OK, usable_buffer_bytes, 0,
+                  std::string("HCOMM resource descriptor smoke passed; "
+                              "stage3b2_descriptor_handoff=passed ") +
+                      descriptor_detail);
+    return FLUME_OK;
+  }
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM resource descriptor packaged on host, but "
+                  "custom-op/AICPU descriptor handoff is missing: ") +
+          flume::hcomm_payload::SchedulerStatusMessage(scheduler_status) +
+          "; stage3b2_descriptor_handoff=missing " + descriptor_detail);
+  return FLUME_OK;
+#else
+  (void)peer_rank;
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCOMM channel resources are unavailable in this build; "
+                "resource descriptor smoke cannot run");
   return FLUME_OK;
 #endif
 }
