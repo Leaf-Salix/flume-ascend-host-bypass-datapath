@@ -4,6 +4,10 @@ find_package(ASC REQUIRED)
 find_package(AICPU REQUIRED)
 project(flume_hcomm_payload_copy LANGUAGES CXX AICPU ASC)
 
+option(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY
+  "Build the experimental notify-only AICPU kernel that depends on HCCL/HCOMM internal headers."
+  OFF)
+
 set(FLUME_HCOMM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(FLUME_HCOMM_PAYLOAD_INCLUDE_LIST
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -12,6 +16,9 @@ set(FLUME_HCOMM_PAYLOAD_INCLUDE_LIST
   ${ASCEND_CANN_PACKAGE_PATH}/include
   ${ASCEND_CANN_PACKAGE_PATH}/include/hccl
   ${ASCEND_CANN_PACKAGE_PATH}/asc/include/aicpu_api
+)
+set(FLUME_HCOMM_PAYLOAD_INTERNAL_INCLUDE_LIST
+  ${FLUME_HCOMM_PAYLOAD_INCLUDE_LIST}
   ${ASCEND_CANN_PACKAGE_PATH}/pkg_inc
 )
 
@@ -63,11 +70,20 @@ install(FILES
 if(KERNEL_MODE)
   add_library(flume_hcomm_payload_aicpu_kernel SHARED)
   target_sources(flume_hcomm_payload_aicpu_kernel PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_kernel.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/direct_acl_canary_kernel.cc
   )
-  target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
-    ${FLUME_HCOMM_PAYLOAD_INCLUDE_LIST}
-  )
+  if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
+    target_sources(flume_hcomm_payload_aicpu_kernel PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_kernel.cc
+    )
+    target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
+      ${FLUME_HCOMM_PAYLOAD_INTERNAL_INCLUDE_LIST}
+    )
+  else()
+    target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
+      ${FLUME_HCOMM_PAYLOAD_INCLUDE_LIST}
+    )
+  endif()
   target_compile_definitions(flume_hcomm_payload_aicpu_kernel PRIVATE
     AICPU_COMPILE
   )
@@ -79,9 +95,11 @@ if(KERNEL_MODE)
     ${ASCEND_CANN_PACKAGE_PATH}/lib64/device/lib64
     ${ASCEND_CANN_PACKAGE_PATH}/devlib/device
   )
-  target_link_libraries(flume_hcomm_payload_aicpu_kernel PRIVATE
-    ccl_kernel
-  )
+  if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
+    target_link_libraries(flume_hcomm_payload_aicpu_kernel PRIVATE
+      ccl_kernel
+    )
+  endif()
 
   cann_pack_targets_and_files(
     OUTPUT_TARGET "package_aicpu_flume_hcomm_payload"

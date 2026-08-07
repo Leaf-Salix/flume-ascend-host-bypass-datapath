@@ -2022,12 +2022,19 @@ std::string DescribeHcommLauncherDecision(
               decision.package.installed ?
           "available" :
           "blocked";
+  std::string direct_canary_candidate =
+      decision.custom_op_build && decision.direct_aclrt_launch &&
+              decision.package.installed ?
+          "available" :
+          "blocked";
   return std::string("stage3b3b_launcher_router=selected:") + selected +
          " custom_op_build=" + (decision.custom_op_build ? "on" : "off") +
          " public_hccl_launch=" +
          (decision.public_hccl_launch ? "on" : "off") +
          " direct_aclrt=" + (decision.direct_aclrt_launch ? "on" : "off") +
          " direct_aclrt_candidate=" + direct_candidate +
+         " stage3b3d_no_internal_headers=on direct_aclrt_canary_candidate=" +
+         direct_canary_candidate +
          " thread_export=" + (decision.thread_export ? "on" : "off") +
          " hcomm_primitives=" + (decision.hcomm_primitives ? "on" : "off") +
          " custom_op_package=" +
@@ -2052,7 +2059,165 @@ std::string MakeDirectAclrtBlockedDetail(
          " package_vendor=" + decision.package.vendor;
 }
 
+std::string MakeDirectAclrtCanaryBlockedDetail(
+    const HcommLauncherDecision& decision,
+    const std::string& reason) {
+  return std::string("stage3b3d_no_internal_headers=on "
+                     "stage3b3d_direct_aclrt_canary_loader=unsupported "
+                     "stage3b3d_direct_aclrt_canary_handoff=blocked "
+                     "stage3b3d_direct_aclrt_canary_launch=not-attempted "
+                     "reason=\"") +
+         reason + "\" custom_op_package=" +
+         (decision.package.installed ? "present" : "missing") +
+         " package_vendor=" + decision.package.vendor;
+}
+
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+std::string TryLaunchHcommDirectAclrtCanary(
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  if (status == nullptr) {
+    return "stage3b3d_no_internal_headers=on "
+           "stage3b3d_direct_aclrt_canary_loader=failed "
+           "reason=\"status pointer null\"";
+  }
+  if (!decision.package.installed) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtCanaryBlockedDetail(decision,
+                                              "custom_op_package missing");
+  }
+  if (acl_stream == nullptr) {
+    *status = FLUME_ERR_INVALID_ARGUMENT;
+    return MakeDirectAclrtCanaryBlockedDetail(decision, "acl stream is null");
+  }
+
+  flume_hcomm_canary_desc_v1 desc = {};
+  flume_hcomm_canary_desc_init(&desc);
+  desc.local_rank = state.rank;
+  desc.peer_rank = peer_rank;
+  desc.rank_size = state.rank_size;
+
+  aclrtBinHandle bin_handle = nullptr;
+  aclrtBinaryLoadOption option = {};
+  option.type = ACL_RT_BINARY_LOAD_OPT_CPU_KERNEL_MODE;
+  option.value.cpuKernelMode = 0;
+  aclrtBinaryLoadOptions load_options = {};
+  load_options.options = &option;
+  load_options.numOpt = 1;
+  aclError acl_ret =
+      aclrtBinaryLoadFromFile(decision.package.json_path.c_str(), &load_options,
+                              &bin_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=failed "
+                       "api=aclrtBinaryLoadFromFile error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" custom_op_package=present package_vendor=" +
+           decision.package.vendor;
+  }
+
+  aclrtFuncHandle func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC, &func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3d_direct_aclrt_canary_handoff=blocked "
+           "stage3b3d_direct_aclrt_canary_launch=not-attempted kernel_func=" +
+           FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC +
+           " custom_op_package=present package_vendor=" +
+           decision.package.vendor;
+  }
+
+  aclrtArgsHandle args_handle = nullptr;
+  acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "api=aclrtKernelArgsInit error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtParamHandle param_handle = nullptr;
+  acl_ret =
+      aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "api=aclrtKernelArgsAppend error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  acl_ret = aclrtKernelArgsFinalize(args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "api=aclrtKernelArgsFinalize error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = 1800;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  acl_ret = aclrtLaunchKernelWithConfig(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
+      nullptr);
+  if (acl_ret == ACL_SUCCESS) {
+    acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3d_no_internal_headers=on "
+                         "stage3b3d_direct_aclrt_canary_loader=passed "
+                         "stage3b3d_direct_aclrt_canary_handoff=passed "
+                         "stage3b3d_direct_aclrt_canary_launch=passed "
+                         "stage3b3d_direct_aclrt_canary_sync=failed "
+                         "api=aclrtSynchronizeStream error=\"") +
+             AclErrorMessage(acl_ret) + "\" kernel_func=" +
+             FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_OK;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=passed "
+                       "stage3b3d_direct_aclrt_canary_launch=passed "
+                       "stage3b3d_direct_aclrt_canary_sync=passed "
+                       "stage3b3d_direct_aclrt_canary=passed kernel_func=") +
+           FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
+
+  (void)aclrtBinaryUnLoad(bin_handle);
+  *status = FLUME_ERR_BACKEND;
+  return std::string("stage3b3d_no_internal_headers=on "
+                     "stage3b3d_direct_aclrt_canary_loader=passed "
+                     "stage3b3d_direct_aclrt_canary_handoff=passed "
+                     "stage3b3d_direct_aclrt_canary_launch=failed "
+                     "api=aclrtLaunchKernelWithConfig error=\"") +
+         AclErrorMessage(acl_ret) + "\" kernel_func=" +
+         FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
+}
+
 std::string TryLaunchHcommNotifyOnlyDirectAclrt(
     flume::hcomm_payload::PayloadRole role,
     const CommState& state,
@@ -2177,6 +2342,27 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
          FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
 }
 #else
+std::string TryLaunchHcommDirectAclrtCanary(
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  (void)state;
+  (void)peer_rank;
+  (void)acl_stream;
+  if (status != nullptr) {
+    *status = FLUME_ERR_UNSUPPORTED;
+  }
+#if FLUME_BUILD_HCOMM_CUSTOM_OP
+  return MakeDirectAclrtCanaryBlockedDetail(
+      decision, "ACL runtime custom-op launch APIs unavailable");
+#else
+  return MakeDirectAclrtCanaryBlockedDetail(decision,
+                                            "custom-op build disabled");
+#endif
+}
+
 std::string TryLaunchHcommNotifyOnlyDirectAclrt(
     flume::hcomm_payload::PayloadRole role,
     const CommState& state,
@@ -2222,30 +2408,48 @@ bool TryLaunchHcommNotifyOnlyKernel(
     std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
         role, state, peer_rank, acl_stream, resource_info, launcher,
         &direct_status);
+    int canary_status = FLUME_ERR_UNSUPPORTED;
+    std::string canary_detail = TryLaunchHcommDirectAclrtCanary(
+        state, peer_rank, acl_stream, launcher, &canary_status);
     if (direct_status == FLUME_OK) {
       *status = FLUME_OK;
       *detail = std::string("stage3b3a_kernel_launch=passed ") +
-                router_detail + " " + direct_detail;
+                router_detail + " " + direct_detail + " " + canary_detail;
       return true;
     }
-    *status = direct_status == FLUME_ERR_UNSUPPORTED ? FLUME_ERR_UNSUPPORTED :
-                                                     direct_status;
+    if (direct_status != FLUME_ERR_UNSUPPORTED) {
+      *status = direct_status;
+    } else if (canary_status != FLUME_OK &&
+               canary_status != FLUME_ERR_UNSUPPORTED) {
+      *status = canary_status;
+    } else {
+      *status = FLUME_ERR_UNSUPPORTED;
+    }
     *detail = std::string("stage3b3a_kernel_launch=") +
               (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
-              " " + router_detail + " " + direct_detail;
+              " " + router_detail + " " + direct_detail + " " +
+              canary_detail;
     return false;
   }
   if (launcher.backend == HcommLauncherBackend::kDirectAclrtPending) {
     std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
         role, state, peer_rank, acl_stream, resource_info, launcher, status);
+    int canary_status = FLUME_ERR_UNSUPPORTED;
+    std::string canary_detail = TryLaunchHcommDirectAclrtCanary(
+        state, peer_rank, acl_stream, launcher, &canary_status);
     if (*status == FLUME_OK) {
       *detail = std::string("stage3b3a_kernel_launch=passed ") +
-                router_detail + " " + direct_detail;
+                router_detail + " " + direct_detail + " " + canary_detail;
       return true;
+    }
+    if (*status == FLUME_ERR_UNSUPPORTED && canary_status != FLUME_OK &&
+        canary_status != FLUME_ERR_UNSUPPORTED) {
+      *status = canary_status;
     }
     *detail = std::string("stage3b3a_kernel_launch=") +
               (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
-              " " + router_detail + " " + direct_detail;
+              " " + router_detail + " " + direct_detail + " " +
+              canary_detail;
     return false;
   }
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH

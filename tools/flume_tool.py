@@ -251,6 +251,8 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b3b_launcher_router|direct_aclrt|custom_op_package|"
                 r"stage3b3c_direct_aclrt_loader|stage3b3c_descriptor_handoff|"
                 r"stage3b3c_direct_aclrt_launch|"
+                r"stage3b3d_no_internal_headers|direct_aclrt_canary_candidate|"
+                r"stage3b3d_direct_aclrt_canary|"
                 r"aclrt_custom_op_launch|HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),

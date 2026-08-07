@@ -767,6 +767,7 @@ store-agent pread
 - 已开始 Stage 3B.2-complete / 3B.3-prep：`flume_hcomm_notify_only_smoke_ex` / `--run-hcomm-notify-only-smoke` 固化 descriptor-consume + ready/done Channel Notify 编排；当前仍标记 custom-op/AICPU kernel consume missing。
 - 已开始 Stage 3B.3B：launcher router 会探测 public `HcclAicpuKernelLaunch`、direct ACL runtime custom-op launch API、thread export、HCOMM primitive 和 custom-op package 状态；目标是在不同 CANN 暴露能力下稳定选择可用 launcher 或输出精确 unsupported reason。
 - 已开始 Stage 3B.3C：direct ACL route 会继续下钻 package load、direct function lookup、`flume_hcomm_notify_only_desc_v1` descriptor ABI handoff 和 `aclrtLaunchKernelWithConfig` launch readiness；Host B 已验证当前没有安装 custom-op package 的环境会清晰停在 `stage3b3c_direct_aclrt_loader=unsupported` / `descriptor_handoff=blocked` / `launch=not-attempted`。
+- 已开始 Stage 3B.3D：新增 no-internal-header direct ACL custom-op canary，默认 custom-op device kernel 只依赖 Flume 自有 ABI 头，不再依赖 `hccl_launch.h`、`hcomm_primitives.h`、`hccl_res_expt.h` 或 `pkg_inc`；成功 marker 为 `stage3b3d_direct_aclrt_canary=passed`，只证明 custom-op package/load/function/descriptor/launch/sync 线路可用，不代表 HCOMM Notify 或 payload copy 已完成。
 - 下一步在 router 选出的可执行 launcher 下实现 HCOMM primitive payload microcopy scheduler，把 `HcommReadOnThread`、Notify 和 HCCL Buffer 串到真正的 HBM-HBM copy。
 - 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`，并保留公开 HCCL P2P fallback。
 - 测量不同 block size 的 HBM-HBM bandwidth、latency、CPU usage。

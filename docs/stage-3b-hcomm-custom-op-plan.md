@@ -40,6 +40,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3A | true notify-only AICPU launch | `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed` | public launch API or custom-op package missing |
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
+| 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
 | 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -190,6 +191,53 @@ stage3b3c_direct_aclrt_launch=not-attempted
 
 This is still a useful Stage 3B.3C result: it distinguishes CANN packaging/API
 gaps from channel-resource, descriptor ABI, launch, or HCCL P2P failures.
+
+Stage 3B.3D removes the short-term dependency on non-public HCCL/HCOMM headers
+for the first real custom-op launch canary. It does not replace the future
+HCOMM notify or pair-copy kernel. It verifies that a Flume-owned AICPU/custom-op
+kernel can be packaged, loaded, receive a Flume-owned descriptor, launch through
+public ACL runtime APIs, and complete on the stream:
+
+```text
+direct_aclrt_canary:
+  aclrtBinaryLoadFromFile(...)
+  -> aclrtBinaryGetFunction(FlumeHcommCanaryDirectAclrtKernel)
+  -> aclrtKernelArgsAppend(flume_hcomm_canary_desc_v1)
+  -> aclrtLaunchKernelWithConfig(...)
+  -> aclrtSynchronizeStream(...)
+```
+
+The canary kernel includes only `flume_hcomm_notify_only_abi.h`. It deliberately
+does not include `hccl_launch.h`, `hcomm_primitives.h`, `hccl_res_expt.h`, or
+headers from `pkg_inc`. The previous notify-only kernel is kept as an optional
+internal-header experiment behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`
+so earlier versions remain recoverable.
+
+Expected no-package diagnostic:
+
+```text
+stage3b3d_no_internal_headers=on
+direct_aclrt_canary_candidate=blocked
+stage3b3d_direct_aclrt_canary_loader=unsupported
+stage3b3d_direct_aclrt_canary_handoff=blocked
+stage3b3d_direct_aclrt_canary_launch=not-attempted
+```
+
+Expected installed-canary diagnostic:
+
+```text
+stage3b3d_no_internal_headers=on
+direct_aclrt_canary_candidate=available
+stage3b3d_direct_aclrt_canary_loader=passed
+stage3b3d_direct_aclrt_canary_handoff=passed
+stage3b3d_direct_aclrt_canary_launch=passed
+stage3b3d_direct_aclrt_canary_sync=passed
+stage3b3d_direct_aclrt_canary=passed
+```
+
+This success marker means the public direct ACL custom-op canary path works. It
+does not mean `HcommChannelNotifyRecordOnThread`, `HcommChannelNotifyWaitOnThread`,
+or payload copy has executed.
 
 Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
 toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the

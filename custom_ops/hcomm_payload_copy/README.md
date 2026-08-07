@@ -16,6 +16,11 @@ Current status:
 - Stage 3B.3C adds the direct ACL runtime entrypoint:
   `FlumeHcommNotifyOnlyDirectAclrtKernel`, which consumes
   `flume_hcomm_notify_only_desc_v1` directly through `aclrtKernelArgsAppend`.
+- Stage 3B.3D adds a no-internal-header direct ACL canary entrypoint:
+  `FlumeHcommCanaryDirectAclrtKernel`. The default device kernel build now
+  compiles this canary without `pkg_inc`, `hccl_launch.h`,
+  `hcomm_primitives.h`, or `hccl_res_expt.h`. The older notify-only kernel is
+  preserved behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`.
 - Payload copy is still not implemented in this custom-op path.
 
 Target data-plane plan:
@@ -88,6 +93,22 @@ AICPU kernel:
   rank0/rank1 run the same ready/done notify-only protocol
 ```
 
+Stage 3B.3D no-internal-header canary path:
+
+```text
+host:
+  aclrtBinaryLoadFromFile(installed Flume custom-op JSON)
+  aclrtBinaryGetFunction(FlumeHcommCanaryDirectAclrtKernel)
+  aclrtKernelArgsAppend(flume_hcomm_canary_desc_v1)
+  aclrtLaunchKernelWithConfig(...)
+  aclrtSynchronizeStream(...)
+
+AICPU/custom-op kernel:
+  include only flume_hcomm_notify_only_abi.h
+  validate flume_hcomm_canary_desc_v1
+  record a canary token
+```
+
 Expected markers:
 
 - success: `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`
@@ -96,6 +117,8 @@ Expected markers:
 - direct ACL loader: `stage3b3c_direct_aclrt_loader=passed|unsupported|failed`
 - direct ACL handoff: `stage3b3c_descriptor_handoff=passed|blocked|failed`
 - direct ACL launch: `stage3b3c_direct_aclrt_launch=passed|not-attempted|failed`
+- no-internal canary:
+  `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL

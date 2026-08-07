@@ -107,7 +107,7 @@ python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run
 python3 tools/flume_tool.py --build-dir build-stage3b-customop --build-hcomm-custom-op --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `stage3b3b_launcher_router=selected:unsupported`，并列出 `public_hccl_launch`、`direct_aclrt`、`thread_export`、`hcomm_primitives` 和 `custom_op_package` 状态。如果当前 CANN 暴露 direct ACL runtime launch API，还会追加 `stage3b3c_direct_aclrt_loader`、`stage3b3c_descriptor_handoff` 和 `stage3b3c_direct_aclrt_launch`，用于区分 custom-op 包缺失、函数解析失败、descriptor ABI 失败和真实 launch 失败。
+当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `stage3b3b_launcher_router=selected:unsupported`，并列出 `public_hccl_launch`、`direct_aclrt`、`thread_export`、`hcomm_primitives` 和 `custom_op_package` 状态。如果当前 CANN 暴露 direct ACL runtime launch API，还会追加 `stage3b3c_direct_aclrt_loader`、`stage3b3c_descriptor_handoff` 和 `stage3b3c_direct_aclrt_launch`，用于区分 custom-op 包缺失、函数解析失败、descriptor ABI 失败和真实 launch 失败。Stage 3B.3D 还会追加 `stage3b3d_no_internal_headers=on` 和 `stage3b3d_direct_aclrt_canary_*` marker，用于验证不依赖 HCCL/HCOMM 内部头的 direct ACL custom-op canary 路径。
 
 也可以只跑 Stage 3B.1 no-op launch readiness，不跑 payload readiness：
 
@@ -131,7 +131,7 @@ Stage 3B.2-complete / 3B.3-prep notify-only smoke：
 python3 tools/flume_tool.py --build-dir build-stage3b2-notify --run-hcomm-notify-only-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify`、`stage3b2_kernel_consume=missing`、`stage3b3b_launcher_router=selected:unsupported` 和 direct ACL readiness marker。若未安装 Flume custom-op package，预期是 `stage3b3c_direct_aclrt_loader=unsupported`、`stage3b3c_descriptor_handoff=blocked`、`stage3b3c_direct_aclrt_launch=not-attempted`。
+当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify`、`stage3b2_kernel_consume=missing`、`stage3b3b_launcher_router=selected:unsupported` 和 direct ACL readiness marker。若未安装 Flume custom-op package，预期是 `stage3b3c_direct_aclrt_loader=unsupported`、`stage3b3c_descriptor_handoff=blocked`、`stage3b3c_direct_aclrt_launch=not-attempted`，同时 Stage 3B.3D canary 预期停在 `stage3b3d_direct_aclrt_canary_loader=unsupported` / `stage3b3d_direct_aclrt_canary_launch=not-attempted`。若已安装只含 canary 的 Flume custom-op package，则可期待 `stage3b3d_direct_aclrt_canary=passed`，但这仍不代表 HCOMM notify-only 已经完成。
 
 可选 Stage 3A storage proxy HBM smoke：
 

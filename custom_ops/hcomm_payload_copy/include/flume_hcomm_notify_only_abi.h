@@ -13,6 +13,10 @@ extern "C" {
 #define FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC "FlumeHcommNotifyOnlyAicpuKernel"
 #define FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommNotifyOnlyDirectAclrtKernel"
+#define FLUME_HCOMM_CANARY_MAGIC 0x4643414eU
+#define FLUME_HCOMM_CANARY_VERSION 1U
+#define FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC \
+  "FlumeHcommCanaryDirectAclrtKernel"
 
 typedef enum {
   FLUME_HCOMM_NOTIFY_ROLE_SEND = 0,
@@ -40,6 +44,18 @@ typedef struct {
   uint64_t reserved1[8];
 } flume_hcomm_notify_only_desc_v1;
 
+typedef struct {
+  uint32_t magic;
+  uint32_t version;
+  uint32_t size;
+  uint32_t local_rank;
+  uint32_t peer_rank;
+  uint32_t rank_size;
+  uint32_t expected_token;
+  uint32_t observed_token;
+  uint64_t reserved[8];
+} flume_hcomm_canary_desc_v1;
+
 static inline void flume_hcomm_notify_only_desc_init(
     flume_hcomm_notify_only_desc_v1* desc) {
   if (desc == 0) {
@@ -48,6 +64,17 @@ static inline void flume_hcomm_notify_only_desc_init(
   desc->magic = FLUME_HCOMM_NOTIFY_ONLY_MAGIC;
   desc->version = FLUME_HCOMM_NOTIFY_ONLY_VERSION;
   desc->size = (uint32_t)sizeof(flume_hcomm_notify_only_desc_v1);
+}
+
+static inline void flume_hcomm_canary_desc_init(
+    flume_hcomm_canary_desc_v1* desc) {
+  if (desc == 0) {
+    return;
+  }
+  desc->magic = FLUME_HCOMM_CANARY_MAGIC;
+  desc->version = FLUME_HCOMM_CANARY_VERSION;
+  desc->size = (uint32_t)sizeof(flume_hcomm_canary_desc_v1);
+  desc->expected_token = 0x43414e59U;
 }
 
 #ifdef __cplusplus
