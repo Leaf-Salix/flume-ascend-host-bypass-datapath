@@ -85,6 +85,18 @@ FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=
 
 `hcomm_aicpu_thread_export=off` 不是 CANN 8.5 不支持的信号。它只说明不能走高版本 AICPU thread-export path。
 
+Host B CANN 9.0 的 full-matrix 实测提供了一个高版本对照：
+
+| 字段 | CANN 8.5 观察 | CANN 9.0 观察 | Flume 判读 |
+| --- | --- | --- | --- |
+| `hcomm_channel` | `on` | `on` | 两个版本都支持 Channel resource probe |
+| `hcomm_rank_graph` | `off` | `on` | 9.0 可走 rank-graph descriptor；8.5 fallback legacy descriptor |
+| `hcomm_aicpu_thread_export` | `off` | `off` | 两个已测环境都不能验证高版本 thread-export path |
+| `hcomm_primitives` | 现场曾观测为可用或缺失，按 feature probe 为准 | `off` | primitives 缺失时 payload readiness 应返回 unsupported |
+| `fallback_hccl_p2p` | `on` | `on` | HCCL Send/Recv 是当前可靠 fallback |
+
+Host B (CANN 9.0) 上 HCCS_SW 卡对 `HCCS_SW pair A` 与 `HCCS_SW pair B` 已通过 full-matrix required 步。Host A (CANN 8.5) 的 full-matrix smoke 当前被长任务占用 NPU 资源阻塞，表现为 VNIC socket listen 失败，不作为代码或 CANN 8.5 fallback 失败证据。
+
 ## 5. 远端采集流程
 
 先跑默认 HCOMM Channel probe：

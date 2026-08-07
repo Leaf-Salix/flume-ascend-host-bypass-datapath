@@ -72,6 +72,8 @@ flowchart LR
 - CANN 8.5 上 HCOMM Channel resource probe 已通过：`HCCL Buffer`、`CPU_TS` thread resource、Channel acquire、远端 HCCL Buffer 查询可作为下一步 payload backend 的资源入口。
 - CANN 8.5 缺 `hccl_res_expt.h` / thread export 是正常版本差异；严格 thread-export 检查应返回 unsupported，不代表主路径失败。
 - 本地无 NPU 环境已实现结构化 backend caps、HCOMM payload pair-copy sim backend、storage partial-direct sim path 和 `ascend-full-matrix` 工具入口。
+- Host B (CANN 9.0) 空闲主机上，full-matrix 已通过 HCCS_SW 卡对 `HCCS_SW pair A` 和 `HCCS_SW pair B`；required 步包括 HCCL collective、HCCL P2P baseline、HCOMM Channel probe、payload readiness/fallback。
+- Host A (CANN 8.5) 当前 full-matrix smoke 失败来自 NPU 被长任务占满后的 VNIC socket listen 失败；build、CTest、sim、feature probe 均通过，需资源释放后复测。
 
 仍未实现：
 

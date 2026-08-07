@@ -13,6 +13,7 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 - Stage 2 P2P baseline：已经在 Host A HCCS_SW pair A 跨 HCCS_SW die 对上验证 `HcclSend` / `HcclRecv` 的 rank0 HBM -> rank1 HBM P2P copy，结果 `p2p_copy=on`。
 - Stage 2 HCOMM resource probe：已经实现并在 CANN 8.5 真机上验证 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询；默认只证明 channel resource，严格 AICPU thread-export 检查需要显式加 `--hcomm-require-thread-export`，CANN 8.5 预期清晰返回 unsupported。
 - Stage 2.5 HCOMM payload readiness：已经新增 `--run-hcomm-payload-smoke` 骨架，复用 Channel resource probe 并检查 HCOMM primitive 符号；当前预期输出 unsupported / `fallback=hccl-p2p`，不误报真实 payload copy。
+- Full matrix：`de7041e` 已在 Host B (CANN 9.0) 空闲主机上通过 HCCS_SW 卡对 `HCCS_SW pair A` 和 `HCCS_SW pair B` 的 required 步；Host A (CANN 8.5) 构建、CTest、sim 和 feature probe 通过，但 smoke 因 NPU 被长任务占满导致 VNIC socket listen 失败，需卡空闲后复测。
 - 仍未实现：AICPU/HCOMM primitive payload copy scheduler，storage proxy rank，RDMA / NVMe-oF / SPDK -> NPU HBM full direct data path。
 
 当前最重要的工程判断是：
@@ -471,6 +472,9 @@ flowchart TB
 | Host A root-info | `--run-hccl-smoke --hccl-devices <device-a>,<device-b>` | 通过 | base AllReduce / AllGather |
 | Host A init-all | `--hccl-init-mode all --hccl-devices <device-a>,<device-b>` | 通过 | 单进程对照路径 |
 | Host A Stage 2 P2P | `--run-hccl-p2p-smoke --hccl-devices <device-a>,<device-b>` | 通过 | `p2p_copy=on` |
+| Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 通过 | HCCL collective、HCCL P2P、HCOMM Channel、payload readiness/fallback；strict payload-copy optional expected negative |
+| Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-c>,<device-d>` | 通过 | 第二组 HCCS_SW 卡对稳定性验证 |
+| Host A (CANN 8.5) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 未完成有效 smoke | NPU 被长任务占满，VNIC socket `<vnic-ip>:<port>` listen 失败；build/CTest/sim/feature probe 通过 |
 | Host A / Host B rank-table | `--hccl-init-mode rank-table` | 未通过 | VNIC / `rtEnableP2P` / P2P memory-share 路径问题 |
 | A3 symmetric smoke | `--run-a3-symmetric-smoke` | 取决于现场 CANN/HCCL 能力位 | 缺 API 时应返回 unavailable / unsupported |
 

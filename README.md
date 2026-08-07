@@ -52,7 +52,7 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers. Verified with `p2p_copy=on`.
 - Optional rank0/rank1 HCOMM Channel resource probe smoke. Verified as channel-resource readiness; it does not yet move payload with HCOMM primitives.
 - Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus primitive symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
-- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM payload readiness, and strict expected-negative logs in one run.
+- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM payload readiness, and strict expected-negative logs in one run. Verified on a CANN 9.0 host with HCCS_SW device pairs `HCCS_SW pair A` and `HCCS_SW pair B`; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler is not implemented.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not implemented yet:
