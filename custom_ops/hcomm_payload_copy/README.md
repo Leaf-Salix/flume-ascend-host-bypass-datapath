@@ -13,6 +13,9 @@ Current status:
 - Stage 3B.3B detects public `HcclAicpuKernelLaunch`, direct ACL runtime
   custom-op launch APIs, HCOMM thread export, HCOMM primitives, and installed
   Flume custom-op package state before selecting a launcher.
+- Stage 3B.3C adds the direct ACL runtime entrypoint:
+  `FlumeHcommNotifyOnlyDirectAclrtKernel`, which consumes
+  `flume_hcomm_notify_only_desc_v1` directly through `aclrtKernelArgsAppend`.
 - Payload copy is still not implemented in this custom-op path.
 
 Target data-plane plan:
@@ -71,11 +74,28 @@ host:
   select public_hccl_launch or unsupported with precise reason
 ```
 
+Stage 3B.3C direct ACL readiness path:
+
+```text
+host:
+  aclrtBinaryLoadFromFile(installed Flume custom-op JSON)
+  aclrtBinaryGetFunction(FlumeHcommNotifyOnlyDirectAclrtKernel)
+  aclrtKernelArgsAppend(flume_hcomm_notify_only_desc_v1)
+  aclrtLaunchKernelWithConfig(...)
+
+AICPU kernel:
+  consume flume_hcomm_notify_only_desc_v1 directly
+  rank0/rank1 run the same ready/done notify-only protocol
+```
+
 Expected markers:
 
 - success: `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`
 - capability/version block: `stage3b3a_kernel_launch=unsupported`
 - router: `stage3b3b_launcher_router=selected:<backend>`
+- direct ACL loader: `stage3b3c_direct_aclrt_loader=passed|unsupported|failed`
+- direct ACL handoff: `stage3b3c_descriptor_handoff=passed|blocked|failed`
+- direct ACL launch: `stage3b3c_direct_aclrt_launch=passed|not-attempted|failed`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL

@@ -384,6 +384,7 @@ int main() {
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
   (void)aclrtLaunchKernelWithConfig(func_handle, 1, nullptr, &cfg, args_handle, nullptr);
+  (void)aclrtBinaryUnLoad(bin_handle);
   return 0;
 }
 " FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH)

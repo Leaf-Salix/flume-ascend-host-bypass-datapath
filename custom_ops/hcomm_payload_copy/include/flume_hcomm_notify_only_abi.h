@@ -11,6 +11,8 @@ extern "C" {
 #define FLUME_HCOMM_NOTIFY_ONLY_VERSION 1U
 #define FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO "libflume_hcomm_payload_aicpu_kernel.so"
 #define FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC "FlumeHcommNotifyOnlyAicpuKernel"
+#define FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC \
+  "FlumeHcommNotifyOnlyDirectAclrtKernel"
 
 typedef enum {
   FLUME_HCOMM_NOTIFY_ROLE_SEND = 0,

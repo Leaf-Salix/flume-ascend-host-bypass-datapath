@@ -511,7 +511,8 @@ flowchart LR
     Hcomm --> LocalBuf["HcclGetHcclBuffer"]
     Hcomm --> RemoteBuf["HcclChannelGetHcclBuffer"]
     Hcomm --> Router["Stage 3B.3B launcher router"]
-    Router --> Payload["AICPU/custom-op payload backend"]
+    Router --> DirectAcl["Stage 3B.3C direct ACL readiness"]
+    DirectAcl --> Payload["AICPU/custom-op payload backend"]
     Payload --> Notify["HcommChannelNotifyRecord / Wait"]
     Payload --> Read["HcommReadOnThread"]
     Read --> Dst["target HBM"]
@@ -521,7 +522,7 @@ flowchart LR
 
 | 问题 | 说明 |
 | --- | --- |
-| HCOMM 接口上下文 | Channel resource probe 已验证 host 侧 acquisition 入口；payload copy 仍需要 CANN 8.5 可用的 on-thread primitive 调度路径；Stage 3B.3B 已开始把 public HCCL launch、direct ACL launch、thread export、HCOMM primitive 和 custom-op package 状态拆成可诊断能力。 |
+| HCOMM 接口上下文 | Channel resource probe 已验证 host 侧 acquisition 入口；payload copy 仍需要 CANN 8.5 可用的 on-thread primitive 调度路径；Stage 3B.3B/3C 已开始把 public HCCL launch、direct ACL launch、thread export、HCOMM primitive、custom-op package、descriptor handoff 和 launch 状态拆成可诊断能力。 |
 | Channel 生命周期 | 需要明确 endpoint、channel、notify、remote buffer 的创建和销毁边界。 |
 | buffer 来源 | 需要验证普通业务 HBM、HCCL Buffer、A3 symmetric mapped HBM 哪些能作为源/目标。 |
 | 调度语义 | 对上层继续保留 `send/recv` 或封装成更高层 copy，需要避免伪造 one-sided 语义。 |
@@ -618,7 +619,7 @@ hccl collective smoke passed: global_rank_size=2 ... init=root-info ... p2p_copy
 - **本地闭环**：没有 NPU 也能跑完整 mock/sim 回归，适合继续写上层逻辑和调度代码。
 - **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM；HCOMM Channel resource probe 已在 CANN 8.5 真机通过，probe 成功语义已收紧为 channel resource，不再把缺 thread-export 的 CANN 8.5 误报成 AICPU thread-export-ready。
 - **诊断闭环**：工具能够收集环境、topology、HCCL 日志、rank-table、diagnostics，已经能区分 host TCP、device RoCE、NPU VNIC、driver P2P policy。
-- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，Stage 3B.3B launcher router 正在把 CANN/HCOMM 版本差异变成可诊断选择，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
+- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，Stage 3B.3B/3C launcher router 和 direct ACL readiness 正在把 CANN/HCOMM 版本差异变成可诊断选择，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
 
 未来的核心工作是沿着这条顺序推进：
 
@@ -626,6 +627,7 @@ hccl collective smoke passed: global_rank_size=2 ... init=root-info ... p2p_copy
 HcclSend/HcclRecv verified baseline
   -> HCOMM Channel resource probe
   -> HCOMM launcher capability router
+  -> direct ACL custom-op loader / descriptor handoff
   -> CANN 8.5 HCOMM primitive payload microcopy
   -> storage proxy rank
   -> RDMA / NVMe-oF / SPDK direct registration

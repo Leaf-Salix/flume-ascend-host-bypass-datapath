@@ -249,6 +249,8 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"hcomm notify-only smoke|stage3b2_notify_only|"
                 r"stage3b2_kernel_consume|stage3b3a_kernel_launch|"
                 r"stage3b3b_launcher_router|direct_aclrt|custom_op_package|"
+                r"stage3b3c_direct_aclrt_loader|stage3b3c_descriptor_handoff|"
+                r"stage3b3c_direct_aclrt_launch|"
                 r"aclrt_custom_op_launch|HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),

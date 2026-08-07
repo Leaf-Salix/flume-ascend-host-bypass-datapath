@@ -70,3 +70,11 @@ extern "C" unsigned int FlumeHcommNotifyOnlyAicpuKernel(void* param) {
       p2p_param->opParams);
   return RunNotifyOnly(*desc, p2p_param->sendRecvThread);
 }
+
+extern "C" unsigned int FlumeHcommNotifyOnlyDirectAclrtKernel(void* param) {
+  if (param == nullptr) {
+    return kFlumeKernelInvalidArgument;
+  }
+  auto* desc = static_cast<flume_hcomm_notify_only_desc_v1*>(param);
+  return RunNotifyOnly(*desc, 0);
+}

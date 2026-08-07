@@ -39,6 +39,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.2-complete / 3B.3-prep | consume descriptor and run notify-only channel sync | `stage3b2_kernel_consume=passed` and `stage3b2_notify_only_plan=channel-notify` | `stage3b2_kernel_consume=missing` |
 | 3B.3A | true notify-only AICPU launch | `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed` | public launch API or custom-op package missing |
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
+| 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -163,23 +164,32 @@ select:
   unsupported with precise reason
 ```
 
-The direct ACL route is deliberately probed but not selected yet. It requires a
-packaged custom-op binary plus a confirmed resource handoff model for the HCOMM
-thread/channel descriptor. Current target hosts that expose ACL runtime launch
-but lack thread export or HCOMM primitives should produce an honest diagnostic:
+Stage 3B.3C continues the direct ACL route by probing three sub-boundaries:
+
+```text
+direct_aclrt:
+  aclrtBinaryLoadFromFile(...)
+  -> aclrtBinaryGetFunction(FlumeHcommNotifyOnlyDirectAclrtKernel)
+  -> aclrtKernelArgsAppend(flume_hcomm_notify_only_desc_v1)
+  -> aclrtLaunchKernelWithConfig(...)
+```
+
+Current target hosts that expose ACL runtime launch but do not have the Flume
+custom-op package installed should produce an honest diagnostic:
 
 ```text
 stage3b3a_kernel_launch=unsupported
 stage3b3b_launcher_router=selected:unsupported
 public_hccl_launch=off
 direct_aclrt=on|off
-thread_export=off
-hcomm_primitives=off
 custom_op_package=missing
+stage3b3c_direct_aclrt_loader=unsupported
+stage3b3c_descriptor_handoff=blocked
+stage3b3c_direct_aclrt_launch=not-attempted
 ```
 
-This is still a useful Stage 3B.3B result: it distinguishes CANN packaging/API
-gaps from channel-resource or HCCL P2P failures.
+This is still a useful Stage 3B.3C result: it distinguishes CANN packaging/API
+gaps from channel-resource, descriptor ABI, launch, or HCCL P2P failures.
 
 ## Stage 3B.3: HCOMM Pair-Copy Primitive Scheduler
 

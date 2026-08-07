@@ -23,6 +23,11 @@
 #include <vector>
 
 #if FLUME_ENABLE_HCCL
+#if __has_include(<acl/acl.h>)
+#include <acl/acl.h>
+#else
+#error "FLUME_ENABLE_HCCL=1 requires acl/acl.h"
+#endif
 #if __has_include(<hccl/hccl.h>)
 #include <hccl/hccl.h>
 #elif __has_include(<hccl.h>)
@@ -1903,6 +1908,7 @@ enum class HcommLauncherBackend {
 struct HcommCustomOpPackageProbe {
   bool installed = false;
   std::string vendor = "none";
+  std::string json_path;
 };
 
 struct HcommLauncherDecision {
@@ -1947,6 +1953,7 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
       if (FileExists(json_path)) {
         probe.installed = true;
         probe.vendor = vendor;
+        probe.json_path = json_path;
         return probe;
       }
     }
@@ -2029,6 +2036,172 @@ std::string DescribeHcommLauncherDecision(
          " reason=\"" + JoinReasons(decision.missing) + "\"";
 }
 
+std::string AclErrorMessage(aclError ret) {
+  return std::string("ACL_ERROR(") + std::to_string(static_cast<int>(ret)) + ")";
+}
+
+std::string MakeDirectAclrtBlockedDetail(
+    const HcommLauncherDecision& decision,
+    const std::string& reason) {
+  return std::string("stage3b3c_direct_aclrt_loader=unsupported "
+                     "stage3b3c_descriptor_handoff=blocked "
+                     "stage3b3c_direct_aclrt_launch=not-attempted "
+                     "reason=\"") +
+         reason + "\" custom_op_package=" +
+         (decision.package.installed ? "present" : "missing") +
+         " package_vendor=" + decision.package.vendor;
+}
+
+#if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+std::string TryLaunchHcommNotifyOnlyDirectAclrt(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    const HcommChannelResourceInfo& resource_info,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  if (status == nullptr) {
+    return "stage3b3c_direct_aclrt_loader=failed reason=\"status pointer null\"";
+  }
+  if (!decision.package.installed) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtBlockedDetail(decision, "custom_op_package missing");
+  }
+  if (acl_stream == nullptr) {
+    *status = FLUME_ERR_INVALID_ARGUMENT;
+    return MakeDirectAclrtBlockedDetail(decision, "acl stream is null");
+  }
+  if (resource_info.aicpu_ts_thread == 0 || resource_info.channel_handle == 0) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtBlockedDetail(
+        decision, "missing AICPU_TS thread or HCOMM channel handle");
+  }
+
+  flume_hcomm_notify_only_desc_v1 desc = {};
+  FillFlumeNotifyOnlyDesc(role, state, peer_rank, resource_info, &desc);
+
+  aclrtBinHandle bin_handle = nullptr;
+  aclrtBinaryLoadOption option = {};
+  option.type = ACL_RT_BINARY_LOAD_OPT_CPU_KERNEL_MODE;
+  option.value.cpuKernelMode = 0;
+  aclrtBinaryLoadOptions load_options = {};
+  load_options.options = &option;
+  load_options.numOpt = 1;
+  aclError acl_ret =
+      aclrtBinaryLoadFromFile(decision.package.json_path.c_str(), &load_options,
+                              &bin_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=failed "
+                       "api=aclrtBinaryLoadFromFile error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" custom_op_package=present package_vendor=" +
+           decision.package.vendor;
+  }
+
+  aclrtFuncHandle func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC, &func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3c_direct_aclrt_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3c_descriptor_handoff=blocked "
+           "stage3b3c_direct_aclrt_launch=not-attempted kernel_func=" +
+           FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC +
+           " custom_op_package=present package_vendor=" + decision.package.vendor;
+  }
+
+  aclrtArgsHandle args_handle = nullptr;
+  acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsInit error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtParamHandle param_handle = nullptr;
+  acl_ret =
+      aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsAppend error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  acl_ret = aclrtKernelArgsFinalize(args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsFinalize error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = desc.timeout_sec;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  acl_ret = aclrtLaunchKernelWithConfig(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
+      nullptr);
+  if (acl_ret == ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_OK;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=passed "
+                       "stage3b3c_direct_aclrt_launch=passed "
+                       "stage3b2_kernel_consume=passed kernel_func=") +
+           FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
+
+  (void)aclrtBinaryUnLoad(bin_handle);
+  *status = FLUME_ERR_BACKEND;
+  return std::string("stage3b3c_direct_aclrt_loader=passed "
+                     "stage3b3c_descriptor_handoff=passed "
+                     "stage3b3c_direct_aclrt_launch=failed "
+                     "api=aclrtLaunchKernelWithConfig error=\"") +
+         AclErrorMessage(acl_ret) + "\" kernel_func=" +
+         FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
+}
+#else
+std::string TryLaunchHcommNotifyOnlyDirectAclrt(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    const HcommChannelResourceInfo& resource_info,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  (void)role;
+  (void)state;
+  (void)peer_rank;
+  (void)acl_stream;
+  (void)resource_info;
+  if (status != nullptr) {
+    *status = FLUME_ERR_UNSUPPORTED;
+  }
+#if FLUME_BUILD_HCOMM_CUSTOM_OP
+  return MakeDirectAclrtBlockedDetail(
+      decision, "ACL runtime custom-op launch APIs unavailable");
+#else
+  return MakeDirectAclrtBlockedDetail(decision, "custom-op build disabled");
+#endif
+}
+#endif
+
 bool TryLaunchHcommNotifyOnlyKernel(
     flume::hcomm_payload::PayloadRole role,
     const CommState& state,
@@ -2045,28 +2218,34 @@ bool TryLaunchHcommNotifyOnlyKernel(
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string router_detail = DescribeHcommLauncherDecision(launcher);
   if (launcher.backend == HcommLauncherBackend::kUnsupported) {
-    (void)role;
-    (void)state;
-    (void)peer_rank;
-    (void)acl_stream;
-    (void)resource_info;
-    *status = FLUME_ERR_UNSUPPORTED;
-    *detail = std::string("stage3b3a_kernel_launch=unsupported ") +
-              router_detail;
+    int direct_status = FLUME_ERR_UNSUPPORTED;
+    std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
+        role, state, peer_rank, acl_stream, resource_info, launcher,
+        &direct_status);
+    if (direct_status == FLUME_OK) {
+      *status = FLUME_OK;
+      *detail = std::string("stage3b3a_kernel_launch=passed ") +
+                router_detail + " " + direct_detail;
+      return true;
+    }
+    *status = direct_status == FLUME_ERR_UNSUPPORTED ? FLUME_ERR_UNSUPPORTED :
+                                                     direct_status;
+    *detail = std::string("stage3b3a_kernel_launch=") +
+              (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+              " " + router_detail + " " + direct_detail;
     return false;
   }
   if (launcher.backend == HcommLauncherBackend::kDirectAclrtPending) {
-    (void)role;
-    (void)state;
-    (void)peer_rank;
-    (void)acl_stream;
-    (void)resource_info;
-    *status = FLUME_ERR_UNSUPPORTED;
-    *detail = std::string("stage3b3a_kernel_launch=unsupported "
-                          "stage3b3b_direct_aclrt_launch=unsupported "
-                          "reason=\"direct ACL runtime HCOMM descriptor "
-                          "handoff is not implemented\" ") +
-              router_detail;
+    std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
+        role, state, peer_rank, acl_stream, resource_info, launcher, status);
+    if (*status == FLUME_OK) {
+      *detail = std::string("stage3b3a_kernel_launch=passed ") +
+                router_detail + " " + direct_detail;
+      return true;
+    }
+    *detail = std::string("stage3b3a_kernel_launch=") +
+              (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+              " " + router_detail + " " + direct_detail;
     return false;
   }
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH

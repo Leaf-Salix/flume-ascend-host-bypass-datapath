@@ -5,5 +5,12 @@
       "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
       "functionName": "FlumeHcommNotifyOnlyAicpuKernel"
     }
+  },
+  "FlumeHcommNotifyOnlyDirectAclrtKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommNotifyOnlyDirectAclrtKernel"
+    }
   }
 }
