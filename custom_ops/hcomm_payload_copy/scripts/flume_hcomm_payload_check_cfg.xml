@@ -1,0 +1,3 @@
+<hcomm_check_cfg>
+    <item input="aicpu_flume_hcomm_payload.tar.gz" output="aicpu_flume_hcomm_payload.tar.gz" type="cms" sign_alg="PSS" tag="ascend_aicpu" nvcnt="0"></item>
+</hcomm_check_cfg>

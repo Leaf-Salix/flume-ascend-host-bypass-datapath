@@ -66,3 +66,19 @@ Expected markers:
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL
 custom-op packaging flow before a target host can load
 `libflume_hcomm_payload_aicpu_kernel.so`.
+
+Packaging sketch:
+
+```bash
+cd <hccl-source-root>
+bash build.sh \
+  --vendor=flume \
+  --ops=hcomm_payload \
+  --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
+
+./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
+```
+
+After installation, run Flume with `--build-hcomm-custom-op` and
+`--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints
+`stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`.
