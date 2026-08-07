@@ -191,6 +191,20 @@ stage3b3c_direct_aclrt_launch=not-attempted
 This is still a useful Stage 3B.3C result: it distinguishes CANN packaging/API
 gaps from channel-resource, descriptor ABI, launch, or HCCL P2P failures.
 
+Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
+toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the
+direct ACL route stops cleanly at `custom_op_package=missing` with
+`stage3b3c_direct_aclrt_loader=unsupported`,
+`stage3b3c_descriptor_handoff=blocked`, and
+`stage3b3c_direct_aclrt_launch=not-attempted`.
+
+A separate no-install toolkit package inspection found the same public-launch
+limitation in a newer CANN 9.0 package: public `hccl_launch.h` /
+`HcclAicpuKernelLaunch` was still absent, while internal HCOMM package headers
+showed additional thread-export / primitive / launch-adjacent interfaces. That
+keeps the short-term focus on the direct ACL route and custom-op package
+installation rather than waiting for public HCCL launch exposure.
+
 ## Stage 3B.3: HCOMM Pair-Copy Primitive Scheduler
 
 3B.3 executes the current pair-copy plan:
@@ -355,6 +369,8 @@ python3 tools/flume_tool.py \
 ```
 
 The current expected result remains unsupported, but should include
-`stage3b3b_launcher_router=selected:unsupported`. A future complete 3B.2 build should
+`stage3b3b_launcher_router=selected:unsupported` and the Stage 3B.3C direct ACL
+markers. With no installed Flume custom-op package, the expected loader result is
+`stage3b3c_direct_aclrt_loader=unsupported`. A future complete 3B.2 build should
 turn this into `hcomm notify-only smoke passed` with
 `stage3b2_kernel_consume=passed`.

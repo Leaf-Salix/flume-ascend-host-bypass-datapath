@@ -476,6 +476,7 @@ flowchart TB
 | Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 通过 | HCCL collective、HCCL P2P、HCOMM Channel、payload readiness/fallback、Stage 3A storage-HBM fallback；strict payload-copy optional expected negative |
 | Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-c>,<device-d>` | 通过 | 第二组 HCCS_SW 卡对稳定性验证 |
 | Host B (CANN 9.0) storage-HBM | `--run-storage-hbm-smoke --storage-smoke-file <local-ssd-file> --storage-smoke-bytes 16777216 --hccl-count 4194304` | 通过 | 本地 SSD 文件切片经 rank0 proxy HBM 和 HCCL P2P 到 rank1 compute HBM，checksum 一致 |
+| Host B (CANN 9.0) Stage 3B.3C direct ACL readiness | `--build-hcomm-custom-op --run-hcomm-notify-only-smoke` | 通过预期降级 | `direct_aclrt=on`，custom-op package 缺失时 `stage3b3c_direct_aclrt_loader=unsupported`、descriptor handoff blocked、launch not-attempted |
 | Host A (CANN 8.5) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 未完成有效 smoke | NPU 被长任务占满，VNIC socket `<vnic-ip>:<port>` listen 失败；build/CTest/sim/feature probe 通过 |
 | Host A / Host B rank-table | `--hccl-init-mode rank-table` | 未通过 | VNIC / `rtEnableP2P` / P2P memory-share 路径问题 |
 | A3 symmetric smoke | `--run-a3-symmetric-smoke` | 取决于现场 CANN/HCCL 能力位 | 缺 API 时应返回 unavailable / unsupported |
@@ -619,7 +620,7 @@ hccl collective smoke passed: global_rank_size=2 ... init=root-info ... p2p_copy
 - **本地闭环**：没有 NPU 也能跑完整 mock/sim 回归，适合继续写上层逻辑和调度代码。
 - **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM；HCOMM Channel resource probe 已在 CANN 8.5 真机通过，probe 成功语义已收紧为 channel resource，不再把缺 thread-export 的 CANN 8.5 误报成 AICPU thread-export-ready。
 - **诊断闭环**：工具能够收集环境、topology、HCCL 日志、rank-table、diagnostics，已经能区分 host TCP、device RoCE、NPU VNIC、driver P2P policy。
-- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，Stage 3B.3B/3C launcher router 和 direct ACL readiness 正在把 CANN/HCOMM 版本差异变成可诊断选择，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
+- **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，Stage 3B.3B/3C launcher router 和 direct ACL readiness 已在 Host B 真机把 CANN/HCOMM 版本差异变成可诊断选择，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
 
 未来的核心工作是沿着这条顺序推进：
 
