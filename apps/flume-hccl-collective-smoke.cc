@@ -69,6 +69,9 @@
 #ifndef FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
 #define FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH 0
 #endif
+#ifndef FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+#define FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH 0
+#endif
 #ifndef FLUME_BUILD_HCOMM_CUSTOM_OP
 #define FLUME_BUILD_HCOMM_CUSTOM_OP 0
 #endif
@@ -1912,6 +1915,8 @@ int main(int argc, char** argv) {
             << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
             << " hcomm_aicpu_kernel_launch="
             << FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+            << " aclrt_custom_op_launch="
+            << FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
             << " hcomm_custom_op_build=" << FLUME_BUILD_HCOMM_CUSTOM_OP
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
@@ -1936,6 +1941,10 @@ int main(int argc, char** argv) {
             << " hcomm_payload_probe=" << OnOff(caps.hcomm_payload_probe)
             << " hcomm_payload_scheduler="
             << (caps.hcomm_payload_scheduler ? "on" : "not-implemented")
+            << " hcomm_launcher_public_hccl="
+            << (FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH ? "on" : "off")
+            << " hcomm_launcher_direct_aclrt="
+            << (FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH ? "on" : "off")
             << " hcomm_payload="
             << (caps.hcomm_payload_scheduler ? "sim-or-real" : "not-implemented")
             << " storage_hbm="

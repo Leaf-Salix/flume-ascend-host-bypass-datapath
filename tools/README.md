@@ -107,7 +107,7 @@ python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run
 python3 tools/flume_tool.py --build-dir build-stage3b-customop --build-hcomm-custom-op --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `custom-op/AICPU scheduler launch missing`，说明下一步缺的是真实 custom-op/AICPU launcher，而不是前置资源或编译分支。
+当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `stage3b3b_launcher_router=selected:unsupported`，并列出 `public_hccl_launch`、`direct_aclrt`、`thread_export`、`hcomm_primitives` 和 `custom_op_package` 状态。这说明编译分支已进入运行时，下一步缺口由 router 精确定位。
 
 也可以只跑 Stage 3B.1 no-op launch readiness，不跑 payload readiness：
 
@@ -131,7 +131,7 @@ Stage 3B.2-complete / 3B.3-prep notify-only smoke：
 python3 tools/flume_tool.py --build-dir build-stage3b2-notify --run-hcomm-notify-only-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify` 和 `stage3b2_kernel_consume=missing`。这表示 send/recv 的 ready/done Channel Notify 编排已固化，下一步缺的是让 custom-op/AICPU kernel 真正消费 descriptor 并执行 notify-only 同步。
+当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify`、`stage3b2_kernel_consume=missing` 和 `stage3b3b_launcher_router=selected:unsupported`。这表示 send/recv 的 ready/done Channel Notify 编排已固化，launcher router 也已经给出 public HCCL launch / direct ACL launch / custom-op package 等缺口。
 
 可选 Stage 3A storage proxy HBM smoke：
 
@@ -244,7 +244,7 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
 
-HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。
 
 完整两卡矩阵建议用：
 

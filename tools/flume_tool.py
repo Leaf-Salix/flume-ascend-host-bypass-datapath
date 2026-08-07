@@ -248,7 +248,8 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b2_resource_descriptor|descriptor_handoff|"
                 r"hcomm notify-only smoke|stage3b2_notify_only|"
                 r"stage3b2_kernel_consume|stage3b3a_kernel_launch|"
-                r"HcclAicpuKernelLaunch)",
+                r"stage3b3b_launcher_router|direct_aclrt|custom_op_package|"
+                r"aclrt_custom_op_launch|HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),
         ),
@@ -866,8 +867,10 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "HCOMM probe validates channel resources only and the smoke log prints "
         "a FLUME_BACKEND_CAPS line. Pass --run-hcomm-custom-op-launch-smoke "
         "to run the Stage 3B.1 no-op custom-op launch readiness check; it "
-        "is expected to report unsupported until the custom-op/AICPU launcher "
-        "is implemented. Pass --run-hcomm-resource-descriptor-smoke to run "
+        "is expected to report unsupported with a Stage 3B.3B launcher-router "
+        "decision until a supported public HCCL launch or direct ACL runtime "
+        "custom-op launch route is available. Pass "
+        "--run-hcomm-resource-descriptor-smoke to run "
         "the Stage 3B.2 resource descriptor packaging check; it is expected "
         "to report unsupported until descriptor handoff into custom-op/AICPU "
         "is implemented. Pass --run-hcomm-notify-only-smoke to run the "

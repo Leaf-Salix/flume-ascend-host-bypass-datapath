@@ -13,6 +13,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <memory>
@@ -60,6 +61,9 @@
 #endif
 #ifndef FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
 #define FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH 0
+#endif
+#ifndef FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+#define FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH 0
 #endif
 #ifndef FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
@@ -1890,6 +1894,141 @@ bool IsUnsupportedHcclLaunchResult(HcclResult result) {
          result == HCCL_E_UNAVAIL;
 }
 
+enum class HcommLauncherBackend {
+  kPublicHcclLaunch,
+  kDirectAclrtPending,
+  kUnsupported,
+};
+
+struct HcommCustomOpPackageProbe {
+  bool installed = false;
+  std::string vendor = "none";
+};
+
+struct HcommLauncherDecision {
+  HcommLauncherBackend backend = HcommLauncherBackend::kUnsupported;
+  bool custom_op_build = FLUME_BUILD_HCOMM_CUSTOM_OP;
+  bool public_hccl_launch = FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH;
+  bool direct_aclrt_launch = FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH;
+  bool thread_export = FLUME_HAVE_HCOMM_THREAD_EXPORT;
+  bool hcomm_primitives = FLUME_HAVE_HCOMM_PRIMITIVES;
+  HcommCustomOpPackageProbe package;
+  std::vector<std::string> missing;
+};
+
+void AppendMissing(std::vector<std::string>* missing, const std::string& item) {
+  if (missing != nullptr) {
+    missing->push_back(item);
+  }
+}
+
+bool FileExists(const std::string& path) {
+  return !path.empty() && access(path.c_str(), F_OK) == 0;
+}
+
+std::vector<std::string> AscendHomeCandidates() {
+  std::vector<std::string> roots;
+  const char* ascend_home = std::getenv("ASCEND_HOME_PATH");
+  if (ascend_home != nullptr && ascend_home[0] != '\0') {
+    roots.emplace_back(ascend_home);
+  }
+  roots.emplace_back("/usr/local/Ascend/cann");
+  return roots;
+}
+
+HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
+  HcommCustomOpPackageProbe probe;
+  const char* vendors[] = {"flume", "cust"};
+  const char* json_name = "libflume_hcomm_payload_aicpu_kernel.json";
+  for (const std::string& root : AscendHomeCandidates()) {
+    for (const char* vendor : vendors) {
+      std::string json_path = root + "/opp/vendors/" + vendor +
+                              "/aicpu/config/" + json_name;
+      if (FileExists(json_path)) {
+        probe.installed = true;
+        probe.vendor = vendor;
+        return probe;
+      }
+    }
+  }
+  return probe;
+}
+
+HcommLauncherDecision DecideHcommLauncherBackend() {
+  HcommLauncherDecision decision;
+  decision.package = ProbeHcommCustomOpPackage();
+  if (!decision.custom_op_build) {
+    AppendMissing(&decision.missing, "custom-op build disabled");
+  }
+  if (!decision.public_hccl_launch) {
+    AppendMissing(&decision.missing, "public HcclAicpuKernelLaunch unavailable");
+  }
+  if (!decision.direct_aclrt_launch) {
+    AppendMissing(&decision.missing, "ACL runtime custom-op launch APIs unavailable");
+  }
+  if (!decision.thread_export) {
+    AppendMissing(&decision.missing, "HCOMM thread export unavailable");
+  }
+  if (!decision.hcomm_primitives) {
+    AppendMissing(&decision.missing, "HCOMM primitive APIs unavailable");
+  }
+  if (!decision.package.installed) {
+    AppendMissing(&decision.missing, "Flume custom-op package not installed");
+  }
+
+  if (decision.custom_op_build && decision.public_hccl_launch &&
+      decision.package.installed) {
+    decision.backend = HcommLauncherBackend::kPublicHcclLaunch;
+  } else if (decision.custom_op_build && decision.direct_aclrt_launch &&
+             decision.thread_export && decision.hcomm_primitives &&
+             decision.package.installed) {
+    decision.backend = HcommLauncherBackend::kDirectAclrtPending;
+  }
+  return decision;
+}
+
+std::string JoinReasons(const std::vector<std::string>& reasons) {
+  if (reasons.empty()) {
+    return "none";
+  }
+  std::string joined;
+  for (size_t i = 0; i < reasons.size(); ++i) {
+    if (i != 0) {
+      joined += ",";
+    }
+    joined += reasons[i];
+  }
+  return joined;
+}
+
+std::string DescribeHcommLauncherDecision(
+    const HcommLauncherDecision& decision) {
+  const char* selected = "unsupported";
+  if (decision.backend == HcommLauncherBackend::kPublicHcclLaunch) {
+    selected = "public_hccl_launch";
+  } else if (decision.backend == HcommLauncherBackend::kDirectAclrtPending) {
+    selected = "direct_aclrt";
+  }
+  std::string direct_candidate =
+      decision.custom_op_build && decision.direct_aclrt_launch &&
+              decision.thread_export && decision.hcomm_primitives &&
+              decision.package.installed ?
+          "available" :
+          "blocked";
+  return std::string("stage3b3b_launcher_router=selected:") + selected +
+         " custom_op_build=" + (decision.custom_op_build ? "on" : "off") +
+         " public_hccl_launch=" +
+         (decision.public_hccl_launch ? "on" : "off") +
+         " direct_aclrt=" + (decision.direct_aclrt_launch ? "on" : "off") +
+         " direct_aclrt_candidate=" + direct_candidate +
+         " thread_export=" + (decision.thread_export ? "on" : "off") +
+         " hcomm_primitives=" + (decision.hcomm_primitives ? "on" : "off") +
+         " custom_op_package=" +
+         (decision.package.installed ? "present" : "missing") +
+         " package_vendor=" + decision.package.vendor +
+         " reason=\"" + JoinReasons(decision.missing) + "\"";
+}
+
 bool TryLaunchHcommNotifyOnlyKernel(
     flume::hcomm_payload::PayloadRole role,
     const CommState& state,
@@ -1903,11 +2042,39 @@ bool TryLaunchHcommNotifyOnlyKernel(
   }
   *status = FLUME_ERR_BACKEND;
   detail->clear();
+  HcommLauncherDecision launcher = DecideHcommLauncherBackend();
+  std::string router_detail = DescribeHcommLauncherDecision(launcher);
+  if (launcher.backend == HcommLauncherBackend::kUnsupported) {
+    (void)role;
+    (void)state;
+    (void)peer_rank;
+    (void)acl_stream;
+    (void)resource_info;
+    *status = FLUME_ERR_UNSUPPORTED;
+    *detail = std::string("stage3b3a_kernel_launch=unsupported ") +
+              router_detail;
+    return false;
+  }
+  if (launcher.backend == HcommLauncherBackend::kDirectAclrtPending) {
+    (void)role;
+    (void)state;
+    (void)peer_rank;
+    (void)acl_stream;
+    (void)resource_info;
+    *status = FLUME_ERR_UNSUPPORTED;
+    *detail = std::string("stage3b3a_kernel_launch=unsupported "
+                          "stage3b3b_direct_aclrt_launch=unsupported "
+                          "reason=\"direct ACL runtime HCOMM descriptor "
+                          "handoff is not implemented\" ") +
+              router_detail;
+    return false;
+  }
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
   if (resource_info.aicpu_ts_thread == 0 || resource_info.channel_handle == 0) {
     *status = FLUME_ERR_UNSUPPORTED;
     *detail = "stage3b3a_kernel_launch=unsupported reason=\"missing "
-              "AICPU_TS thread or HCOMM channel handle\"";
+              "AICPU_TS thread or HCOMM channel handle\" " +
+              router_detail;
     return false;
   }
 
@@ -1920,7 +2087,7 @@ bool TryLaunchHcommNotifyOnlyKernel(
   if (ret != HCCL_SUCCESS) {
     *detail = std::string("stage3b3a_kernel_launch=failed api=HcclOpDescInit "
                           "error=\"") +
-              HcclErrorMessage(ret) + "\"";
+              HcclErrorMessage(ret) + "\" " + router_detail;
     return false;
   }
   op_desc.opDescType = 1;
@@ -1950,7 +2117,7 @@ bool TryLaunchHcommNotifyOnlyKernel(
   if (ret != HCCL_SUCCESS) {
     *detail = std::string("stage3b3a_kernel_launch=failed "
                           "api=HcclKernelLaunchCfgInit error=\"") +
-              HcclErrorMessage(ret) + "\"";
+              HcclErrorMessage(ret) + "\" " + router_detail;
     return false;
   }
   launch_cfg.timeOut = desc.timeout_sec;
@@ -1964,7 +2131,8 @@ bool TryLaunchHcommNotifyOnlyKernel(
     *detail = std::string("stage3b3a_kernel_launch=passed "
                           "stage3b2_kernel_consume=passed kernel_so=") +
               FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO +
-              " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC;
+              " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC +
+              " " + router_detail;
     return true;
   }
   *status = IsUnsupportedHcclLaunchResult(ret) ? FLUME_ERR_UNSUPPORTED :
@@ -1973,22 +2141,13 @@ bool TryLaunchHcommNotifyOnlyKernel(
             (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
             " api=HcclAicpuKernelLaunch error=\"" + HcclErrorMessage(ret) +
             "\" kernel_so=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO +
-            " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC;
+            " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC +
+            " " + router_detail;
   return false;
 #else
-  (void)role;
-  (void)state;
-  (void)peer_rank;
-  (void)acl_stream;
-  (void)resource_info;
   *status = FLUME_ERR_UNSUPPORTED;
-#if FLUME_BUILD_HCOMM_CUSTOM_OP
-  *detail = "stage3b3a_kernel_launch=unsupported reason=\""
-            "HcclAicpuKernelLaunch is unavailable in this CANN build\"";
-#else
-  *detail = "stage3b3a_kernel_launch=unsupported reason=\""
-            "custom-op/AICPU scheduler build disabled\"";
-#endif
+  *detail = std::string("stage3b3a_kernel_launch=unsupported ") +
+            router_detail;
   return false;
 #endif
 }

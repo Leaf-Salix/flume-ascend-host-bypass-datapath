@@ -7,9 +7,12 @@ Current status:
 - Not built by default.
 - `FLUME_BUILD_HCOMM_CUSTOM_OP=ON` only changes the library diagnostic from
   `custom-op/AICPU scheduler build disabled` to
-  an experimental `HcclAicpuKernelLaunch` attempt for notify-only smoke.
+  a Stage 3B.3B launcher-router decision for notify-only smoke.
 - Stage 3B.3A adds a kernel-side notify-only entrypoint:
   `FlumeHcommNotifyOnlyAicpuKernel`.
+- Stage 3B.3B detects public `HcclAicpuKernelLaunch`, direct ACL runtime
+  custom-op launch APIs, HCOMM thread export, HCOMM primitives, and installed
+  Flume custom-op package state before selecting a launcher.
 - Payload copy is still not implemented in this custom-op path.
 
 Target data-plane plan:
@@ -57,10 +60,22 @@ AICPU kernel:
          HcommChannelNotifyRecordOnThread(done)
 ```
 
+Stage 3B.3B launcher-router path:
+
+```text
+host:
+  probe public HCCL launch ABI
+  probe direct ACL runtime custom-op launch APIs
+  probe HCOMM thread export and primitive APIs
+  check installed Flume custom-op package
+  select public_hccl_launch or unsupported with precise reason
+```
+
 Expected markers:
 
 - success: `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`
 - capability/version block: `stage3b3a_kernel_launch=unsupported`
+- router: `stage3b3b_launcher_router=selected:<backend>`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL

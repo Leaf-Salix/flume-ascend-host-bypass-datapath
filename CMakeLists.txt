@@ -359,6 +359,35 @@ int main() {
 }
 " FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH)
 
+  check_cxx_source_compiles("
+#include <acl/acl.h>
+int main() {
+  aclrtBinHandle bin_handle = nullptr;
+  aclrtFuncHandle func_handle = nullptr;
+  aclrtArgsHandle args_handle = nullptr;
+  aclrtParamHandle param_handle = nullptr;
+  aclrtBinaryLoadOption option = {};
+  option.type = ACL_RT_BINARY_LOAD_OPT_CPU_KERNEL_MODE;
+  option.value.cpuKernelMode = 0;
+  aclrtBinaryLoadOptions load_options = {};
+  load_options.options = &option;
+  load_options.numOpt = 1;
+  (void)aclrtBinaryLoadFromFile(\"kernel.json\", &load_options, &bin_handle);
+  (void)aclrtBinaryGetFunction(bin_handle, \"FlumeHcommNotifyOnlyAicpuKernel\", &func_handle);
+  (void)aclrtKernelArgsInit(func_handle, &args_handle);
+  (void)aclrtKernelArgsAppend(args_handle, nullptr, 0, &param_handle);
+  (void)aclrtKernelArgsFinalize(args_handle);
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = 1;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  (void)aclrtLaunchKernelWithConfig(func_handle, 1, nullptr, &cfg, args_handle, nullptr);
+  return 0;
+}
+" FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH)
+
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles("
 #include <acl/acl.h>
@@ -422,6 +451,7 @@ int main() {
       FLUME_HAVE_HCOMM_PRIMITIVES
       FLUME_HAVE_HCOMM_RANK_GRAPH
       FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+      FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -467,6 +497,7 @@ int main() {
     FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
     FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=${FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH_VALUE}
+    FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=${FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -489,6 +520,7 @@ else()
     FLUME_HAVE_HCOMM_PRIMITIVES=0
     FLUME_HAVE_HCOMM_RANK_GRAPH=0
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=0
+    FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0

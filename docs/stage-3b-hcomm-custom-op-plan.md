@@ -37,6 +37,8 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.1 | no-op custom-op/AICPU launch readiness | `hcomm custom-op launch smoke passed` | `custom-op/AICPU scheduler build disabled` or `custom-op/AICPU scheduler launch missing` |
 | 3B.2 | package HCOMM resource descriptor and prepare custom-op handoff | `stage3b2_resource_descriptor=host-packaged` | `custom-op/AICPU descriptor handoff is missing` |
 | 3B.2-complete / 3B.3-prep | consume descriptor and run notify-only channel sync | `stage3b2_kernel_consume=passed` and `stage3b2_notify_only_plan=channel-notify` | `stage3b2_kernel_consume=missing` |
+| 3B.3A | true notify-only AICPU launch | `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed` | public launch API or custom-op package missing |
+| 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -133,6 +135,52 @@ stage3b2_kernel_consume=missing
 This is the last synchronization-only boundary before enabling
 `HcommLocalCopyOnThread` / `HcommReadOnThread` payload movement.
 
+## Stage 3B.3A/3B: Launcher Capability Router
+
+3B.3A introduced the notify-only AICPU kernel entrypoint and the public HCCL
+launch route:
+
+```text
+public_hccl_launch:
+  HcclAicpuKernelLaunch(...)
+  -> FlumeHcommNotifyOnlyAicpuKernel(...)
+```
+
+Some CANN packages do not expose `hccl_launch.h` / `HcclAicpuKernelLaunch` as a
+public C ABI even when internal HCOMM code contains an AICPU launch mechanism.
+Stage 3B.3B therefore turns launch into a router instead of a single attempt:
+
+```text
+detect:
+  public HcclAicpuKernelLaunch
+  direct ACL runtime custom-op launch APIs
+  HCOMM thread export / engine context
+  HCOMM primitive APIs
+  installed Flume custom-op package
+
+select:
+  public_hccl_launch
+  unsupported with precise reason
+```
+
+The direct ACL route is deliberately probed but not selected yet. It requires a
+packaged custom-op binary plus a confirmed resource handoff model for the HCOMM
+thread/channel descriptor. Current target hosts that expose ACL runtime launch
+but lack thread export or HCOMM primitives should produce an honest diagnostic:
+
+```text
+stage3b3a_kernel_launch=unsupported
+stage3b3b_launcher_router=selected:unsupported
+public_hccl_launch=off
+direct_aclrt=on|off
+thread_export=off
+hcomm_primitives=off
+custom_op_package=missing
+```
+
+This is still a useful Stage 3B.3B result: it distinguishes CANN packaging/API
+gaps from channel-resource or HCCL P2P failures.
+
 ## Stage 3B.3: HCOMM Pair-Copy Primitive Scheduler
 
 3B.3 executes the current pair-copy plan:
@@ -214,11 +262,13 @@ Expected current result:
 ```text
 hcomm custom-op launch smoke unsupported
 stage3b1_launch_plan=noop-custom-op
-custom-op/AICPU scheduler launch missing
+stage3b3b_launcher_router=selected:unsupported
 ```
 
 This second result is useful: it proves the build switch reached the runtime
-diagnostic path, so the next missing piece is the real custom-op/AICPU launcher.
+diagnostic path. The router detail then identifies whether the blocker is public
+HCCL launch, direct ACL runtime launch, thread export, HCOMM primitives, or
+custom-op package installation.
 
 Stage 3B.2 resource descriptor smoke:
 
@@ -256,8 +306,8 @@ python3 tools/flume_tool.py \
 ```
 
 Expected current result still reports unsupported, but the detail should include
-`custom-op/AICPU scheduler launch missing`, proving the descriptor path reached
-the custom-op build branch.
+`stage3b3b_launcher_router=selected:unsupported`, proving the descriptor path
+reached the custom-op build branch and produced precise launcher diagnostics.
 
 Stage 3B.2-complete notify-only smoke:
 
@@ -295,6 +345,6 @@ python3 tools/flume_tool.py \
 ```
 
 The current expected result remains unsupported, but should include
-`custom-op/AICPU scheduler launch missing`. A future complete 3B.2 build should
+`stage3b3b_launcher_router=selected:unsupported`. A future complete 3B.2 build should
 turn this into `hcomm notify-only smoke passed` with
 `stage3b2_kernel_consume=passed`.
