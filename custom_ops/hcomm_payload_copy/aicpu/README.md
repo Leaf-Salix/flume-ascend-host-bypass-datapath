@@ -1,12 +1,21 @@
-# AICPU Kernel Placeholder
+# AICPU Kernel
 
-Future AICPU-side work belongs here:
+This directory contains the Stage 3B.3A notify-only AICPU kernel entrypoint:
 
-- Deserialize the HCOMM payload resource context.
-- Enter HCOMM batch mode if required by the selected CANN runtime.
-- Execute the Stage 3B pair-copy plan:
-  `LocalCopy/Notify` on the sender and `Notify/Read/Notify` on the receiver.
-- Report completion to the host-side control thread or ACL stream ordering
-  mechanism.
+- `notify_only_kernel.cc`
+- exported function: `FlumeHcommNotifyOnlyAicpuKernel`
 
-This placeholder is intentionally not compiled by the default project build.
+It consumes `HcclP2pKernelParam`, decodes
+`flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:
+
+```text
+send rank: HcommChannelNotifyRecordOnThread(ready)
+           HcommChannelNotifyWaitOnThread(done)
+
+recv rank: HcommChannelNotifyWaitOnThread(ready)
+           HcommChannelNotifyRecordOnThread(done)
+```
+
+The kernel source is intentionally not compiled by the default local project
+build. It must be packaged through the CANN/HCCL custom-op packaging flow before
+the target host can load `libflume_hcomm_payload_aicpu_kernel.so`.

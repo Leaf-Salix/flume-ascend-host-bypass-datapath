@@ -247,7 +247,8 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"hcomm resource descriptor smoke|stage3b1_launch|"
                 r"stage3b2_resource_descriptor|descriptor_handoff|"
                 r"hcomm notify-only smoke|stage3b2_notify_only|"
-                r"stage3b2_kernel_consume)",
+                r"stage3b2_kernel_consume|stage3b3a_kernel_launch|"
+                r"HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),
         ),

@@ -66,6 +66,9 @@
 #ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
 #define FLUME_HAVE_HCOMM_RANK_GRAPH 0
 #endif
+#ifndef FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+#define FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH 0
+#endif
 #ifndef FLUME_BUILD_HCOMM_CUSTOM_OP
 #define FLUME_BUILD_HCOMM_CUSTOM_OP 0
 #endif
@@ -1907,6 +1910,8 @@ int main(int argc, char** argv) {
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
             << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
+            << " hcomm_aicpu_kernel_launch="
+            << FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
             << " hcomm_custom_op_build=" << FLUME_BUILD_HCOMM_CUSTOM_OP
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";

@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <memory>
@@ -57,6 +58,9 @@
 #ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
 #define FLUME_HAVE_HCOMM_RANK_GRAPH 0
 #endif
+#ifndef FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+#define FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH 0
+#endif
 #ifndef FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
 #endif
@@ -85,7 +89,16 @@
 #endif
 #endif
 
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+#if __has_include(<hccl/hccl_launch.h>)
+#include <hccl/hccl_launch.h>
+#else
+#error "FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=1 requires hccl/hccl_launch.h"
+#endif
+#endif
+
 #include "protocol/framing.h"
+#include "flume_hcomm_notify_only_abi.h"
 #include "hcomm_payload/payload_backend.h"
 
 struct flume_client {
@@ -187,6 +200,11 @@ struct HcommChannelResourceInfo {
   size_t usable_buffer_bytes = 0;
   uint64_t local_buffer_bytes = 0;
   uint64_t remote_buffer_bytes = 0;
+  void* local_buffer = nullptr;
+  void* remote_buffer = nullptr;
+  uint64_t channel_handle = 0;
+  uint64_t cpu_ts_thread = 0;
+  uint64_t aicpu_ts_thread = 0;
   uint32_t channel_count = 0;
   uint32_t notify_num = 0;
   flume_hcomm_engine_t resolved_engine = FLUME_HCOMM_ENGINE_AUTO;
@@ -1740,6 +1758,11 @@ bool ProbeHcommChannelResources(const CommState& state,
     resource_info->usable_buffer_bytes = *usable_buffer_bytes;
     resource_info->local_buffer_bytes = local_size;
     resource_info->remote_buffer_bytes = remote_size;
+    resource_info->local_buffer = local_buffer;
+    resource_info->remote_buffer = remote_buffer;
+    resource_info->channel_handle = channels.empty() ? 0 : channels[0];
+    resource_info->cpu_ts_thread = cpu_ts_thread;
+    resource_info->aicpu_ts_thread = aicpu_ts_thread;
     resource_info->channel_count = static_cast<uint32_t>(descs.size());
     resource_info->notify_num = options.notify_num;
     resource_info->resolved_engine = resolved_engine;
@@ -1835,6 +1858,141 @@ std::string MakeHcommNotifyOnlyDetail(
   return flume::hcomm_payload::DescribeNotifyOnlyPlan(plan) +
          " descriptor_detail=\"" + descriptor_detail + "\"";
 }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
+                             const CommState& state,
+                             uint32_t peer_rank,
+                             const HcommChannelResourceInfo& resource_info,
+                             flume_hcomm_notify_only_desc_v1* desc) {
+  flume_hcomm_notify_only_desc_init(desc);
+  desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
+                   FLUME_HCOMM_NOTIFY_ROLE_SEND :
+                   FLUME_HCOMM_NOTIFY_ROLE_RECV;
+  desc->local_rank = state.rank;
+  desc->peer_rank = peer_rank;
+  desc->rank_size = state.rank_size;
+  desc->ready_notify_idx = 0;
+  desc->done_notify_idx = 1;
+  desc->timeout_sec = 1800;
+  desc->aicpu_thread = resource_info.aicpu_ts_thread;
+  desc->channel_handle = resource_info.channel_handle;
+  desc->local_hccl_buffer =
+      reinterpret_cast<uint64_t>(resource_info.local_buffer);
+  desc->remote_hccl_buffer =
+      reinterpret_cast<uint64_t>(resource_info.remote_buffer);
+  desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
+  desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
+}
+
+bool IsUnsupportedHcclLaunchResult(HcclResult result) {
+  return result == HCCL_E_NOT_SUPPORT || result == HCCL_E_NOT_FOUND ||
+         result == HCCL_E_UNAVAIL;
+}
+
+bool TryLaunchHcommNotifyOnlyKernel(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    const HcommChannelResourceInfo& resource_info,
+    int* status,
+    std::string* detail) {
+  if (status == nullptr || detail == nullptr) {
+    return false;
+  }
+  *status = FLUME_ERR_BACKEND;
+  detail->clear();
+#if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
+  if (resource_info.aicpu_ts_thread == 0 || resource_info.channel_handle == 0) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    *detail = "stage3b3a_kernel_launch=unsupported reason=\"missing "
+              "AICPU_TS thread or HCOMM channel handle\"";
+    return false;
+  }
+
+  flume_hcomm_notify_only_desc_v1 desc = {};
+  FillFlumeNotifyOnlyDesc(role, state, peer_rank, resource_info, &desc);
+
+  auto comm = static_cast<HcclComm>(state.hccl_comm);
+  HcclOpDesc op_desc;
+  HcclResult ret = HcclOpDescInit(&op_desc);
+  if (ret != HCCL_SUCCESS) {
+    *detail = std::string("stage3b3a_kernel_launch=failed api=HcclOpDescInit "
+                          "error=\"") +
+              HcclErrorMessage(ret) + "\"";
+    return false;
+  }
+  op_desc.opDescType = 1;
+  const char* op_name = role == flume::hcomm_payload::PayloadRole::kSend ?
+                            "FlumeNotifyOnlySend" :
+                            "FlumeNotifyOnlyRecv";
+  std::snprintf(op_desc.opName, sizeof(op_desc.opName), "%s", op_name);
+  op_desc.p2p.buffer = resource_info.local_buffer;
+  op_desc.p2p.cmdType = role == flume::hcomm_payload::PayloadRole::kSend ?
+                            HCCL_CMD_SEND :
+                            HCCL_CMD_RECEIVE;
+  op_desc.p2p.dataType = HCCL_DATA_TYPE_UINT8;
+  op_desc.p2p.count = 1;
+  op_desc.p2p.remoteRank = peer_rank;
+  op_desc.p2p.unfoldStream = acl_stream;
+
+  HcclKernelFuncInfo func_info = {};
+  std::snprintf(func_info.kernelSoName, sizeof(func_info.kernelSoName), "%s",
+                FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO);
+  std::snprintf(func_info.kernelFuncName, sizeof(func_info.kernelFuncName),
+                "%s", FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC);
+  func_info.args = &desc;
+  func_info.argSize = sizeof(desc);
+
+  HcclKernelLaunchCfg launch_cfg;
+  ret = HcclKernelLaunchCfgInit(&launch_cfg);
+  if (ret != HCCL_SUCCESS) {
+    *detail = std::string("stage3b3a_kernel_launch=failed "
+                          "api=HcclKernelLaunchCfgInit error=\"") +
+              HcclErrorMessage(ret) + "\"";
+    return false;
+  }
+  launch_cfg.timeOut = desc.timeout_sec;
+
+  ret = HcclAicpuKernelLaunch(
+      comm, &op_desc, &func_info,
+      static_cast<ThreadHandle>(resource_info.aicpu_ts_thread),
+      static_cast<aclrtStream>(acl_stream), &launch_cfg);
+  if (ret == HCCL_SUCCESS) {
+    *status = FLUME_OK;
+    *detail = std::string("stage3b3a_kernel_launch=passed "
+                          "stage3b2_kernel_consume=passed kernel_so=") +
+              FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO +
+              " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC;
+    return true;
+  }
+  *status = IsUnsupportedHcclLaunchResult(ret) ? FLUME_ERR_UNSUPPORTED :
+                                                 FLUME_ERR_BACKEND;
+  *detail = std::string("stage3b3a_kernel_launch=") +
+            (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+            " api=HcclAicpuKernelLaunch error=\"" + HcclErrorMessage(ret) +
+            "\" kernel_so=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_SO +
+            " kernel_func=" + FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC;
+  return false;
+#else
+  (void)role;
+  (void)state;
+  (void)peer_rank;
+  (void)acl_stream;
+  (void)resource_info;
+  *status = FLUME_ERR_UNSUPPORTED;
+#if FLUME_BUILD_HCOMM_CUSTOM_OP
+  *detail = "stage3b3a_kernel_launch=unsupported reason=\""
+            "HcclAicpuKernelLaunch is unavailable in this CANN build\"";
+#else
+  *detail = "stage3b3a_kernel_launch=unsupported reason=\""
+            "custom-op/AICPU scheduler build disabled\"";
+#endif
+  return false;
+#endif
+}
+#endif
 
 }  // namespace
 
@@ -3079,6 +3237,55 @@ int flume_hcomm_notify_only_smoke_ex(
                                 descriptor_detail);
   flume::hcomm_payload::SchedulerStatus scheduler_status =
       flume::hcomm_payload::CurrentSchedulerStatus();
+
+#if FLUME_BUILD_HCOMM_CUSTOM_OP
+  HcommProbeOptions launch_options = normalized_options;
+  if (launch_options.engine == FLUME_HCOMM_ENGINE_AUTO ||
+      launch_options.engine == FLUME_HCOMM_ENGINE_CPU ||
+      launch_options.engine == FLUME_HCOMM_ENGINE_CPU_TS) {
+    launch_options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+  }
+  HcommChannelResourceInfo launch_resource_info;
+  std::string launch_channel_detail;
+  std::string launch_error;
+  int launch_probe_status = FLUME_ERR_BACKEND;
+  size_t launch_usable_buffer_bytes = 0;
+  if (!ProbeHcommChannelResources(state, peer_rank, launch_options, acl_stream,
+                                  &launch_usable_buffer_bytes,
+                                  &launch_probe_status,
+                                  &launch_channel_detail, &launch_error,
+                                  &launch_resource_info)) {
+    *out = MakeIo(
+        FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+        std::string("HCOMM notify-only AICPU_TS launch resources are "
+                    "unavailable; stage3b2_kernel_consume=missing; "
+                    "stage3b3a_kernel_launch=unsupported reason=\"") +
+            launch_error + "\" " + notify_detail);
+    return FLUME_OK;
+  }
+  std::string launch_descriptor_detail = MakeHcommResourceDescriptorDetail(
+      state, peer_rank, launch_resource_info, launch_channel_detail);
+  std::string launch_notify_detail =
+      MakeHcommNotifyOnlyDetail(role, state, peer_rank, launch_resource_info,
+                                launch_descriptor_detail);
+  int kernel_status = FLUME_ERR_BACKEND;
+  std::string kernel_detail;
+  if (TryLaunchHcommNotifyOnlyKernel(role, state, peer_rank, acl_stream,
+                                     launch_resource_info, &kernel_status,
+                                     &kernel_detail)) {
+    *out = MakeIo(FLUME_OK, launch_usable_buffer_bytes, 0,
+                  std::string("HCOMM notify-only smoke passed; ") +
+                      kernel_detail + " " + launch_notify_detail);
+    return FLUME_OK;
+  }
+  *out = MakeIo(
+      kernel_status, launch_usable_buffer_bytes, 0,
+      std::string("HCOMM notify-only custom-op/AICPU kernel did not complete; "
+                  "stage3b2_kernel_consume=missing; ") +
+          kernel_detail + " " + launch_notify_detail);
+  return FLUME_OK;
+#endif
+
   if (scheduler_status == flume::hcomm_payload::SchedulerStatus::kReady) {
     *out = MakeIo(FLUME_OK, usable_buffer_bytes, 0,
                   std::string("HCOMM notify-only smoke passed; "

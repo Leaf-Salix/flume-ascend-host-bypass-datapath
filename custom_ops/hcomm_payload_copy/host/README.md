@@ -1,11 +1,16 @@
-# Host Launcher Placeholder
+# Host Launcher
 
-Future host-side work belongs here:
+Stage 3B.3A currently launches through the library-side
+`HcclAicpuKernelLaunch` path in `src/core/client.cc`.
 
-- Allocate or reuse the serialized HCOMM payload resource context.
-- Bind pair-copy parameters: local rank, peer rank, source/destination HBM
-  addresses, byte count, channel handle, local and remote HCCL Buffer pointers.
-- Launch the AICPU payload-copy kernel on the caller's ACL stream.
-- Convert launch/completion failures into Flume backend diagnostics.
+The launcher path:
 
-This placeholder is intentionally not compiled by the default project build.
+```text
+ProbeHcommChannelResources(AICPU_TS)
+  -> package flume_hcomm_notify_only_desc_v1
+  -> HcclAicpuKernelLaunch(...)
+  -> marker: stage3b3a_kernel_launch=passed|unsupported|failed
+```
+
+This directory remains reserved for a future standalone custom-op host library
+or packaging glue if we decide to export a separate Flume custom-op API.

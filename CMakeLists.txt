@@ -131,6 +131,14 @@ ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 #error no hccl_rank_graph header
 #endif
 ")
+  set(_FLUME_HCCL_AICPU_KERNEL_LAUNCH_CHECK_INCLUDE "
+${_FLUME_HCOMM_RES_CHECK_INCLUDE}
+#if __has_include(<hccl/hccl_launch.h>)
+#include <hccl/hccl_launch.h>
+#else
+#error no hccl_launch header
+#endif
+")
   set(_FLUME_OLD_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
   set(_FLUME_OLD_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
   set(_FLUME_OLD_TRY_COMPILE_TARGET_TYPE "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
@@ -336,6 +344,23 @@ int main() {
 
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles("
+${_FLUME_HCCL_AICPU_KERNEL_LAUNCH_CHECK_INCLUDE}
+int main() {
+  HcclOpDesc op_desc;
+  HcclKernelFuncInfo func_info = {};
+  HcclKernelLaunchCfg launch_cfg;
+  ThreadHandle thread = 0;
+  aclrtStream stream = nullptr;
+  HcclOpDescInit(&op_desc);
+  HcclKernelLaunchCfgInit(&launch_cfg);
+  (void)HcclAicpuKernelLaunch(nullptr, &op_desc, &func_info, thread,
+                              stream, &launch_cfg);
+  return 0;
+}
+" FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH)
+
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+  check_cxx_source_compiles("
 #include <acl/acl.h>
 int main() {
   aclrtStream stream = nullptr;
@@ -396,6 +421,7 @@ int main() {
       FLUME_HAVE_HCOMM_THREAD_EXPORT
       FLUME_HAVE_HCOMM_PRIMITIVES
       FLUME_HAVE_HCOMM_RANK_GRAPH
+      FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -440,6 +466,7 @@ int main() {
     FLUME_HAVE_HCOMM_THREAD_EXPORT=${FLUME_HAVE_HCOMM_THREAD_EXPORT_VALUE}
     FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
     FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
+    FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=${FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -461,11 +488,16 @@ else()
     FLUME_HAVE_HCOMM_THREAD_EXPORT=0
     FLUME_HAVE_HCOMM_PRIMITIVES=0
     FLUME_HAVE_HCOMM_RANK_GRAPH=0
+    FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0
   )
 endif()
+
+target_include_directories(flume PRIVATE
+  ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include
+)
 
 add_executable(flume-store-agent apps/flume-store-agent.cc)
 target_link_libraries(flume-store-agent PRIVATE flume)
