@@ -101,6 +101,39 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
+可选 Stage 3A storage proxy HBM smoke：
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-storage-hbm \
+  --run-storage-hbm-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --storage-smoke-file /path/on/local-ssd/flume-storage-smoke.bin \
+  --storage-smoke-bytes 4096 \
+  ascend-probe
+```
+
+该模式验证 Stage 3A fallback 实路径，不声明 full direct。数据路径是：
+
+```text
+local SSD file slice
+  -> rank0 host pinned buffer
+  -> rank0 proxy HBM
+  -> HcclSend / HcclRecv
+  -> rank1 compute HBM
+  -> checksum verification
+```
+
+rank1 的期望 checksum 由 `flume_tool.py` 在启动前根据同一个文件切片计算，并通过 `--storage-smoke-checksum` 传给 rank 进程，因此 rank1 不需要再读取 SSD 来获得期望数据。成功 marker：
+
+```text
+rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging ...
+```
+
+如果不传 `--storage-smoke-file`，工具会在本次 `logs/flume-check-*/storage-smoke-input.bin` 自动生成确定性输入文件；这适合快速验证工具链。要测试远端主机本地 SSD，请显式传入 SSD 路径。`--storage-smoke-bytes` 必须小于等于 `--hccl-count * 4`，因为当前 smoke 复用 FP32 collective 的每 rank HBM buffer 做 byte payload staging；例如传 `--storage-smoke-bytes 16777216` 时，应设置 `--hccl-count 4194304` 或更大。
+
 `pcie` 对当前 HCCL `HcclChannelAcquire` probe 默认判为 unsupported，保留这个值只是为了把误用场景诊断清楚；推荐优先测试 `hccs` 或现场拓扑对应的 `sio`。`hccs-only` 是 Flume 侧保留的诊断别名，在当前 CANN 8.5/9.0 头文件里会映射到 `COMM_PROTOCOL_HCCS`。
 
 可选值：

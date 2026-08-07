@@ -8,9 +8,11 @@
 #endif
 
 #include <filesystem>
+#include <algorithm>
 #include <cstdlib>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -23,6 +25,7 @@
 
 #include "agent/storage_agent.h"
 #include "flume/flume.h"
+#include "protocol/framing.h"
 
 #ifndef FLUME_HAVE_HCCL_ROOT_INFO_CONFIG
 #define FLUME_HAVE_HCCL_ROOT_INFO_CONFIG 0
@@ -92,6 +95,12 @@ struct RankContext {
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
   bool hcomm_payload_smoke = false;
+  bool storage_hbm_smoke = false;
+  std::string storage_smoke_file;
+  uint64_t storage_smoke_offset = 0;
+  size_t storage_smoke_bytes = 0;
+  bool storage_smoke_has_checksum = false;
+  uint32_t storage_smoke_checksum = 0;
   flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
@@ -567,6 +576,43 @@ bool CheckedAddSize(size_t lhs, size_t rhs, size_t* out) {
   return true;
 }
 
+bool ReadFileSlice(const std::string& path,
+                   uint64_t offset,
+                   size_t bytes,
+                   void* dst,
+                   std::string* error) {
+  if (path.empty() || dst == nullptr || error == nullptr) {
+    if (error != nullptr) {
+      *error = "invalid storage file read parameters";
+    }
+    return false;
+  }
+  std::ifstream stream(path, std::ios::binary);
+  if (!stream) {
+    *error = "failed to open storage smoke file: " + path;
+    return false;
+  }
+  if (offset > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max())) {
+    *error = "storage smoke file offset is too large";
+    return false;
+  }
+  if (bytes > static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {
+    *error = "storage smoke byte count is too large";
+    return false;
+  }
+  stream.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+  if (!stream) {
+    *error = "failed to seek storage smoke file: " + path;
+    return false;
+  }
+  stream.read(static_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+  if (stream.gcount() != static_cast<std::streamsize>(bytes)) {
+    *error = "short storage smoke file read: " + path;
+    return false;
+  }
+  return true;
+}
+
 bool ComputeBufferLayout(uint64_t count,
                          uint32_t rank_size,
                          BufferLayout* layout,
@@ -810,16 +856,36 @@ void RankMain(RankContext* ctx) {
   flume_io_t* p2p_io = nullptr;
   flume_io_t* hcomm_channel_io = nullptr;
   flume_io_t* hcomm_payload_io = nullptr;
+  flume_io_t* storage_hbm_io = nullptr;
 
   BufferLayout layout;
   std::string error;
   size_t one_rank_bytes = 0;
   size_t gather_bytes = 0;
+  size_t host_buf_bytes = 0;
   if (!ComputeBufferLayout(ctx->count, ctx->rank_size, &layout, &error)) {
     goto cleanup;
   }
   one_rank_bytes = layout.one_rank_bytes;
   gather_bytes = layout.gather_bytes;
+  host_buf_bytes = gather_bytes;
+  if (ctx->storage_hbm_smoke) {
+    if (ctx->storage_smoke_file.empty() || ctx->storage_smoke_bytes == 0) {
+      error = "storage HBM smoke requires --storage-smoke-file and "
+              "--storage-smoke-bytes";
+      goto cleanup;
+    }
+    if (ctx->storage_smoke_bytes > one_rank_bytes) {
+      error = "storage HBM smoke bytes exceed the per-rank HBM buffer; "
+              "increase --count or reduce --storage-smoke-bytes";
+      goto cleanup;
+    }
+    if (ctx->rank_size != 2) {
+      error = "storage HBM smoke is pair-only and requires exactly two ranks";
+      goto cleanup;
+    }
+    host_buf_bytes = std::max(host_buf_bytes, ctx->storage_smoke_bytes);
+  }
 
   if (!CheckAcl(aclrtSetDevice(ctx->device), "aclrtSetDevice", &error)) {
     goto cleanup;
@@ -839,7 +905,7 @@ void RankMain(RankContext* ctx) {
   }
 
   if (!CheckAcl(aclrtCreateStream(&stream), "aclrtCreateStream", &error) ||
-      !CheckAcl(aclrtMallocHost(&host_buf, gather_bytes), "aclrtMallocHost",
+      !CheckAcl(aclrtMallocHost(&host_buf, host_buf_bytes), "aclrtMallocHost",
                 &error)) {
     goto cleanup;
   }
@@ -1153,7 +1219,98 @@ void RankMain(RankContext* ctx) {
     }
   }
 
+  if (ctx->storage_hbm_smoke) {
+    if (ctx->rank == 0) {
+      if (!ReadFileSlice(ctx->storage_smoke_file, ctx->storage_smoke_offset,
+                         ctx->storage_smoke_bytes, host_buf, &error)) {
+        goto cleanup;
+      }
+      uint32_t checksum =
+          flume::protocol::Checksum32(host_buf, ctx->storage_smoke_bytes);
+      if (ctx->storage_smoke_has_checksum &&
+          checksum != ctx->storage_smoke_checksum) {
+        error = "storage smoke source checksum mismatch before H2D";
+        goto cleanup;
+      }
+      if (!CheckAcl(aclrtMemcpy(reduce_send, ctx->storage_smoke_bytes, host_buf,
+                                ctx->storage_smoke_bytes,
+                                ACL_MEMCPY_HOST_TO_DEVICE),
+                    "aclrtMemcpy storage proxy H2D", &error)) {
+        goto cleanup;
+      }
+      if (!CheckFlume(flume_p2p_send_async(
+                          client, reduce_send_buf,
+                          ctx->a3_symmetric ? layout.reduce_send_offset : 0,
+                          ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 1,
+                          stream, &storage_hbm_io),
+                      "flume_p2p_send_async storage HBM", &error) ||
+          !CheckFlume(flume_wait(storage_hbm_io, -1),
+                      "flume_wait storage HBM send", &error)) {
+        goto cleanup;
+      }
+      std::ostringstream line;
+      line << "rank 0 storage HBM smoke sent: storage_hbm=hccl-p2p-staging"
+           << " path=file->host->proxy_hbm->HcclSend"
+           << " file=" << ctx->storage_smoke_file
+           << " offset=" << ctx->storage_smoke_offset
+           << " bytes=" << ctx->storage_smoke_bytes
+           << " checksum=" << checksum;
+      LogLine(line.str());
+    } else if (ctx->rank == 1) {
+      memset(host_buf, 0, ctx->storage_smoke_bytes);
+      if (!CheckAcl(aclrtMemcpy(reduce_recv, ctx->storage_smoke_bytes, host_buf,
+                                ctx->storage_smoke_bytes,
+                                ACL_MEMCPY_HOST_TO_DEVICE),
+                    "aclrtMemcpy storage recv clear H2D", &error)) {
+        goto cleanup;
+      }
+      if (!CheckFlume(flume_p2p_recv_async(
+                          client, reduce_recv_buf,
+                          ctx->a3_symmetric ? layout.reduce_recv_offset : 0,
+                          ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 0,
+                          stream, &storage_hbm_io),
+                      "flume_p2p_recv_async storage HBM", &error) ||
+          !CheckFlume(flume_wait(storage_hbm_io, -1),
+                      "flume_wait storage HBM recv", &error)) {
+        goto cleanup;
+      }
+      if (!CheckAcl(aclrtMemcpy(host_buf, ctx->storage_smoke_bytes, reduce_recv,
+                                ctx->storage_smoke_bytes,
+                                ACL_MEMCPY_DEVICE_TO_HOST),
+                    "aclrtMemcpy storage recv D2H", &error)) {
+        goto cleanup;
+      }
+      uint32_t checksum =
+          flume::protocol::Checksum32(host_buf, ctx->storage_smoke_bytes);
+      if (ctx->storage_smoke_has_checksum) {
+        if (checksum != ctx->storage_smoke_checksum) {
+          error = "storage HBM smoke verification failed";
+          goto cleanup;
+        }
+      } else {
+        std::vector<uint8_t> expected(ctx->storage_smoke_bytes);
+        if (!ReadFileSlice(ctx->storage_smoke_file, ctx->storage_smoke_offset,
+                           ctx->storage_smoke_bytes, expected.data(), &error)) {
+          goto cleanup;
+        }
+        uint32_t expected_checksum =
+            flume::protocol::Checksum32(expected.data(), expected.size());
+        if (checksum != expected_checksum) {
+          error = "storage HBM smoke verification failed";
+          goto cleanup;
+        }
+      }
+      std::ostringstream line;
+      line << "rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging"
+           << " path=HcclRecv->compute_hbm"
+           << " bytes=" << ctx->storage_smoke_bytes
+           << " checksum=" << checksum;
+      LogLine(line.str());
+    }
+  }
+
 cleanup:
+  flume_io_release(storage_hbm_io);
   flume_io_release(hcomm_payload_io);
   flume_io_release(hcomm_channel_io);
   if (a3_window != nullptr) {
@@ -1234,6 +1391,12 @@ int main(int argc, char** argv) {
   bool p2p_copy = false;
   bool hcomm_channel_probe = false;
   bool hcomm_payload_smoke = false;
+  bool storage_hbm_smoke = false;
+  std::string storage_smoke_file;
+  uint64_t storage_smoke_offset = 0;
+  uint64_t storage_smoke_bytes_u64 = 4096;
+  uint32_t storage_smoke_checksum = 0;
+  bool storage_smoke_has_checksum = false;
   flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
@@ -1270,6 +1433,33 @@ int main(int argc, char** argv) {
       hcomm_channel_probe = true;
     } else if (arg == "--hcomm-payload-smoke") {
       hcomm_payload_smoke = true;
+    } else if (arg == "--storage-hbm-smoke") {
+      storage_hbm_smoke = true;
+    } else if (arg.rfind("--storage-smoke-file=", 0) == 0) {
+      storage_smoke_file =
+          arg.substr(std::string("--storage-smoke-file=").size());
+    } else if (arg.rfind("--storage-smoke-offset=", 0) == 0) {
+      if (!ParseU64(arg.substr(std::string("--storage-smoke-offset=").size()),
+                    &storage_smoke_offset)) {
+        std::cerr << "invalid --storage-smoke-offset\n";
+        return 2;
+      }
+    } else if (arg.rfind("--storage-smoke-bytes=", 0) == 0) {
+      if (!ParseU64(arg.substr(std::string("--storage-smoke-bytes=").size()),
+                    &storage_smoke_bytes_u64)) {
+        std::cerr << "invalid --storage-smoke-bytes\n";
+        return 2;
+      }
+    } else if (arg.rfind("--storage-smoke-checksum=", 0) == 0) {
+      uint64_t value = 0;
+      if (!ParseU64(arg.substr(std::string("--storage-smoke-checksum=").size()),
+                    &value) ||
+          value > std::numeric_limits<uint32_t>::max()) {
+        std::cerr << "invalid --storage-smoke-checksum\n";
+        return 2;
+      }
+      storage_smoke_checksum = static_cast<uint32_t>(value);
+      storage_smoke_has_checksum = true;
     } else if (arg == "--hcomm-require-thread-export") {
       hcomm_require_thread_export = true;
     } else if (arg == "--hcomm-require-payload-copy") {
@@ -1343,6 +1533,11 @@ int main(int argc, char** argv) {
                 << " [--p2p-copy]"
                 << " [--hcomm-channel-probe]"
                 << " [--hcomm-payload-smoke]"
+                << " [--storage-hbm-smoke]"
+                << " [--storage-smoke-file=path]"
+                << " [--storage-smoke-offset=0]"
+                << " [--storage-smoke-bytes=4096]"
+                << " [--storage-smoke-checksum=value]"
                 << " [--hcomm-channel-engine=auto]"
                 << " [--hcomm-channel-protocol=hccs]"
                 << " [--hcomm-notify-num=2]"
@@ -1369,9 +1564,26 @@ int main(int argc, char** argv) {
                  "combine it with --a3-symmetric\n";
     return 2;
   }
+  if (storage_hbm_smoke && a3_symmetric) {
+    std::cerr << "--storage-hbm-smoke currently uses ordinary HBM buffers; do "
+                 "not combine it with --a3-symmetric\n";
+    return 2;
+  }
+  if (storage_hbm_smoke) {
+    if (storage_smoke_file.empty()) {
+      std::cerr << "--storage-hbm-smoke requires --storage-smoke-file\n";
+      return 2;
+    }
+    if (storage_smoke_bytes_u64 == 0 ||
+        storage_smoke_bytes_u64 > std::numeric_limits<size_t>::max()) {
+      std::cerr << "invalid --storage-smoke-bytes\n";
+      return 2;
+    }
+  }
 #if !FLUME_HAVE_HCCL_P2P
-  if (p2p_copy) {
-    std::cerr << "--p2p-copy requires HcclSend/HcclRecv in this HCCL header\n";
+  if (p2p_copy || storage_hbm_smoke) {
+    std::cerr << "--p2p-copy/--storage-hbm-smoke require HcclSend/HcclRecv "
+                 "in this HCCL header\n";
     return 2;
   }
 #endif
@@ -1443,11 +1655,12 @@ int main(int argc, char** argv) {
   }
   const uint32_t global_rank_size =
       single_rank_mode ? single_rank_size : static_cast<uint32_t>(devices.size());
-  if ((p2p_copy || hcomm_channel_probe || hcomm_payload_smoke) &&
+  if ((p2p_copy || hcomm_channel_probe || hcomm_payload_smoke ||
+       storage_hbm_smoke) &&
       global_rank_size != 2) {
     std::cerr << "--p2p-copy, --hcomm-channel-probe, and "
-                 "--hcomm-payload-smoke are pair-only smokes and require "
-                 "exactly two ranks for now\n";
+                 "--hcomm-payload-smoke, --storage-hbm-smoke are pair-only "
+                 "smokes and require exactly two ranks for now\n";
     (void)aclFinalize();
     return 2;
   }
@@ -1474,6 +1687,9 @@ int main(int argc, char** argv) {
             << (hcomm_require_thread_export ? "on" : "off")
             << " hcomm_payload_smoke="
             << (hcomm_payload_smoke ? "on" : "off")
+            << " storage_hbm_smoke="
+            << (storage_hbm_smoke ? "on" : "off")
+            << " storage_smoke_bytes=" << storage_smoke_bytes_u64
             << " hcomm_require_payload_copy="
             << (hcomm_require_payload_copy ? "on" : "off")
             << "\n";
@@ -1547,12 +1763,24 @@ int main(int argc, char** argv) {
     (void)aclFinalize();
     return 2;
   }
+  if (storage_hbm_smoke && global_rank_size < 2) {
+    std::cerr << "--storage-hbm-smoke requires at least two ranks\n";
+    (void)aclFinalize();
+    return 2;
+  }
 
   BufferLayout preflight_layout;
   std::string layout_error;
   if (!ComputeBufferLayout(count, global_rank_size, &preflight_layout,
                            &layout_error)) {
     std::cerr << layout_error << "\n";
+    (void)aclFinalize();
+    return 2;
+  }
+  if (storage_hbm_smoke &&
+      storage_smoke_bytes_u64 > preflight_layout.one_rank_bytes) {
+    std::cerr << "--storage-smoke-bytes exceeds the per-rank HBM buffer; "
+                 "increase --count or reduce --storage-smoke-bytes\n";
     (void)aclFinalize();
     return 2;
   }
@@ -1687,6 +1915,14 @@ int main(int argc, char** argv) {
     contexts[local_index].p2p_copy = p2p_copy;
     contexts[local_index].hcomm_channel_probe = hcomm_channel_probe;
     contexts[local_index].hcomm_payload_smoke = hcomm_payload_smoke;
+    contexts[local_index].storage_hbm_smoke = storage_hbm_smoke;
+    contexts[local_index].storage_smoke_file = storage_smoke_file;
+    contexts[local_index].storage_smoke_offset = storage_smoke_offset;
+    contexts[local_index].storage_smoke_bytes =
+        static_cast<size_t>(storage_smoke_bytes_u64);
+    contexts[local_index].storage_smoke_has_checksum =
+        storage_smoke_has_checksum;
+    contexts[local_index].storage_smoke_checksum = storage_smoke_checksum;
     contexts[local_index].hcomm_engine = hcomm_engine;
     contexts[local_index].hcomm_protocol = hcomm_protocol;
     contexts[local_index].hcomm_notify_num = hcomm_notify_num;
@@ -1730,6 +1966,9 @@ int main(int argc, char** argv) {
             << (hcomm_channel_probe ? "on" : "off")
             << " hcomm_payload_smoke="
             << (hcomm_payload_smoke ? "on" : "off")
+            << " storage_hbm_smoke="
+            << (storage_hbm_smoke ? "on" : "off")
+            << " storage_smoke_bytes=" << storage_smoke_bytes_u64
             << " hcomm_engine=" << HcommEngineName(hcomm_engine)
             << " resolved_hcomm_engine="
             << HcommEngineName(ResolveHcommSmokeEngine(hcomm_engine))

@@ -32,6 +32,21 @@ def ResolveHcclInitMode(args: argparse.Namespace) -> str:
     return init_mode
 
 
+def Checksum32(data: bytes) -> int:
+    checksum = 2166136261
+    for item in data:
+        checksum ^= item
+        checksum = (checksum * 16777619) & 0xFFFFFFFF
+    return checksum
+
+
+def UpdateChecksum32(checksum: int, data: bytes) -> int:
+    for item in data:
+        checksum ^= item
+        checksum = (checksum * 16777619) & 0xFFFFFFFF
+    return checksum
+
+
 @dataclass
 class StepResult:
     name: str
@@ -241,6 +256,14 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 re.IGNORECASE,
             ),
         ),
+        (
+            "Storage HBM Smoke",
+            re.compile(
+                r"(storage HBM smoke|storage_hbm=hccl-p2p-staging|"
+                r"storage-smoke-input)",
+                re.IGNORECASE,
+            ),
+        ),
     ]
     signal_matches: list[tuple[str, list[tuple[int, str]]]] = []
     for title, pattern in signal_specs:
@@ -295,6 +318,13 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
             "Flume has not implemented the custom-op/AICPU payload scheduler "
             "yet. This is an expected unsupported/fallback result for the "
             "current skeleton, not a CANN environment failure."
+        )
+    if re.search(r"storage_hbm=hccl-p2p-staging", joined, re.IGNORECASE):
+        hints.append(
+            "Stage 3A storage smoke transferred a file slice through the "
+            "fallback path file->host->proxy HBM->HCCL P2P->compute HBM. "
+            "This validates storage integration plumbing, not full direct "
+            "storage DMA into HBM."
         )
 
     with diag.open("w", encoding="utf-8") as f:
@@ -356,6 +386,14 @@ def CollectHcclSmokeSetupNotes(args: argparse.Namespace,
             "HCCL_INTRA_ROCE_ENABLE=1; logs may still show isUsedRdma[0]. "
             "Use a multi-node rank table to validate RoCE RDMA explicitly."
         )
+    if args.run_storage_hbm_smoke:
+        notes.append(
+            "Storage HBM smoke is Stage 3A fallback validation. Rank0 reads "
+            "a file slice from local storage, copies it into proxy-rank HBM, "
+            "then sends it to rank1 HBM with HcclSend/HcclRecv. This is not "
+            "full storage direct; it keeps the API/test surface ready for a "
+            "future HCOMM/RDMA backend."
+        )
     return notes
 
 
@@ -377,6 +415,74 @@ def ParseDeviceList(spec: str) -> list[str]:
         if not device.isdigit():
             raise ValueError(f"invalid device id: {device}")
     return devices
+
+
+def GenerateStorageSmokeFile(path: Path, total_bytes: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    chunk_size = 1024 * 1024
+    written = 0
+    with path.open("wb") as f:
+        while written < total_bytes:
+            n = min(chunk_size, total_bytes - written)
+            data = bytes(((written + i) * 131 + 17) & 0xFF for i in range(n))
+            f.write(data)
+            written += n
+
+
+def FileSliceChecksum(path: Path, offset: int, size: int) -> int:
+    checksum = 2166136261
+    remaining = size
+    with path.open("rb") as f:
+        f.seek(offset)
+        while remaining > 0:
+            data = f.read(min(1024 * 1024, remaining))
+            if not data:
+                raise RuntimeError(
+                    f"short storage smoke file read: {path} offset={offset} "
+                    f"bytes={size}"
+                )
+            checksum = UpdateChecksum32(checksum, data)
+            remaining -= len(data)
+    return checksum
+
+
+def ResolveStorageSmokeInput(args: argparse.Namespace,
+                             run_dir: Path) -> tuple[Path, int]:
+    if args.storage_smoke_bytes <= 0:
+        raise RuntimeError("--storage-smoke-bytes must be greater than 0")
+    if args.storage_smoke_offset < 0:
+        raise RuntimeError("--storage-smoke-offset must be >= 0")
+    total_bytes = args.storage_smoke_offset + args.storage_smoke_bytes
+    if args.storage_smoke_file:
+        path = Path(args.storage_smoke_file)
+        if not path.exists():
+            raise RuntimeError(f"--storage-smoke-file does not exist: {path}")
+    else:
+        path = run_dir / "storage-smoke-input.bin"
+        GenerateStorageSmokeFile(path, total_bytes)
+    try:
+        stat_size = path.stat().st_size
+    except OSError as exc:
+        raise RuntimeError(f"failed to stat storage smoke file {path}: {exc}") from exc
+    if stat_size < total_bytes:
+        raise RuntimeError(
+            f"storage smoke file is too small: {path} size={stat_size} "
+            f"needs offset+bytes={total_bytes}"
+        )
+    checksum = FileSliceChecksum(path, args.storage_smoke_offset,
+                                 args.storage_smoke_bytes)
+    summary = run_dir / "storage-smoke-input-summary.txt"
+    summary.write_text(
+        "\n".join([
+            f"path: {path}",
+            f"offset: {args.storage_smoke_offset}",
+            f"bytes: {args.storage_smoke_bytes}",
+            f"checksum32: {checksum}",
+            "mode: generated" if not args.storage_smoke_file else "mode: user-file",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    return path, checksum
 
 
 def ParseDeviceIpMap(spec: str) -> dict[str, str]:
@@ -542,11 +648,25 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
                         args.run_hcomm_channel_probe or
-                        args.run_hcomm_payload_smoke):
+                        args.run_hcomm_payload_smoke or
+                        args.run_storage_hbm_smoke):
         hccl_smoke = str(Path(build_dir) / "flume-hccl-collective-smoke")
         init_mode = ResolveHcclInitMode(args)
         command = [hccl_smoke, f"--count={args.hccl_count}",
                    f"--init={init_mode}"]
+        storage_smoke_input: Optional[Path] = None
+        storage_smoke_checksum: Optional[int] = None
+        if args.run_storage_hbm_smoke:
+            if run_dir is None:
+                raise RuntimeError("storage HBM smoke requires a log run directory")
+            if args.storage_smoke_bytes > args.hccl_count * 4:
+                raise RuntimeError(
+                    "--storage-smoke-bytes exceeds the per-rank smoke HBM "
+                    "buffer; increase --hccl-count or reduce "
+                    "--storage-smoke-bytes"
+                )
+            storage_smoke_input, storage_smoke_checksum = ResolveStorageSmokeInput(
+                args, run_dir)
         env_updates: dict[str, str] = {}
         if args.hccl_host_ifname:
             env_updates["HCCL_SOCKET_IFNAME"] = args.hccl_host_ifname
@@ -630,6 +750,14 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append("--hcomm-channel-probe")
         if args.run_hcomm_payload_smoke:
             command.append("--hcomm-payload-smoke")
+        if args.run_storage_hbm_smoke:
+            assert storage_smoke_input is not None
+            assert storage_smoke_checksum is not None
+            command.append("--storage-hbm-smoke")
+            command.append(f"--storage-smoke-file={storage_smoke_input}")
+            command.append(f"--storage-smoke-offset={args.storage_smoke_offset}")
+            command.append(f"--storage-smoke-bytes={args.storage_smoke_bytes}")
+            command.append(f"--storage-smoke-checksum={storage_smoke_checksum}")
         if args.run_hcomm_channel_probe or args.run_hcomm_payload_smoke:
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
@@ -663,7 +791,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                             args.run_hccl_p2p_smoke or
                             args.run_hcomm_channel_probe or
-                            args.run_hcomm_payload_smoke)
+                            args.run_hcomm_payload_smoke or
+                            args.run_storage_hbm_smoke)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
@@ -724,7 +853,11 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "prerequisite check, which is expected to report unsupported on CANN "
         "builds without hccl_res_expt.h such as CANN 8.5. Add "
         "--hcomm-require-payload-copy only when a future build is expected to "
-        "complete real HCOMM payload copy.\n",
+        "complete real HCOMM payload copy. Pass --run-storage-hbm-smoke to "
+        "run the Stage 3A storage proxy fallback path: rank0 reads a local "
+        "file slice, copies it to proxy HBM, and sends it to rank1 compute "
+        "HBM with HcclSend/HcclRecv. The marker is "
+        "storage_hbm=hccl-p2p-staging; this is not full storage-direct DMA.\n",
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
@@ -754,6 +887,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hcomm_channel_ok = "hcomm channel probe passed" in smoke
     hcomm_payload_ok = "hcomm payload smoke passed" in smoke
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
+    storage_hbm_ok = "storage HBM smoke passed" in smoke
     strict_expected = ("HCOMM payload copy required but unavailable" in strict or
                        "unsupported" in strict)
     caps_match = re.search(r"FLUME_BACKEND_CAPS .+", smoke)
@@ -779,12 +913,16 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"{'pass' if hcomm_payload_ok else ('unsupported' if hcomm_payload_unsupported else 'no signal')} | "
         "`hcomm payload smoke` marker |")
     lines.append(
+        f"| Storage to HBM fallback path ok? | {'yes' if storage_hbm_ok else 'no'} | "
+        "`storage HBM smoke passed` marker |")
+    lines.append(
         f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     next_action = (
         "implement custom-op/AICPU HCOMM payload scheduler"
         if hccl_ok and p2p_ok and hcomm_channel_ok and hcomm_payload_unsupported
+        and storage_hbm_ok
         else "inspect first failed required matrix step"
     )
     lines.extend(["", f"next action: {next_action}", ""])
@@ -825,6 +963,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     matrix_args.run_hccl_p2p_smoke = True
     matrix_args.run_hcomm_channel_probe = True
     matrix_args.run_hcomm_payload_smoke = True
+    matrix_args.run_storage_hbm_smoke = True
     matrix_args.hcomm_require_payload_copy = False
     matrix_args.hcomm_require_thread_export = False
     try:
@@ -890,7 +1029,11 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "two-rank root-info smoke with HCCL collective, HCCL P2P fallback, "
         "HCOMM channel resource probe, and HCOMM payload readiness. It then "
         "runs --hcomm-require-payload-copy as an optional expected negative "
-        "until the custom-op/AICPU payload scheduler is implemented.\n",
+        "until the custom-op/AICPU payload scheduler is implemented. The "
+        "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
+        "a local file slice into proxy HBM and sends it to rank1 compute HBM "
+        "with HcclSend/HcclRecv. This validates storage integration plumbing, "
+        "not full storage-direct DMA.\n",
         encoding="utf-8",
     )
     print(f"[ok] matrix scope -> {note}")
@@ -927,6 +1070,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hcomm-payload-smoke", action="store_true",
                         help=("Run the optional Stage 2.5 HCOMM payload "
                               "readiness probe after the collective smoke"))
+    parser.add_argument("--run-storage-hbm-smoke", action="store_true",
+                        help=("Run the optional Stage 3A storage proxy rank "
+                              "to compute rank HBM smoke through HCCL P2P "
+                              "fallback"))
+    parser.add_argument("--storage-smoke-file", default="",
+                        help=("Input file for --run-storage-hbm-smoke. If "
+                              "empty, flume_tool generates a deterministic "
+                              "file in the current log directory."))
+    parser.add_argument("--storage-smoke-offset", type=int, default=0,
+                        help="File offset for --run-storage-hbm-smoke")
+    parser.add_argument("--storage-smoke-bytes", type=int, default=4096,
+                        help=("Bytes to transfer in --run-storage-hbm-smoke; "
+                              "must fit in --hccl-count * sizeof(float)"))
     parser.add_argument("--hcomm-channel-engine",
                         choices=["auto", "aicpu", "aicpu-ts", "cpu", "cpu-ts"],
                         default="auto",
@@ -1013,6 +1169,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--hccl-smoke-timeout-sec must be >= 0")
     if args.step_timeout_sec < 0:
         parser.error("--step-timeout-sec must be >= 0")
+    if args.storage_smoke_offset < 0:
+        parser.error("--storage-smoke-offset must be >= 0")
+    if args.storage_smoke_bytes <= 0:
+        parser.error("--storage-smoke-bytes must be greater than 0")
     if args.jobs <= 0:
         parser.error("--jobs must be greater than 0")
     if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
@@ -1030,11 +1190,11 @@ def parse_args() -> argparse.Namespace:
     except ValueError as exc:
         parser.error(str(exc))
     if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe or
-         args.run_hcomm_payload_smoke) and
+         args.run_hcomm_payload_smoke or args.run_storage_hbm_smoke) and
             args.hccl_devices and len(parsed_hccl_devices) != 2):
         parser.error("--run-hccl-p2p-smoke, --run-hcomm-channel-probe, and "
-                     "--run-hcomm-payload-smoke require exactly two "
-                     "--hccl-devices entries")
+                     "--run-hcomm-payload-smoke, --run-storage-hbm-smoke "
+                     "require exactly two --hccl-devices entries")
     return args
 
 

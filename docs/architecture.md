@@ -759,7 +759,8 @@ store-agent pread
 - 已给 smoke 增加 `--hcomm-payload-smoke`，当前测试 Channel resource + HCOMM primitive capability，并在 custom-op/AICPU scheduler 未实现时输出 unsupported / `fallback=hccl-p2p`。
 - 已增加 `flume_get_backend_caps`，让 smoke app 和 tools 从库内结构化能力模型生成判断依据。
 - 已增加本地 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` sim backend，以及 `file offset -> SIM_HCCL_COMM -> SIM_HBM` storage partial-direct 骨架。
-- 已增加 `ascend-full-matrix`，下一次真机会一次性收集 collective、P2P fallback、HCOMM Channel、payload readiness、strict negative 和 decision tree。
+- 已增加 `ascend-full-matrix`，下一次真机会一次性收集 collective、P2P fallback、HCOMM Channel、payload readiness、Stage 3A storage-HBM fallback、strict negative 和 decision tree。
+- 已增加 Stage 3A `--run-storage-hbm-smoke`：rank0 作为 storage proxy，从本地文件切片读取数据，H2D 到 proxy HBM，再通过 `HcclSend` / `HcclRecv` 发送到 rank1 compute HBM 并按工具预计算 checksum 校验。该路径标记为 `storage_hbm=hccl-p2p-staging`，不声明 full storage direct。
 - 下一步实现 CANN 8.5 可用的 HCOMM primitive payload microcopy scheduler，把 `HcommReadOnThread`、Notify 和 HCCL Buffer 串到真正的 HBM-HBM copy。
 - 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`，并保留公开 HCCL P2P fallback。
 - 测量不同 block size 的 HBM-HBM bandwidth、latency、CPU usage。
@@ -783,9 +784,9 @@ store-agent pread
 
 任务：
 
-- 先实现 storage proxy rank 方案。
-- proxy rank 将数据块放入 HCCL/HCOMM 可访问内存。
-- compute rank 通过 HCOMM Channel 拉取到目标 HBM。
+- Stage 3A 已实现 storage proxy rank fallback smoke：proxy rank 将本地文件切片放入 HBM，compute rank 通过公开 HCCL P2P API 接收。
+- 下一步把该 smoke 抽象进库内 transfer plan，使上层可以通过 Flume API 描述 `storage block -> compute HBM`，而不是只在 smoke app 中验证。
+- 后续将 transport 从 `HcclSend` / `HcclRecv` fallback 替换为 HCOMM Channel payload scheduler：compute rank 通过 HCOMM Channel 拉取到目标 HBM。
 - 如果 proxy 数据入口仍经过 host，明确标记为 partial direct，不宣称 full direct。
 
 ### Stage 5：Storage/RDMA -> NPU HBM full direct

@@ -152,6 +152,22 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-
 
 This probes whether the current CANN build exposes the HCOMM primitive symbols needed by the future payload backend. The current implementation intentionally does not claim payload copy success; it should report `hcomm payload smoke unsupported ... fallback=hccl-p2p` unless a future custom-op/AICPU scheduler is implemented. Add `--hcomm-require-payload-copy` only when testing that future strict path.
 
+Stage 3A storage proxy HBM smoke:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-storage-hbm \
+  --run-storage-hbm-smoke \
+  --hccl-devices 0,1 \
+  --storage-smoke-file /path/on/local-ssd/input.bin \
+  --storage-smoke-bytes 4096 \
+  ascend-probe
+```
+
+This validates the first real storage-integrated fallback path. Rank 0 acts as the storage proxy: it reads a file slice from local storage, copies that slice into proxy-rank HBM, then uses `HcclSend` to send bytes to rank 1 compute HBM. Rank 1 receives with `HcclRecv` and verifies the checksum that `flume_tool.py` computed before launch. The success marker is `storage_hbm=hccl-p2p-staging`. This is not full storage-direct DMA; host CPU still performs the SSD file read and H2D staging into proxy HBM.
+
+If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
+
 Full two-rank Ascend matrix:
 
 ```bash
@@ -165,9 +181,10 @@ python3 tools/flume_tool.py \
 ```
 
 This builds once, runs local regression tests, then runs HCCL collective,
-HCCL P2P baseline, HCOMM Channel probe, and HCOMM payload readiness in one
-two-rank smoke. It also runs a strict payload-copy check as an optional expected
-negative until the custom-op/AICPU scheduler exists. The log directory includes
+HCCL P2P baseline, HCOMM Channel probe, HCOMM payload readiness, and Stage 3A
+storage proxy HBM fallback in one two-rank smoke. It also runs a strict
+payload-copy check as an optional expected negative until the custom-op/AICPU
+scheduler exists. The log directory includes
 `ASCEND_FULL_MATRIX_DECISION_TREE.md`.
 
 Atlas A3 HCCS symmetric-memory smoke:
