@@ -36,6 +36,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | --- | --- | --- | --- |
 | 3B.1 | no-op custom-op/AICPU launch readiness | `hcomm custom-op launch smoke passed` | `custom-op/AICPU scheduler build disabled` or `custom-op/AICPU scheduler launch missing` |
 | 3B.2 | package HCOMM resource descriptor and prepare custom-op handoff | `stage3b2_resource_descriptor=host-packaged` | `custom-op/AICPU descriptor handoff is missing` |
+| 3B.2-complete / 3B.3-prep | consume descriptor and run notify-only channel sync | `stage3b2_kernel_consume=passed` and `stage3b2_notify_only_plan=channel-notify` | `stage3b2_kernel_consume=missing` |
 | 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -112,6 +113,25 @@ rank1: wait ready -> record done
 
 Success means resources survive the host-to-custom-op boundary. Failure at this
 stage should not be interpreted as a storage or payload-copy failure.
+
+The repository now has a 3B.2-complete / 3B.3-prep notify-only plan:
+
+| Rank | Steps |
+| --- | --- |
+| send rank | consume resource descriptor -> `HcommChannelNotifyRecordOnThread(ready)` -> `HcommChannelNotifyWaitOnThread(done)` |
+| recv rank | consume resource descriptor -> `HcommChannelNotifyWaitOnThread(ready)` -> `HcommChannelNotifyRecordOnThread(done)` |
+
+Current true Ascend backend expected result:
+
+```text
+hcomm notify-only smoke unsupported
+stage3b2_resource_descriptor=host-packaged
+stage3b2_notify_only_plan=channel-notify
+stage3b2_kernel_consume=missing
+```
+
+This is the last synchronization-only boundary before enabling
+`HcommLocalCopyOnThread` / `HcommReadOnThread` payload movement.
 
 ## Stage 3B.3: HCOMM Pair-Copy Primitive Scheduler
 
@@ -238,3 +258,43 @@ python3 tools/flume_tool.py \
 Expected current result still reports unsupported, but the detail should include
 `custom-op/AICPU scheduler launch missing`, proving the descriptor path reached
 the custom-op build branch.
+
+Stage 3B.2-complete notify-only smoke:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-stage3b2-notify \
+  --run-hcomm-notify-only-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-probe
+```
+
+Expected current result:
+
+```text
+hcomm notify-only smoke unsupported
+stage3b2_notify_only_plan=channel-notify
+stage3b2_kernel_consume=missing
+```
+
+Compile-branch notify-only check:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-stage3b2-notify-customop \
+  --build-hcomm-custom-op \
+  --run-hcomm-notify-only-smoke \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  ascend-probe
+```
+
+The current expected result remains unsupported, but should include
+`custom-op/AICPU scheduler launch missing`. A future complete 3B.2 build should
+turn this into `hcomm notify-only smoke passed` with
+`stage3b2_kernel_consume=passed`.

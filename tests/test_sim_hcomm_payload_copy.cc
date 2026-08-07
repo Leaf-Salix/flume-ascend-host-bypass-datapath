@@ -80,6 +80,15 @@ int main() {
                    std::string::npos);
   FLUME_TEST_CHECK(flume_io_release(descriptor) == FLUME_OK);
 
+  flume_io_t* notify_only = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_notify_only_smoke(
+                       clients[0], 1, nullptr, &notify_only) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(notify_only, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(notify_only))
+                       .find("stage3b2_notify_only_plan=channel-notify") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(flume_io_release(notify_only) == FLUME_OK);
+
   flume_buffer_t* src0 = nullptr;
   flume_buffer_t* dst1 = nullptr;
   FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[0], kBytes,

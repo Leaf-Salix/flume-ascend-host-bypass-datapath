@@ -74,6 +74,22 @@ const char* CustomOpLaunchSmokeStepName(CustomOpLaunchSmokeStep step) {
   return "unknown";
 }
 
+const char* NotifyOnlyStepName(NotifyOnlyStep step) {
+  switch (step) {
+    case NotifyOnlyStep::kConsumeResourceDescriptor:
+      return "consume resource descriptor";
+    case NotifyOnlyStep::kChannelNotifyRecordReady:
+      return "HcommChannelNotifyRecordOnThread(ready)";
+    case NotifyOnlyStep::kChannelNotifyWaitReady:
+      return "HcommChannelNotifyWaitOnThread(ready)";
+    case NotifyOnlyStep::kChannelNotifyRecordDone:
+      return "HcommChannelNotifyRecordOnThread(done)";
+    case NotifyOnlyStep::kChannelNotifyWaitDone:
+      return "HcommChannelNotifyWaitOnThread(done)";
+  }
+  return "unknown";
+}
+
 bool BuildPairCopyPlan(PayloadRole role,
                        uint32_t local_rank,
                        uint32_t peer_rank,
@@ -305,6 +321,85 @@ std::string DescribeResourceDescriptor(const ResourceDescriptor& descriptor) {
       << " thread_export="
       << (descriptor.thread_export_required ? "required" : "not-required")
       << " handoff=missing";
+  return out.str();
+}
+
+bool BuildNotifyOnlyPlan(PayloadRole role,
+                         uint32_t local_rank,
+                         uint32_t peer_rank,
+                         uint32_t rank_size,
+                         uint32_t ready_notify_idx,
+                         uint32_t done_notify_idx,
+                         NotifyOnlyPlan* out,
+                         std::string* error) {
+  if (out == nullptr) {
+    if (error != nullptr) {
+      *error = "notify-only plan destination is null";
+    }
+    return false;
+  }
+  if (rank_size != 2) {
+    if (error != nullptr) {
+      *error = "HCOMM notify-only smoke requires exactly two ranks";
+    }
+    return false;
+  }
+  if (local_rank >= rank_size || peer_rank >= rank_size ||
+      local_rank == peer_rank) {
+    if (error != nullptr) {
+      *error = "invalid HCOMM notify-only peer rank";
+    }
+    return false;
+  }
+  if (ready_notify_idx == done_notify_idx) {
+    if (error != nullptr) {
+      *error = "HCOMM notify-only plan requires distinct ready/done notify indices";
+    }
+    return false;
+  }
+
+  NotifyOnlyPlan plan;
+  plan.role = role;
+  plan.local_rank = local_rank;
+  plan.peer_rank = peer_rank;
+  plan.rank_size = rank_size;
+  plan.ready_notify_idx = ready_notify_idx;
+  plan.done_notify_idx = done_notify_idx;
+  if (role == PayloadRole::kSend) {
+    plan.steps = {
+        NotifyOnlyStep::kConsumeResourceDescriptor,
+        NotifyOnlyStep::kChannelNotifyRecordReady,
+        NotifyOnlyStep::kChannelNotifyWaitDone,
+    };
+  } else {
+    plan.steps = {
+        NotifyOnlyStep::kConsumeResourceDescriptor,
+        NotifyOnlyStep::kChannelNotifyWaitReady,
+        NotifyOnlyStep::kChannelNotifyRecordDone,
+    };
+  }
+  *out = std::move(plan);
+  return true;
+}
+
+std::string DescribeNotifyOnlyPlan(const NotifyOnlyPlan& plan) {
+  std::ostringstream out;
+  out << "stage3b2_notify_only_plan=channel-notify"
+      << " role=" << PayloadRoleName(plan.role)
+      << " local_rank=" << plan.local_rank
+      << " peer_rank=" << plan.peer_rank
+      << " ready_notify_idx=" << plan.ready_notify_idx
+      << " done_notify_idx=" << plan.done_notify_idx
+      << " timeout_sec=" << plan.timeout_sec
+      << " scheduler=" << SchedulerStatusMessage(CurrentSchedulerStatus())
+      << " steps=[";
+  for (size_t i = 0; i < plan.steps.size(); ++i) {
+    if (i != 0) {
+      out << " -> ";
+    }
+    out << NotifyOnlyStepName(plan.steps[i]);
+  }
+  out << "]";
   return out.str();
 }
 

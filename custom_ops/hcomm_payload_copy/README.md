@@ -24,6 +24,20 @@ recv rank:
   HcommChannelNotifyRecordOnThread(done)
 ```
 
+Stage 3B.2-complete notify-only plan:
+
+```text
+send rank:
+  consume serialized resource descriptor
+  HcommChannelNotifyRecordOnThread(ready)
+  HcommChannelNotifyWaitOnThread(done)
+
+recv rank:
+  consume serialized resource descriptor
+  HcommChannelNotifyWaitOnThread(ready)
+  HcommChannelNotifyRecordOnThread(done)
+```
+
 The host-side launcher must create/acquire HCOMM Thread, Channel, Notify, and
 HCCL Buffer resources, serialize the resource context, submit the AICPU kernel,
 and synchronize completion back to the caller's ACL stream.

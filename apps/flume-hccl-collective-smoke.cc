@@ -99,6 +99,7 @@ struct RankContext {
   bool hcomm_channel_probe = false;
   bool hcomm_custom_op_launch_smoke = false;
   bool hcomm_resource_descriptor_smoke = false;
+  bool hcomm_notify_only_smoke = false;
   bool hcomm_payload_smoke = false;
   bool storage_hbm_smoke = false;
   std::string storage_smoke_file;
@@ -862,6 +863,7 @@ void RankMain(RankContext* ctx) {
   flume_io_t* hcomm_channel_io = nullptr;
   flume_io_t* hcomm_custom_op_io = nullptr;
   flume_io_t* hcomm_resource_descriptor_io = nullptr;
+  flume_io_t* hcomm_notify_only_io = nullptr;
   flume_io_t* hcomm_payload_io = nullptr;
   flume_io_t* storage_hbm_io = nullptr;
 
@@ -1271,6 +1273,62 @@ void RankMain(RankContext* ctx) {
     }
   }
 
+  if (ctx->hcomm_notify_only_smoke) {
+    if (ctx->rank_size < 2) {
+      error = "HCOMM notify-only smoke requires at least two ranks";
+      goto cleanup;
+    }
+    if (ctx->rank == 0 || ctx->rank == 1) {
+      uint32_t peer_rank = (ctx->rank == 0) ? 1 : 0;
+      flume_hcomm_channel_probe_options_t options = {};
+      options.size = sizeof(options);
+      options.notify_num = ctx->hcomm_notify_num;
+      options.engine = ctx->hcomm_engine;
+      options.protocol = ctx->hcomm_protocol;
+      options.require_thread_export =
+          ctx->hcomm_require_thread_export ? 1U : 0U;
+      if (!CheckFlume(flume_hcomm_notify_only_smoke_ex(
+                          client, peer_rank, &options, stream,
+                          &hcomm_notify_only_io),
+                      "flume_hcomm_notify_only_smoke", &error)) {
+        goto cleanup;
+      }
+      int wait_ret = flume_wait(hcomm_notify_only_io, -1);
+      if (wait_ret != FLUME_OK && wait_ret != FLUME_ERR_UNSUPPORTED) {
+        error = std::string("flume_wait hcomm notify-only smoke failed, "
+                            "flume ret=") +
+                flume_status_string(wait_ret);
+        const char* detail = flume_io_error_message(hcomm_notify_only_io);
+        if (detail != nullptr && detail[0] != '\0') {
+          error += ": ";
+          error += detail;
+        }
+        goto cleanup;
+      }
+      std::ostringstream line;
+      line << "rank " << ctx->rank
+           << " hcomm notify-only smoke "
+           << (wait_ret == FLUME_OK ? "passed" : "unsupported")
+           << ": peer_rank=" << peer_rank
+           << " usable_hccl_buffer_bytes="
+           << flume_io_bytes(hcomm_notify_only_io)
+           << " requested_engine=" << HcommEngineName(ctx->hcomm_engine)
+           << " resolved_engine="
+           << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
+           << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
+           << " notify_num=" << ctx->hcomm_notify_num
+           << " channel_res="
+           << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
+           << " custom_op_build="
+           << (FLUME_BUILD_HCOMM_CUSTOM_OP ? "on" : "off");
+      const char* detail = flume_io_error_message(hcomm_notify_only_io);
+      if (detail != nullptr && detail[0] != '\0') {
+        line << " detail=\"" << detail << "\"";
+      }
+      LogLine(line.str());
+    }
+  }
+
   if (ctx->hcomm_payload_smoke) {
     if (ctx->rank_size < 2) {
       error = "HCOMM payload smoke requires at least two ranks";
@@ -1433,6 +1491,7 @@ void RankMain(RankContext* ctx) {
 cleanup:
   flume_io_release(storage_hbm_io);
   flume_io_release(hcomm_payload_io);
+  flume_io_release(hcomm_notify_only_io);
   flume_io_release(hcomm_resource_descriptor_io);
   flume_io_release(hcomm_custom_op_io);
   flume_io_release(hcomm_channel_io);
@@ -1515,6 +1574,7 @@ int main(int argc, char** argv) {
   bool hcomm_channel_probe = false;
   bool hcomm_custom_op_launch_smoke = false;
   bool hcomm_resource_descriptor_smoke = false;
+  bool hcomm_notify_only_smoke = false;
   bool hcomm_payload_smoke = false;
   bool storage_hbm_smoke = false;
   std::string storage_smoke_file;
@@ -1560,6 +1620,8 @@ int main(int argc, char** argv) {
       hcomm_custom_op_launch_smoke = true;
     } else if (arg == "--hcomm-resource-descriptor-smoke") {
       hcomm_resource_descriptor_smoke = true;
+    } else if (arg == "--hcomm-notify-only-smoke") {
+      hcomm_notify_only_smoke = true;
     } else if (arg == "--hcomm-payload-smoke") {
       hcomm_payload_smoke = true;
     } else if (arg == "--storage-hbm-smoke") {
@@ -1663,6 +1725,7 @@ int main(int argc, char** argv) {
                 << " [--hcomm-channel-probe]"
                 << " [--hcomm-custom-op-launch-smoke]"
                 << " [--hcomm-resource-descriptor-smoke]"
+                << " [--hcomm-notify-only-smoke]"
                 << " [--hcomm-payload-smoke]"
                 << " [--storage-hbm-smoke]"
                 << " [--storage-smoke-file=path]"
@@ -1787,12 +1850,13 @@ int main(int argc, char** argv) {
   const uint32_t global_rank_size =
       single_rank_mode ? single_rank_size : static_cast<uint32_t>(devices.size());
   if ((p2p_copy || hcomm_channel_probe || hcomm_custom_op_launch_smoke ||
-       hcomm_resource_descriptor_smoke || hcomm_payload_smoke ||
-       storage_hbm_smoke) &&
+       hcomm_resource_descriptor_smoke || hcomm_notify_only_smoke ||
+       hcomm_payload_smoke || storage_hbm_smoke) &&
       global_rank_size != 2) {
     std::cerr << "--p2p-copy, --hcomm-channel-probe, and "
                  "--hcomm-custom-op-launch-smoke, "
-                 "--hcomm-resource-descriptor-smoke, --hcomm-payload-smoke, "
+                 "--hcomm-resource-descriptor-smoke, "
+                 "--hcomm-notify-only-smoke, --hcomm-payload-smoke, "
                  "--storage-hbm-smoke are pair-only "
                  "smokes and require exactly two ranks for now\n";
     (void)aclFinalize();
@@ -1825,6 +1889,8 @@ int main(int argc, char** argv) {
             << (hcomm_custom_op_launch_smoke ? "on" : "off")
             << " hcomm_resource_descriptor_smoke="
             << (hcomm_resource_descriptor_smoke ? "on" : "off")
+            << " hcomm_notify_only_smoke="
+            << (hcomm_notify_only_smoke ? "on" : "off")
             << " storage_hbm_smoke="
             << (storage_hbm_smoke ? "on" : "off")
             << " storage_smoke_bytes=" << storage_smoke_bytes_u64
@@ -2057,6 +2123,8 @@ int main(int argc, char** argv) {
         hcomm_custom_op_launch_smoke;
     contexts[local_index].hcomm_resource_descriptor_smoke =
         hcomm_resource_descriptor_smoke;
+    contexts[local_index].hcomm_notify_only_smoke =
+        hcomm_notify_only_smoke;
     contexts[local_index].hcomm_payload_smoke = hcomm_payload_smoke;
     contexts[local_index].storage_hbm_smoke = storage_hbm_smoke;
     contexts[local_index].storage_smoke_file = storage_smoke_file;
@@ -2113,6 +2181,8 @@ int main(int argc, char** argv) {
             << (hcomm_custom_op_launch_smoke ? "on" : "off")
             << " hcomm_resource_descriptor_smoke="
             << (hcomm_resource_descriptor_smoke ? "on" : "off")
+            << " hcomm_notify_only_smoke="
+            << (hcomm_notify_only_smoke ? "on" : "off")
             << " storage_hbm_smoke="
             << (storage_hbm_smoke ? "on" : "off")
             << " storage_smoke_bytes=" << storage_smoke_bytes_u64

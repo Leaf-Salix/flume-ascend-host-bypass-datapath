@@ -1814,6 +1814,28 @@ std::string MakeHcommResourceDescriptorDetail(
          " channel_detail=\"" + channel_detail + "\"";
 }
 
+std::string MakeHcommNotifyOnlyDetail(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    const HcommChannelResourceInfo& resource_info,
+    const std::string& descriptor_detail) {
+  flume::hcomm_payload::NotifyOnlyPlan plan;
+  std::string error;
+  if (!flume::hcomm_payload::BuildNotifyOnlyPlan(
+          role, state.rank, peer_rank, state.rank_size, 0, 1, &plan, &error)) {
+    return std::string("stage3b2_notify_only=invalid error=\"") + error +
+           "\" descriptor_detail=\"" + descriptor_detail + "\"";
+  }
+  if (resource_info.notify_num <= plan.done_notify_idx) {
+    return std::string("stage3b2_notify_only=invalid error=\"notify index "
+                       "exceeds descriptor notify_num\" descriptor_detail=\"") +
+           descriptor_detail + "\"";
+  }
+  return flume::hcomm_payload::DescribeNotifyOnlyPlan(plan) +
+         " descriptor_detail=\"" + descriptor_detail + "\"";
+}
+
 }  // namespace
 
 const char* flume_status_string(int status) {
@@ -2962,6 +2984,121 @@ int flume_hcomm_resource_descriptor_smoke_ex(
   *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
                 "HCOMM channel resources are unavailable in this build; "
                 "resource descriptor smoke cannot run");
+  return FLUME_OK;
+#endif
+}
+
+int flume_hcomm_notify_only_smoke(flume_client_t* client,
+                                  uint32_t peer_rank,
+                                  void* acl_stream,
+                                  flume_io_t** out) {
+  flume_hcomm_channel_probe_options_t options = {};
+  options.size = sizeof(options);
+  options.notify_num = 2;
+  options.engine = FLUME_HCOMM_ENGINE_AUTO;
+  options.protocol = FLUME_HCOMM_PROTOCOL_HCCS;
+  options.require_thread_export = 0;
+  return flume_hcomm_notify_only_smoke_ex(client, peer_rank, &options,
+                                          acl_stream, out);
+}
+
+int flume_hcomm_notify_only_smoke_ex(
+    flume_client_t* client,
+    uint32_t peer_rank,
+    const flume_hcomm_channel_probe_options_t* options,
+    void* acl_stream,
+    flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  HcommProbeOptions normalized_options;
+  std::string option_error;
+  if (!NormalizeHcommProbeOptions(options, &normalized_options,
+                                  &option_error)) {
+    (void)option_error;
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (normalized_options.protocol == FLUME_HCOMM_PROTOCOL_PCIE) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "HCOMM notify-only smoke does not support pcie protocol");
+    return FLUME_OK;
+  }
+
+  CommState state = SnapshotCommState(client);
+  flume::hcomm_payload::PayloadRole role =
+      state.rank == 0 ? flume::hcomm_payload::PayloadRole::kSend :
+                        flume::hcomm_payload::PayloadRole::kRecv;
+  if (state.sim_comm_attached) {
+    if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+        peer_rank == state.rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    (void)acl_stream;
+    flume::hcomm_payload::NotifyOnlyPlan plan;
+    std::string error;
+    if (!flume::hcomm_payload::BuildNotifyOnlyPlan(
+            role, state.rank, peer_rank, state.rank_size, 0, 1, &plan,
+            &error)) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    *out = MakeIo(FLUME_OK, 0, 0,
+                  std::string("sim HCOMM notify-only smoke passed; "
+                              "stage3b2_kernel_consume=sim-passed ") +
+                      flume::hcomm_payload::DescribeNotifyOnlyPlan(plan));
+    return FLUME_OK;
+  }
+  if (!state.hccl_attached || state.hccl_comm == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (state.rank_size == 0 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+  size_t usable_buffer_bytes = 0;
+  int probe_status = FLUME_ERR_BACKEND;
+  std::string channel_detail;
+  std::string error;
+  HcommChannelResourceInfo resource_info;
+  if (!ProbeHcommChannelResources(state, peer_rank, normalized_options,
+                                  acl_stream, &usable_buffer_bytes,
+                                  &probe_status, &channel_detail, &error,
+                                  &resource_info)) {
+    *out = MakeIo(probe_status, 0, 0, error);
+    return FLUME_OK;
+  }
+  std::string descriptor_detail = MakeHcommResourceDescriptorDetail(
+      state, peer_rank, resource_info, channel_detail);
+  std::string notify_detail =
+      MakeHcommNotifyOnlyDetail(role, state, peer_rank, resource_info,
+                                descriptor_detail);
+  flume::hcomm_payload::SchedulerStatus scheduler_status =
+      flume::hcomm_payload::CurrentSchedulerStatus();
+  if (scheduler_status == flume::hcomm_payload::SchedulerStatus::kReady) {
+    *out = MakeIo(FLUME_OK, usable_buffer_bytes, 0,
+                  std::string("HCOMM notify-only smoke passed; "
+                              "stage3b2_kernel_consume=passed ") +
+                      notify_detail);
+    return FLUME_OK;
+  }
+  *out = MakeIo(
+      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
+      std::string("HCOMM notify-only custom-op/AICPU kernel is not "
+                  "implemented; stage3b2_kernel_consume=missing; ") +
+          flume::hcomm_payload::SchedulerStatusMessage(scheduler_status) +
+          "; " + notify_detail);
+  return FLUME_OK;
+#else
+  (void)peer_rank;
+  (void)acl_stream;
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCOMM channel resources are unavailable in this build; "
+                "notify-only smoke cannot run");
   return FLUME_OK;
 #endif
 }

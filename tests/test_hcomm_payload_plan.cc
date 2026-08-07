@@ -16,7 +16,11 @@ int main() {
   using flume::hcomm_payload::PayloadRole;
   using flume::hcomm_payload::PayloadStep;
   using flume::hcomm_payload::BuildResourceDescriptor;
+  using flume::hcomm_payload::BuildNotifyOnlyPlan;
   using flume::hcomm_payload::ResourceDescriptor;
+  using flume::hcomm_payload::DescribeNotifyOnlyPlan;
+  using flume::hcomm_payload::NotifyOnlyPlan;
+  using flume::hcomm_payload::NotifyOnlyStep;
   using flume::hcomm_payload::SchedulerStatus;
   using flume::hcomm_payload::SchedulerStatusMessage;
 
@@ -97,6 +101,34 @@ int main() {
       0, 1, 2, 1, 1, 8192, 4096, false, "cpu-ts", "hccs", "rank-graph",
       &descriptor, &error));
   FLUME_TEST_CHECK(error.find("two notifies") != std::string::npos);
+
+  NotifyOnlyPlan notify_send;
+  FLUME_TEST_CHECK(BuildNotifyOnlyPlan(PayloadRole::kSend, 0, 1, 2, 0, 1,
+                                       &notify_send, &error));
+  FLUME_TEST_CHECK(notify_send.steps.size() == 3);
+  FLUME_TEST_CHECK(notify_send.steps[0] ==
+                   NotifyOnlyStep::kConsumeResourceDescriptor);
+  FLUME_TEST_CHECK(notify_send.steps[1] ==
+                   NotifyOnlyStep::kChannelNotifyRecordReady);
+  FLUME_TEST_CHECK(notify_send.steps[2] ==
+                   NotifyOnlyStep::kChannelNotifyWaitDone);
+  std::string notify_desc = DescribeNotifyOnlyPlan(notify_send);
+  FLUME_TEST_CHECK(notify_desc.find(
+                       "stage3b2_notify_only_plan=channel-notify") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(notify_desc.find("HcommChannelNotifyWaitOnThread(done)") !=
+                   std::string::npos);
+
+  NotifyOnlyPlan notify_recv;
+  FLUME_TEST_CHECK(BuildNotifyOnlyPlan(PayloadRole::kRecv, 1, 0, 2, 0, 1,
+                                       &notify_recv, &error));
+  FLUME_TEST_CHECK(notify_recv.steps[1] ==
+                   NotifyOnlyStep::kChannelNotifyWaitReady);
+  FLUME_TEST_CHECK(notify_recv.steps[2] ==
+                   NotifyOnlyStep::kChannelNotifyRecordDone);
+  FLUME_TEST_CHECK(!BuildNotifyOnlyPlan(PayloadRole::kSend, 0, 1, 2, 0, 0,
+                                        &notify_send, &error));
+  FLUME_TEST_CHECK(error.find("distinct") != std::string::npos);
 
   SchedulerStatus status = CurrentSchedulerStatus();
   FLUME_TEST_CHECK(status == SchedulerStatus::kCustomOpBuildDisabled ||

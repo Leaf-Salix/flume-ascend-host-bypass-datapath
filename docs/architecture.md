@@ -764,6 +764,7 @@ store-agent pread
 - 已增加 Stage 3B HCOMM payload plan skeleton：库内固化 pair-copy 的 send/recv primitive 编排步骤，`custom_ops/hcomm_payload_copy/` 预留 host launcher 与 AICPU kernel 实现面；当前仍返回 unsupported，并把缺失点标为 `custom-op/AICPU scheduler build disabled` 或 `custom-op/AICPU scheduler launch missing`。
 - 已开始 Stage 3B.1：`flume_hcomm_custom_op_launch_smoke_ex` / `--run-hcomm-custom-op-launch-smoke` 生成 no-op custom-op launch plan，并在真机 smoke 中区分 build-disabled 与 launch-missing。完整分阶段计划见 `docs/stage-3b-hcomm-custom-op-plan.md`。
 - 已开始 Stage 3B.2：`flume_hcomm_resource_descriptor_smoke_ex` / `--run-hcomm-resource-descriptor-smoke` 在 HCOMM Channel acquisition 后整理 host-side resource descriptor，包含 channel、local/remote HCCL Buffer、notify、rank、engine/protocol 和 desc source；当前仍标记 custom-op/AICPU descriptor handoff missing。
+- 已开始 Stage 3B.2-complete / 3B.3-prep：`flume_hcomm_notify_only_smoke_ex` / `--run-hcomm-notify-only-smoke` 固化 descriptor-consume + ready/done Channel Notify 编排；当前仍标记 custom-op/AICPU kernel consume missing。
 - 下一步实现 CANN 8.5 可用的 HCOMM primitive payload microcopy scheduler，把 `HcommReadOnThread`、Notify 和 HCCL Buffer 串到真正的 HBM-HBM copy。
 - 后续实现 HCOMM Channel 版本的 `flume_hbm_copy_async`，并保留公开 HCCL P2P fallback。
 - 测量不同 block size 的 HBM-HBM bandwidth、latency、CPU usage。

@@ -36,6 +36,14 @@ enum class CustomOpLaunchSmokeStep {
   kSyncStream = 3,
 };
 
+enum class NotifyOnlyStep {
+  kConsumeResourceDescriptor = 0,
+  kChannelNotifyRecordReady = 1,
+  kChannelNotifyWaitReady = 2,
+  kChannelNotifyRecordDone = 3,
+  kChannelNotifyWaitDone = 4,
+};
+
 struct PayloadPlan {
   PayloadRole role = PayloadRole::kSend;
   uint32_t local_rank = 0;
@@ -45,6 +53,17 @@ struct PayloadPlan {
   uint32_t ready_notify_idx = 0;
   uint32_t done_notify_idx = 1;
   std::vector<PayloadStep> steps;
+};
+
+struct NotifyOnlyPlan {
+  PayloadRole role = PayloadRole::kSend;
+  uint32_t local_rank = 0;
+  uint32_t peer_rank = 0;
+  uint32_t rank_size = 0;
+  uint32_t ready_notify_idx = 0;
+  uint32_t done_notify_idx = 1;
+  uint32_t timeout_sec = 1800;
+  std::vector<NotifyOnlyStep> steps;
 };
 
 struct CustomOpLaunchSmokePlan {
@@ -78,6 +97,7 @@ const char* SchedulerStatusMessage(SchedulerStatus status);
 const char* PayloadRoleName(PayloadRole role);
 const char* PayloadStepName(PayloadStep step);
 const char* CustomOpLaunchSmokeStepName(CustomOpLaunchSmokeStep step);
+const char* NotifyOnlyStepName(NotifyOnlyStep step);
 
 bool BuildPairCopyPlan(PayloadRole role,
                        uint32_t local_rank,
@@ -113,6 +133,17 @@ bool BuildResourceDescriptor(uint32_t local_rank,
                              std::string* error);
 
 std::string DescribeResourceDescriptor(const ResourceDescriptor& descriptor);
+
+bool BuildNotifyOnlyPlan(PayloadRole role,
+                         uint32_t local_rank,
+                         uint32_t peer_rank,
+                         uint32_t rank_size,
+                         uint32_t ready_notify_idx,
+                         uint32_t done_notify_idx,
+                         NotifyOnlyPlan* out,
+                         std::string* error);
+
+std::string DescribeNotifyOnlyPlan(const NotifyOnlyPlan& plan);
 
 }  // namespace flume::hcomm_payload
 

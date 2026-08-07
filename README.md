@@ -54,7 +54,8 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus primitive symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
 - Optional Stage 3B.1 HCOMM custom-op no-op launch readiness smoke. It distinguishes default `custom-op/AICPU scheduler build disabled` from `--build-hcomm-custom-op` `custom-op/AICPU scheduler launch missing`.
 - Optional Stage 3B.2 HCOMM resource descriptor smoke. It packages channel, buffer, notify, rank, engine, protocol, and descriptor-source metadata, then reports expected unsupported until descriptor handoff into custom-op/AICPU is implemented.
-- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM custom-op launch readiness, HCOMM resource descriptor readiness, HCOMM payload readiness, Stage 3A storage-HBM fallback, and strict expected-negative logs in one run. Verified on Host B (CANN 9.0) with HCCS_SW device pairs; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler launch is not implemented.
+- Optional Stage 3B.2-complete / 3B.3-prep HCOMM notify-only smoke. It fixes the send/recv ready-done Channel Notify plan and reports expected unsupported until the custom-op/AICPU kernel can consume the descriptor.
+- One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM custom-op launch readiness, HCOMM resource descriptor readiness, HCOMM notify-only readiness, HCOMM payload readiness, Stage 3A storage-HBM fallback, and strict expected-negative logs in one run. Verified on Host B (CANN 9.0) with HCCS_SW device pairs; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler launch is not implemented.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not implemented yet:
@@ -186,7 +187,7 @@ recv rank:
   HcommChannelNotifyRecordOnThread(done)
 ```
 
-The current code now has a library-level plan model for this pair-copy scheduler and a reserved `custom_ops/hcomm_payload_copy/` implementation surface. Stage 3B.1 adds `--run-hcomm-custom-op-launch-smoke` for the no-op custom-op launch readiness boundary. Stage 3B.2 adds `--run-hcomm-resource-descriptor-smoke` to package the HCOMM resource descriptor on the host side and clearly mark the custom-op/AICPU descriptor handoff as missing. It still reports unsupported until the host launcher and AICPU kernel are implemented. The full sub-stage plan is in [docs/stage-3b-hcomm-custom-op-plan.md](docs/stage-3b-hcomm-custom-op-plan.md).
+The current code now has a library-level plan model for this pair-copy scheduler and a reserved `custom_ops/hcomm_payload_copy/` implementation surface. Stage 3B.1 adds `--run-hcomm-custom-op-launch-smoke` for the no-op custom-op launch readiness boundary. Stage 3B.2 adds `--run-hcomm-resource-descriptor-smoke` to package the HCOMM resource descriptor on the host side and clearly mark the custom-op/AICPU descriptor handoff as missing. Stage 3B.2-complete / 3B.3-prep adds `--run-hcomm-notify-only-smoke` for the descriptor-consume plus Channel Notify record/wait plan. It still reports unsupported until the host launcher and AICPU kernel are implemented. The full sub-stage plan is in [docs/stage-3b-hcomm-custom-op-plan.md](docs/stage-3b-hcomm-custom-op-plan.md).
 
 Full two-rank Ascend matrix:
 
