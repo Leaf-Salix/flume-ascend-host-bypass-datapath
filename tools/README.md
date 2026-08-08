@@ -121,6 +121,11 @@ primitive 调用。该字段会细分为 `local-copy-failed`、
 `remote-read-failed`、`done-notify-record-failed`、`batch-start-failed`、
 `batch-end-failed` 或 `thread-notify-*-failed` 等阶段；失败时还会打印
 `payload_kernel_hcomm_ret=<ret>`，表示对应 HCOMM primitive 的原始返回码。
+若同时看到 `payload_primitive_state=pending` 和
+`payload_kernel_hcomm_ret=4294967295`，表示 kernel 已进入
+`payload_failure_step` 对应的 HCOMM primitive，但 status read 时该
+primitive 仍未返回，通常应按 timeout/hang 定位该阶段，而不是把
+`4294967295` 当成真实 HCOMM 返回码。
 如果看到 `payload_kernel_status=not-written` 或
 `payload_status_word=4294967295`，说明 kernel 没有写回 device-visible
 status word，应优先检查 descriptor handoff、status pointer 和 kernel

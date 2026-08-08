@@ -2466,6 +2466,22 @@ std::string PayloadStatusSchemaDetail() {
          std::to_string(FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT);
 }
 
+std::string PayloadPrimitiveStateDetail(const uint32_t* status_words) {
+  if (status_words == nullptr) {
+    return "";
+  }
+  std::string state = "returned";
+  if (status_words[0] == 0xFFFFFFFFU) {
+    state = "not-written";
+  } else if (status_words[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+             status_words[1] == 0U) {
+    state = "completed";
+  } else if (status_words[1] == 0xFFFFFFFFU) {
+    state = "pending";
+  }
+  return " payload_primitive_state=" + state;
+}
+
 std::string PayloadEchoWordsDetail(const uint32_t* status_words) {
   if (status_words == nullptr) {
     return "";
@@ -2955,6 +2971,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              std::to_string(observed_status_words[1]) +
              " payload_status_read=\"" + AclErrorMessage(status_ret) +
              "\"" + PayloadStatusSchemaDetail() +
+             PayloadPrimitiveStateDetail(observed_status_words) +
              PayloadEchoWordsDetail(observed_status_words) +
              " kernel_func=" +
              FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
@@ -2992,6 +3009,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " payload_kernel_hcomm_ret=" +
            std::to_string(observed_status_words[1]) +
            PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(observed_status_words) +
            PayloadEchoWordsDetail(observed_status_words) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
@@ -3035,6 +3053,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " payload_kernel_hcomm_ret=" +
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) + " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadCompletionDetail(resource_info);
@@ -3051,6 +3070,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_status_word=0 payload_kernel_hcomm_ret=") +
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) + " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadCompletionDetail(resource_info);
@@ -3078,6 +3098,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_status_word=0 payload_kernel_hcomm_ret=0 "
                        "payload_echo=failed") +
            PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            " expected_role=" + std::to_string(expected_role) +
            " expected_peer_rank=" + std::to_string(peer_rank) +
@@ -3100,6 +3121,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_kernel_hcomm_ret=") +
          std::to_string(kernel_hcomm_ret) + " " +
          "payload_echo=passed" + PayloadStatusSchemaDetail() +
+         PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) + " " +
          "kernel_func=" +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +

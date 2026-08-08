@@ -125,6 +125,35 @@ def strict_log_with_rank1_failed_wait_remote_read() -> str:
         "rank 1 hcomm payload smoke failed")
 
 
+def strict_log_with_rank1_pending_remote_read() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke passed: fallback=none detail=\""
+        "stage3b3e_payload_copy=passed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=passed "
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 "
+        "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
+        "payload_status_schema=v2 payload_status_word_count=8 "
+        "payload_echo=passed fallback=none\" payload_source_checksum=1234",
+        "rank 1 hcomm payload smoke failed: fallback=none detail=\""
+        "stage3b3e_payload_copy=failed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=failed "
+        "payload_kernel_status=remote-read-failed "
+        "payload_failure_step=remote-read payload_status_word=9 "
+        "payload_kernel_hcomm_ret=4294967295 "
+        "payload_primitive_state=pending payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=observed fallback=none\"",
+        "",
+    ])
+
+
 def strict_log_with_checksum_mismatch() -> str:
     return strict_log(True).replace(
         "payload_checksum=1234", "payload_checksum=9999")
@@ -405,6 +434,21 @@ def main() -> int:
         assert "| rank1 kernel HCOMM ret | 88 |" in text
         assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
                 "remote-read-failed at remote-read") in text
+
+        strict_rank1_pending_remote_read = write(
+            tmp / "strict-rank1-pending-remote-read.log",
+            strict_log_with_rank1_pending_remote_read())
+        rank1_pending_remote_read_dir = tmp / "rank1-pending-remote-read"
+        rank1_pending_remote_read_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank1_pending_remote_read_dir, smoke,
+            strict_rank1_pending_remote_read, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank0 primitive state | completed |" in text
+        assert "| rank1 primitive state | pending |" in text
+        assert "| primitive state | completed |" in text
+        assert ("inspect rank 1 pending HCOMM primitive timeout/hang at "
+                "remote-read") in text
 
         strict_checksum_mismatch = write(
             tmp / "strict-checksum-mismatch.log",

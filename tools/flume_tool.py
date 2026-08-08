@@ -1661,6 +1661,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_schema = marker_value(strict, "payload_status_schema")
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
+    strict_primitive_state = marker_value(strict, "payload_primitive_state")
     strict_semantic = marker_value(strict, "payload_semantic")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
@@ -1676,6 +1677,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                                   "payload_status_word"),
             "hcomm_ret": marker_value_from_line(rank_line,
                                                 "payload_kernel_hcomm_ret"),
+            "primitive_state": marker_value_from_line(
+                rank_line, "payload_primitive_state"),
             "fallback": marker_value_from_line(rank_line, "fallback"),
         }
 
@@ -1747,6 +1750,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 kernel failure step | {rank_status[1]['failure_step']} | rank1 `payload_failure_step` |",
             f"| rank0 kernel HCOMM ret | {rank_status[0]['hcomm_ret']} | rank0 `payload_kernel_hcomm_ret` |",
             f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
+            f"| rank0 primitive state | {rank_status[0]['primitive_state']} | rank0 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
+            f"| rank1 primitive state | {rank_status[1]['primitive_state']} | rank1 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
@@ -1754,6 +1759,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
+            f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
@@ -1789,6 +1795,15 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect direct ACL payload descriptor handoff"
         elif strict_launch != "passed":
             next_action = "inspect direct ACL payload launch"
+        elif any(rank_status[rank]["primitive_state"] == "pending"
+                 for rank in (0, 1)):
+            bad_rank = next(
+                rank for rank in (0, 1)
+                if rank_status[rank]["primitive_state"] == "pending")
+            next_action = (
+                "inspect rank "
+                f"{bad_rank} pending HCOMM primitive timeout/hang at "
+                f"{rank_status[bad_rank]['failure_step']}")
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
         elif any(rank_status[rank]["kernel"] not in ("success", "missing")
