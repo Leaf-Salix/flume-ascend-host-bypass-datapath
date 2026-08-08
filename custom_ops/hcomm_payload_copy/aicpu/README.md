@@ -40,11 +40,12 @@ The Stage 3B.3E payload-copy experiment is behind
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`:
 
 - `payload_copy_kernel.cc`
-- exported functions: `FlumeHcommPayloadCopyDirectAclrtKernelV2` and the
-  legacy wrapper `FlumeHcommPayloadCopyDirectAclrtKernel`
+- exported functions: `FlumeHcommPayloadCopyDirectAclrtKernelV3`, the V2
+  compatibility wrapper, and the legacy wrapper
+  `FlumeHcommPayloadCopyDirectAclrtKernel`
 
-It consumes `flume_hcomm_payload_copy_desc_v1`, then runs a pair-copy plan
-instead of a collective:
+It consumes `flume_hcomm_payload_copy_desc_v1`, acquires the HCOMM communicator
+by descriptor `comm_name`, then runs a pair-copy plan instead of a collective:
 
 ```text
 send rank: HcommLocalCopyOnThread(src_hbm -> local_hccl_buffer)

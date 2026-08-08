@@ -209,7 +209,7 @@ bash build.sh \
 ```
 
 `--install-custom-op-package` only installs after the build artifact preflight
-passes. If the JSON, AICPU tar, V2 payload entrypoint, or internal-payload build
+passes. If the JSON, AICPU tar, V3 payload entrypoint, or internal-payload build
 marker is missing, the helper stops before touching the target CANN/OPP install.
 
 The internal payload package is the one required for
@@ -221,11 +221,12 @@ actually exposes `hccl/hccl_launch.h` and you specifically want to test the
 older public-HCCL-launch notify-only entrypoint.
 The package preflight treats the build as payload-ready only when the AICPU SO
 exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
-export the V2 payload function as a compatibility stub, but it is not accepted
+export the V3 payload function as a compatibility stub, but it is not accepted
 as a real payload package. Current payload-ready packages also export
-`FlumeHcommPayloadCopySemanticVersion`, which marks the success-status
-semantics where the second status word is written as
-`payload_kernel_hcomm_ret=0`.
+`FlumeHcommPayloadCopyAbiVersion3` and
+`FlumeHcommPayloadCopySemanticVersion`, which mark the descriptor ABI with
+HCCL comm-name handoff plus the success-status semantics where the second
+status word is written as `payload_kernel_hcomm_ret=0`.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and

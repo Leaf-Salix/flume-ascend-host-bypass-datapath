@@ -9,9 +9,11 @@
 int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadBuildModeCanaryOnly() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion2() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion3() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(nullptr) == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(nullptr) == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernel(nullptr) == 1U);
   FLUME_TEST_CHECK(FlumeHcommNotifyOnlyDirectAclrtKernel(nullptr) == 1U);
   FLUME_TEST_CHECK(FlumeHcommNotifyOnlyAicpuKernel(nullptr) == 1U);

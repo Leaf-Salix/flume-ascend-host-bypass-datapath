@@ -107,13 +107,13 @@ def strict_log_with_canary_build_mode() -> str:
 
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
-            "payload_abi_v2,payload_semantic,build_mode_internal\n"
+            "payload_abi_v3,payload_semantic,build_mode_internal\n"
             "status=PASS\n")
 
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -124,19 +124,19 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
-        "reason=payload kernel package is canary-only; V2 payload entrypoint is a compatibility stub",
+        "reason=payload kernel package is canary-only; V3 payload entrypoint is a compatibility stub",
         "",
     ])
 
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
-        "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=missing",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
+        "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",
         "",
@@ -253,7 +253,7 @@ def main() -> int:
             abi_missing_dir, smoke, None, abi_missing_package)
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
-        assert "current Flume ABI headers" in text
+        assert "current Flume V3 ABI headers" in text
 
         strict_canary_mode = write(tmp / "strict-canary-mode.log",
                                    strict_log_with_canary_build_mode())

@@ -9,6 +9,8 @@ namespace flume_hcomm_payload_kernel_mock {
 
 int32_t batch_start_ret = 0;
 int32_t batch_end_ret = 0;
+int32_t acquire_comm_ret = 0;
+int32_t release_comm_ret = 0;
 int32_t thread_wait_ret = 0;
 int32_t thread_record_ret = 0;
 int32_t local_copy_ret = 0;
@@ -28,6 +30,8 @@ void RecordCall(int call) {
 void Reset() {
   batch_start_ret = 0;
   batch_end_ret = 0;
+  acquire_comm_ret = 0;
+  release_comm_ret = 0;
   thread_wait_ret = 0;
   thread_record_ret = 0;
   local_copy_ret = 0;
@@ -81,6 +85,7 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
   desc.remote_hccl_buffer_bytes = 64;
   desc.status_word = reinterpret_cast<uint64_t>(status_words);
   std::memcpy(desc.batch_tag, "unit_payload", sizeof("unit_payload"));
+  std::memcpy(desc.comm_name, "flume_unit_comm", sizeof("flume_unit_comm"));
   return desc;
 }
 
@@ -92,6 +97,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion2() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion3() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION);
 
@@ -111,9 +117,10 @@ int main() {
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
-  const int send_calls[] = {
-      kBatchStart, kLocalCopy, kNotifyRecord, kNotifyWait, kBatchEnd};
-  FLUME_TEST_CHECK(CallsEqual(send_calls, 5));
+  const int send_calls[] = {kAcquireComm, kBatchStart, kLocalCopy,
+                            kNotifyRecord, kNotifyWait, kBatchEnd,
+                            kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(send_calls, 7));
 
   Reset();
   std::memset(user, 0, sizeof(user));
@@ -130,9 +137,9 @@ int main() {
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
   FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
-  const int recv_calls[] = {
-      kBatchStart, kNotifyWait, kRead, kNotifyRecord, kBatchEnd};
-  FLUME_TEST_CHECK(CallsEqual(recv_calls, 5));
+  const int recv_calls[] = {kAcquireComm, kBatchStart, kNotifyWait,
+                            kRead, kNotifyRecord, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(recv_calls, 7));
 
   Reset();
   std::memset(user, 0, sizeof(user));
@@ -146,9 +153,9 @@ int main() {
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
   const int recv_drain_calls[] = {
-      kBatchStart, kNotifyWait, kRead, kChannelDrain, kNotifyRecord,
-      kBatchEnd};
-  FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 6));
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kChannelDrain,
+      kNotifyRecord, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 8));
 
   Reset();
   status[0] = 0xFFFFFFFFU;
@@ -161,9 +168,9 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   const int thread_notify_send_calls[] = {
-      kThreadWait, kBatchStart, kLocalCopy, kNotifyRecord,
-      kNotifyWait, kBatchEnd, kThreadRecord};
-  FLUME_TEST_CHECK(CallsEqual(thread_notify_send_calls, 7));
+      kAcquireComm, kThreadWait, kBatchStart, kLocalCopy, kNotifyRecord,
+      kNotifyWait, kBatchEnd, kThreadRecord, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(thread_notify_send_calls, 9));
 
   Reset();
   status[0] = 0xFFFFFFFFU;
@@ -176,6 +183,32 @@ int main() {
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(call_count == 0);
+
+  Reset();
+  acquire_comm_ret = 99;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+  FLUME_TEST_CHECK(status[1] == 99U);
+  const int acquire_fail_calls[] = {kAcquireComm};
+  FLUME_TEST_CHECK(CallsEqual(acquire_fail_calls, 1));
+
+  Reset();
+  release_comm_ret = 98;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
+  FLUME_TEST_CHECK(status[1] == 98U);
 
   Reset();
   local_copy_ret = 77;
@@ -245,6 +278,18 @@ int main() {
                        status);
   send_desc.bytes = 65;
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(call_count == 0);
+
+  Reset();
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.comm_name[0] = '\0';
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);

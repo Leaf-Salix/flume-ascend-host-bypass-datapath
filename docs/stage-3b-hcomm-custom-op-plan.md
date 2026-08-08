@@ -344,7 +344,7 @@ python3 tools/flume_tool.py \
 ```
 
 The first command verifies the canary package; the second verifies that the
-installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV2` and that the
+installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV3` and that the
 AICPU package tar is readable and contains
 `libflume_hcomm_payload_aicpu_kernel.so`. When `readelf` or `nm` is available,
 the preflight also verifies that the SO inside the tar exports the required
@@ -356,19 +356,20 @@ execution yet. On CANN packages that do not expose `hccl/hccl_launch.h`, keep
 package does not need that legacy public-HCCL-launch entrypoint.
 
 The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
-as a compatibility wrapper, but Flume's payload-ready preflight requires the V2
+as a compatibility wrapper, but Flume's payload-ready preflight requires the V3
 entrypoint so that stale packages do not silently skip the two-word status
-diagnostic ABI. It also requires the SO symbol
-`FlumeHcommPayloadCopyAbiVersion2`, and the same function must be declared in
+diagnostic ABI and the HCCL comm-name handoff. It also requires the SO symbol
+`FlumeHcommPayloadCopyAbiVersion3`, and the same function must be declared in
 the JSON so the runtime loader can verify the package before descriptor
 handoff. This marks the current payload descriptor semantic ABI after the
-`completion_mode` field became meaningful. When the package JSON declares only
+kernel descriptor gained `comm_name` for `HcommAcquireComm` /
+`HcommReleaseComm`. When the package JSON declares only
 the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
 package refresh problem, not as evidence that HCOMM payload primitives failed.
-When the V2 entrypoint and internal-payload marker exist but
-`FlumeHcommPayloadCopyAbiVersion2` is missing, rebuild the package with current
+When the V3 entrypoint and internal-payload marker exist but
+`FlumeHcommPayloadCopyAbiVersion3` is missing, rebuild the package with current
 Flume headers before running strict smoke.
 
 `ascend-probe` records the same check as

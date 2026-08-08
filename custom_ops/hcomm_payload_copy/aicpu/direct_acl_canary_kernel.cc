@@ -60,9 +60,13 @@ extern "C" unsigned int FlumeHcommNotifyOnlyDirectAclrtKernel(void* param) {
   return kFlumeCanaryInvalidArgument;
 }
 
-extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void* param) {
   (void)param;
   return kFlumeCanaryInvalidArgument;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
+  return FlumeHcommPayloadCopyDirectAclrtKernelV3(param);
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
@@ -70,7 +74,11 @@ extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion2() {
-  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 2U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION >= 2U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion3() {
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 3U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {

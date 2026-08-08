@@ -54,6 +54,9 @@
 #ifndef FLUME_HAVE_HCCL_P2P
 #define FLUME_HAVE_HCCL_P2P 0
 #endif
+#ifndef FLUME_HAVE_HCCL_COMM_NAME
+#define FLUME_HAVE_HCCL_COMM_NAME 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_CHANNEL_RES
 #define FLUME_HAVE_HCOMM_CHANNEL_RES 0
 #endif
@@ -2048,6 +2051,7 @@ int main(int argc, char** argv) {
             << " cluster_info_config=" << FLUME_HAVE_HCCL_CLUSTER_INFO_CONFIG
             << " sym_window=" << FLUME_HAVE_HCCL_SYM_WINDOW
             << " p2p=" << FLUME_HAVE_HCCL_P2P
+            << " hccl_comm_name=" << FLUME_HAVE_HCCL_COMM_NAME
             << " hcomm_channel_res=" << FLUME_HAVE_HCOMM_CHANNEL_RES
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES

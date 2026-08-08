@@ -19,8 +19,12 @@ enum Call {
   kNotifyWait = 7,
   kBatchEnd = 8,
   kChannelDrain = 9,
+  kAcquireComm = 10,
+  kReleaseComm = 11,
 };
 
+extern int32_t acquire_comm_ret;
+extern int32_t release_comm_ret;
 extern int32_t batch_start_ret;
 extern int32_t batch_end_ret;
 extern int32_t thread_wait_ret;
@@ -36,6 +40,18 @@ extern int call_count;
 void RecordCall(int call);
 
 }  // namespace flume_hcomm_payload_kernel_mock
+
+inline int32_t HcommAcquireComm(const char*) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kAcquireComm);
+  return acquire_comm_ret;
+}
+
+inline int32_t HcommReleaseComm(const char*) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kReleaseComm);
+  return release_comm_ret;
+}
 
 inline int32_t HcommBatchModeStart(const char*) {
   using namespace flume_hcomm_payload_kernel_mock;

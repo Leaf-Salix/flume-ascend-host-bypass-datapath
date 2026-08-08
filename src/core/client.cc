@@ -46,6 +46,9 @@
 #ifndef FLUME_HAVE_HCCL_P2P
 #define FLUME_HAVE_HCCL_P2P 0
 #endif
+#ifndef FLUME_HAVE_HCCL_COMM_NAME
+#define FLUME_HAVE_HCCL_COMM_NAME 0
+#endif
 #ifndef FLUME_HAVE_HCCL_ROOT_INFO
 #define FLUME_HAVE_HCCL_ROOT_INFO 0
 #endif
@@ -79,6 +82,14 @@
 #include <hccl/hccl_res.h>
 #else
 #error "FLUME_HAVE_HCOMM_CHANNEL_RES=1 requires hccl/hccl_res.h"
+#endif
+#endif
+
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCCL_COMM_NAME
+#if __has_include(<hccl/hccl_comm.h>)
+#include <hccl/hccl_comm.h>
+#else
+#error "FLUME_HAVE_HCCL_COMM_NAME=1 requires hccl/hccl_comm.h"
 #endif
 #endif
 
@@ -1953,6 +1964,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               const HcommChannelResourceInfo& resource_info,
                               void* user_buffer,
                               uint64_t bytes,
+                              const char* comm_name,
                               flume_hcomm_payload_copy_desc_v1* desc) {
   flume_hcomm_payload_copy_desc_init(desc);
   desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
@@ -1987,6 +1999,9 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
   memcpy(desc->batch_tag, kFlumeHcommPayloadBatchTag,
          sizeof(kFlumeHcommPayloadBatchTag));
   desc->cpu_thread_on_aicpu = resource_info.cpu_thread_on_aicpu;
+  if (comm_name != nullptr) {
+    strncpy(desc->comm_name, comm_name, sizeof(desc->comm_name) - 1);
+  }
 }
 
 bool IsUnsupportedHcclLaunchResult(HcclResult result) {
@@ -2238,6 +2253,10 @@ std::string PayloadKernelStatusName(uint32_t status) {
       return "thread-notify-record-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED:
       return "channel-drain-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED:
+      return "comm-acquire-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
+      return "comm-release-failed";
     default:
       return std::string("unknown-") + std::to_string(status);
   }
@@ -2367,6 +2386,33 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
         decision, "payload bytes exceed usable HCCL buffer size");
   }
 
+  char comm_name[FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES] = {};
+#if FLUME_HAVE_HCCL_COMM_NAME
+  HcclResult comm_name_ret =
+      HcclGetCommName(static_cast<HcclComm>(state.hccl_comm), comm_name);
+  if (comm_name_ret != HCCL_SUCCESS) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=blocked "
+                       "api=HcclGetCommName error=\"") +
+           HcclErrorMessage(comm_name_ret) +
+           "\" stage3b3e_direct_aclrt_payload_launch=not-attempted";
+  }
+  if (comm_name[0] == '\0') {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=blocked "
+                       "api=HcclGetCommName error=\"empty comm name\" "
+                       "stage3b3e_direct_aclrt_payload_launch=not-attempted");
+  }
+#else
+  *status = FLUME_ERR_UNSUPPORTED;
+  return MakeDirectAclrtPayloadBlockedDetail(
+      decision, "HcclGetCommName is unavailable in this CANN build");
+#endif
+
   void* kernel_status_dev = nullptr;
   uint32_t kernel_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
   aclError acl_ret = aclrtMalloc(&kernel_status_dev,
@@ -2395,7 +2441,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   flume_hcomm_payload_copy_desc_v1 desc = {};
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
-                           bytes, &desc);
+                           bytes, comm_name, &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
 
   aclrtBinHandle bin_handle = nullptr;
@@ -2419,7 +2465,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   aclrtFuncHandle abi_func_handle = nullptr;
   acl_ret = aclrtBinaryGetFunction(
-      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC,
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
       &abi_func_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
@@ -2431,8 +2477,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) +
            "\" stage3b3e_payload_descriptor_handoff=blocked "
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
-           "payload_abi=v2-missing kernel_func=" +
-           FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC +
+           "payload_abi=v3-missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 

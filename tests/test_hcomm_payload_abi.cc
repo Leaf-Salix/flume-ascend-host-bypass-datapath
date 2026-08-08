@@ -22,9 +22,9 @@ int main() {
   static_assert(
       offsetof(flume_hcomm_canary_desc_v1, observed_token_word) == 40,
       "canary observed token word offset changed");
-  static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 176,
+  static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 304,
                 "payload descriptor ABI size changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 2,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 3,
                 "payload descriptor semantic ABI version changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 3,
                 "payload copy semantic marker changed");
@@ -44,8 +44,12 @@ int main() {
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, cpu_thread_on_aicpu) == 168,
       "payload host/AICPU thread notify offset changed");
+  static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, comm_name) == 176,
+                "payload comm name offset changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES == 48,
                 "payload batch tag capacity changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES == 128,
+                "payload comm name capacity changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE == 0,
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
@@ -84,6 +88,10 @@ int main() {
                 "payload thread-notify record status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED == 13,
                 "payload channel-drain status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED == 14,
+                "payload comm acquire status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED == 15,
+                "payload comm release status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
                 "notify success status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT == 1,
@@ -92,6 +100,9 @@ int main() {
                 "notify hcomm-error status changed");
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
+      "FlumeHcommPayloadCopyDirectAclrtKernelV3") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_V2,
       "FlumeHcommPayloadCopyDirectAclrtKernelV2") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_LEGACY,
@@ -108,6 +119,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC,
       "FlumeHcommPayloadCopyAbiVersion2") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
+      "FlumeHcommPayloadCopyAbiVersion3") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       "FlumeHcommPayloadCopySemanticVersion") == 0);
@@ -127,6 +141,7 @@ int main() {
   FLUME_TEST_CHECK(sizeof(uint32_t[2]) == 8);
   FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');
   FLUME_TEST_CHECK(payload.cpu_thread_on_aicpu == 0);
+  FLUME_TEST_CHECK(payload.comm_name[0] == '\0');
 
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);
