@@ -4395,6 +4395,10 @@ std::string TryLaunchHcommDirectAclrtCanary(
   desc.observed_token_word = reinterpret_cast<uint64_t>(
       static_cast<uint8_t*>(canary_status_dev) + sizeof(uint32_t));
 
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  const char* canary_launch_api = "host-args";
+#else
+  const char* canary_launch_api = "args-handle";
   aclrtArgsHandle args_handle = nullptr;
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
@@ -4404,6 +4408,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
     return std::string("stage3b3d_no_internal_headers=on "
                        "stage3b3d_direct_aclrt_canary_loader=passed "
                        "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "canary_launch_api=args-handle "
                        "api=aclrtKernelArgsInit error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
@@ -4418,6 +4423,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
     return std::string("stage3b3d_no_internal_headers=on "
                        "stage3b3d_direct_aclrt_canary_loader=passed "
                        "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "canary_launch_api=args-handle "
                        "api=aclrtKernelArgsAppend error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
@@ -4430,9 +4436,11 @@ std::string TryLaunchHcommDirectAclrtCanary(
     return std::string("stage3b3d_no_internal_headers=on "
                        "stage3b3d_direct_aclrt_canary_loader=passed "
                        "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "canary_launch_api=args-handle "
                        "api=aclrtKernelArgsFinalize error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
+#endif
 
   aclrtLaunchKernelAttr attr = {};
   attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
@@ -4440,9 +4448,17 @@ std::string TryLaunchHcommDirectAclrtCanary(
   aclrtLaunchKernelCfg cfg = {};
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  acl_ret = aclrtLaunchKernelWithHostArgs(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, &desc,
+      sizeof(desc), nullptr, 0);
+  const char* acl_launch_api = "aclrtLaunchKernelWithHostArgs";
+#else
   acl_ret = aclrtLaunchKernelWithConfig(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
+  const char* acl_launch_api = "aclrtLaunchKernelWithConfig";
+#endif
   if (acl_ret == ACL_SUCCESS) {
     acl_ret = SyncAclStreamForHcomm(static_cast<aclrtStream>(acl_stream),
                                     kDefaultHcommTimeoutSeconds);
@@ -4455,7 +4471,8 @@ std::string TryLaunchHcommDirectAclrtCanary(
                          "stage3b3d_direct_aclrt_canary_handoff=passed "
                          "stage3b3d_direct_aclrt_canary_launch=passed "
                          "stage3b3d_direct_aclrt_canary_sync=failed "
-                         "api=") + AclStreamSyncApiName() + " error=\"" +
+                         "canary_launch_api=") +
+             canary_launch_api + " api=" + AclStreamSyncApiName() + " error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
     }
@@ -4471,7 +4488,9 @@ std::string TryLaunchHcommDirectAclrtCanary(
                          "stage3b3d_direct_aclrt_canary_handoff=passed "
                          "stage3b3d_direct_aclrt_canary_launch=passed "
                          "stage3b3d_direct_aclrt_canary_sync=failed "
-                         "api=aclrtMemcpy(canary_status_d2h) error=\"") +
+                         "canary_launch_api=") +
+             canary_launch_api +
+             " api=aclrtMemcpy(canary_status_d2h) error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
     }
@@ -4486,7 +4505,8 @@ std::string TryLaunchHcommDirectAclrtCanary(
                          "stage3b3d_direct_aclrt_canary_launch=passed "
                          "stage3b3d_direct_aclrt_canary_sync=passed "
                          "stage3b3d_direct_aclrt_canary=failed "
-                         "canary_status_word=") +
+                         "canary_launch_api=") +
+             canary_launch_api + " canary_status_word=" +
              std::to_string(canary_status_words[0]) +
              " canary_observed_token=" +
              std::to_string(canary_status_words[1]) + " kernel_func=" +
@@ -4499,7 +4519,9 @@ std::string TryLaunchHcommDirectAclrtCanary(
                        "stage3b3d_direct_aclrt_canary_launch=passed "
                        "stage3b3d_direct_aclrt_canary_sync=passed "
                        "stage3b3d_direct_aclrt_canary=passed "
-                       "canary_status_word=0 canary_observed_token=") +
+                       "canary_launch_api=") +
+           canary_launch_api +
+           " canary_status_word=0 canary_observed_token=" +
            std::to_string(FLUME_HCOMM_CANARY_TOKEN) + " kernel_func=" +
            FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
   }
@@ -4511,7 +4533,9 @@ std::string TryLaunchHcommDirectAclrtCanary(
                      "stage3b3d_direct_aclrt_canary_loader=passed "
                      "stage3b3d_direct_aclrt_canary_handoff=passed "
                      "stage3b3d_direct_aclrt_canary_launch=failed "
-                     "api=aclrtLaunchKernelWithConfig error=\"") +
+                     "api=") +
+         acl_launch_api + " canary_launch_api=" + canary_launch_api +
+         " error=\"" +
          AclErrorMessage(acl_ret) + "\" kernel_func=" +
          FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
 }
@@ -4603,6 +4627,10 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
   }
   desc.status_word = reinterpret_cast<uint64_t>(notify_status_dev);
 
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  const char* notify_launch_api = "host-args";
+#else
+  const char* notify_launch_api = "args-handle";
   aclrtArgsHandle args_handle = nullptr;
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
@@ -4611,6 +4639,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
                        "stage3b3c_descriptor_handoff=failed "
+                       "notify_launch_api=args-handle "
                        "api=aclrtKernelArgsInit error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
@@ -4624,6 +4653,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
                        "stage3b3c_descriptor_handoff=failed "
+                       "notify_launch_api=args-handle "
                        "api=aclrtKernelArgsAppend error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
@@ -4635,9 +4665,11 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
                        "stage3b3c_descriptor_handoff=failed "
+                       "notify_launch_api=args-handle "
                        "api=aclrtKernelArgsFinalize error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
+#endif
 
   aclrtLaunchKernelAttr attr = {};
   attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
@@ -4645,9 +4677,17 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
   aclrtLaunchKernelCfg cfg = {};
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  acl_ret = aclrtLaunchKernelWithHostArgs(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, &desc,
+      sizeof(desc), nullptr, 0);
+  const char* acl_launch_api = "aclrtLaunchKernelWithHostArgs";
+#else
   acl_ret = aclrtLaunchKernelWithConfig(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
+  const char* acl_launch_api = "aclrtLaunchKernelWithConfig";
+#endif
   if (acl_ret == ACL_SUCCESS) {
     acl_ret = SyncAclStreamForHcomm(static_cast<aclrtStream>(acl_stream),
                                     desc.timeout_sec);
@@ -4659,7 +4699,9 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
                          "stage3b3c_descriptor_handoff=passed "
                          "stage3b3c_direct_aclrt_launch=passed "
                          "stage3b3c_direct_aclrt_sync=failed "
-                         "api=") + AclStreamSyncApiName() + " error=\"" +
+                         "notify_launch_api=") +
+             notify_launch_api + " api=" + AclStreamSyncApiName() +
+             " error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
     }
@@ -4674,7 +4716,9 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
                          "stage3b3c_descriptor_handoff=passed "
                          "stage3b3c_direct_aclrt_launch=passed "
                          "stage3b3c_direct_aclrt_sync=failed "
-                         "api=aclrtMemcpy(notify_status_d2h) error=\"") +
+                         "notify_launch_api=") +
+             notify_launch_api +
+             " api=aclrtMemcpy(notify_status_d2h) error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
     }
@@ -4689,7 +4733,8 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
                          "stage3b3c_direct_aclrt_launch=passed "
                          "stage3b3c_direct_aclrt_sync=passed "
                          "stage3b2_kernel_consume=failed "
-                         "notify_kernel_status=") +
+                         "notify_launch_api=") +
+             notify_launch_api + " notify_kernel_status=" +
              NotifyKernelStatusName(notify_status) +
              " notify_status_word=" +
              std::to_string(notify_status) +
@@ -4703,8 +4748,11 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
                        "stage3b3c_direct_aclrt_launch=passed "
                        "stage3b3c_direct_aclrt_sync=passed "
                        "stage3b2_kernel_consume=passed "
+                       "notify_launch_api=") +
+           notify_launch_api +
+           " "
                        "notify_kernel_status=success "
-                       "notify_status_word=0 kernel_func=") +
+                       "notify_status_word=0 kernel_func=" +
            FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
   }
 
@@ -4714,7 +4762,9 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
   return std::string("stage3b3c_direct_aclrt_loader=passed "
                      "stage3b3c_descriptor_handoff=passed "
                      "stage3b3c_direct_aclrt_launch=failed "
-                     "api=aclrtLaunchKernelWithConfig error=\"") +
+                     "api=") +
+         acl_launch_api + " notify_launch_api=" + notify_launch_api +
+         " error=\"" +
          AclErrorMessage(acl_ret) + "\" kernel_func=" +
          FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
 }
