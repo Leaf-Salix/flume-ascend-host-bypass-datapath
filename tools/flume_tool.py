@@ -33,6 +33,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
     "payload_abi_v2": "FlumeHcommPayloadCopyAbiVersion2",
     "payload_semantic": "FlumeHcommPayloadCopySemanticVersion",
+    "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
@@ -254,7 +255,8 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "canary_direct_aclrt" in required_set and
         "payload_direct_aclrt" in required_set and
         "payload_abi_v2" in required_set and
-        "payload_semantic" in required_set)
+        "payload_semantic" in required_set and
+        "build_mode_internal" in required_set)
 
 
 def PackageTextCanaryReady(package_text: str) -> bool:
@@ -1395,7 +1397,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v2 + semantic marker + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v2 + semantic + internal markers + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
@@ -2050,6 +2052,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_direct_aclrt")
         required_functions.append("payload_abi_v2")
         required_functions.append("payload_semantic")
+        required_functions.append("build_mode_internal")
 
     found_any_json = False
     found_required = False

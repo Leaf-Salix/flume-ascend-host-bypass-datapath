@@ -112,6 +112,14 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopySemanticVersion",
             }
         }
+    if mode != "canary":
+        payload["FlumeHcommPayloadBuildModeInternalPayload"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadBuildModeInternalPayload",
+            }
+        }
     json_path = tmp / f"pkg_{mode}.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
     return json_path, tar_path
@@ -173,6 +181,7 @@ def main() -> int:
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in canary.stdout
+        assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "reason=payload kernel package is canary-only" in canary.stdout
@@ -200,6 +209,7 @@ def main() -> int:
             raise AssertionError("stale ABI v2 package without semantic marker passed")
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in stale_v2.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing" in stale_v2.stdout
+        assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in stale_v2.stdout
         assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing" in stale_v2.stdout
         assert "reason=payload kernel package is missing the payload semantic marker" in stale_v2.stdout
 
@@ -213,6 +223,7 @@ def main() -> int:
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v2.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in v2.stdout
         assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v2.stdout
+        assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v2.stdout
         assert "status=PASS" in v2.stdout
 
         installed_json = (

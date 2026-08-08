@@ -68,6 +68,14 @@ extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
 extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
   return FlumeHcommPayloadCopyDirectAclrtKernelV2(param);
 }
+
+extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion2() {
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 2U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION;
+}
 #endif
 
 #ifndef FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH

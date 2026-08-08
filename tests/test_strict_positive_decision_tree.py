@@ -88,12 +88,13 @@ def strict_log_with_missing_semantic() -> str:
 
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
-            "payload_abi_v2,payload_semantic\nstatus=PASS\n")
+            "payload_abi_v2,payload_semantic,build_mode_internal\n"
+            "status=PASS\n")
 
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
