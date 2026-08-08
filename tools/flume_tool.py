@@ -31,6 +31,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
     "canary_direct_aclrt": "FlumeHcommCanaryDirectAclrtKernel",
     "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
+    "payload_abi_v2": "FlumeHcommPayloadCopyAbiVersion2",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
@@ -1722,6 +1723,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     required_functions = ["canary_direct_aclrt"]
     if args.require_hcomm_payload_kernel:
         required_functions.append("payload_direct_aclrt")
+        required_functions.append("payload_abi_v2")
 
     found_any_json = False
     found_required = False

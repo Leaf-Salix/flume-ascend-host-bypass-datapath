@@ -2417,6 +2417,25 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "\" custom_op_package=present" + HcommPackageDetail(decision);
   }
 
+  aclrtFuncHandle abi_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC,
+      &abi_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_abi=v2-missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
   aclrtFuncHandle func_handle = nullptr;
   acl_ret = aclrtBinaryGetFunction(
       bin_handle, FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,

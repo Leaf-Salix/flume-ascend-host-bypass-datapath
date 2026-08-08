@@ -352,9 +352,11 @@ The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
 as a compatibility wrapper, but Flume's payload-ready preflight requires the V2
 entrypoint so that stale packages do not silently skip the two-word status
 diagnostic ABI. It also requires the SO symbol
-`FlumeHcommPayloadCopyAbiVersion2`, which marks the current payload descriptor
-semantic ABI after the `completion_mode` field became meaningful. When the
-package JSON declares only the legacy entrypoint, the preflight reports
+`FlumeHcommPayloadCopyAbiVersion2`, and the same function must be declared in
+the JSON so the runtime loader can verify the package before descriptor
+handoff. This marks the current payload descriptor semantic ABI after the
+`completion_mode` field became meaningful. When the package JSON declares only
+the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
 package refresh problem, not as evidence that HCOMM payload primitives failed.
