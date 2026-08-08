@@ -160,7 +160,12 @@ channel-handle 候选失败后，会按已启用的 diagnostics 继续追加交�
 `hcomm-payload-channel-handle-nobatch-channel-fence-candidate` 和
 `hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate`。
 这些候选仍必须满足完整 strict-positive evidence、checksum match 和
-`fallback=none` 才会被选为真正 HCOMM payload-copy 证据。
+`fallback=none` 才会被选为真正 HCOMM payload-copy 证据。每次自动运行
+channel-handle 候选时都会生成
+`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md`，汇总每个候选的
+`payload_failure_step`、`payload_kernel_hcomm_ret`、`payload_recv_path`、
+completion mode、rank evidence 和 selected 状态；真机失败时优先看这个
+矩阵文件。
 
 已有日志也可以离线复核 strict-positive 门禁：
 

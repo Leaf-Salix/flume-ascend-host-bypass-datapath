@@ -2350,6 +2350,92 @@ def RunHcommPayloadChannelHandleNoBatchCandidate(
     return result
 
 
+def _CandidateMarker(text: str, name: str) -> str:
+    rank1_value = MarkerValueFromLine(ExtractStrictPayloadRankLines(text)[1],
+                                      name)
+    if rank1_value != "missing":
+        return rank1_value
+    rank0_value = MarkerValueFromLine(ExtractStrictPayloadRankLines(text)[0],
+                                      name)
+    if rank0_value != "missing":
+        return rank0_value
+    return MarkerValue(text, name)
+
+
+def WriteHcommPayloadCandidateMatrix(
+        run_dir: Path,
+        default_log: Optional[Path],
+        candidate_results: list[StepResult],
+        selected_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md"
+    rows = []
+    for result in candidate_results:
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError as exc:
+            text = f"failed to read log: {exc}"
+        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+        rows.append({
+            "step": result.name,
+            "returncode": str(result.returncode),
+            "selected": "yes" if selected_log == result.log_path else "no",
+            "evidence": "passed" if passed else "not-passed",
+            "rank0": "passed" if rank0_ok else "missing",
+            "rank1": "passed" if rank1_ok else "missing",
+            "failure": _CandidateMarker(text, "payload_failure_step"),
+            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "binding": _CandidateMarker(text, "payload_comm_binding"),
+            "batch": _CandidateMarker(text, "payload_batch_mode"),
+            "recv": _CandidateMarker(text, "payload_recv_path"),
+            "completion": _CandidateMarker(text, "payload_completion_mode"),
+            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+            "fallback": _CandidateMarker(text, "fallback"),
+            "log": result.log_path.name,
+        })
+
+    if selected_log is not None:
+        decision = (
+            "a channel-handle candidate produced complete strict-positive "
+            "HCOMM payload evidence")
+    elif candidate_results:
+        decision = (
+            "no channel-handle candidate produced complete strict-positive "
+            "evidence; inspect the first non-missing failure step below")
+    else:
+        decision = "no channel-handle candidates were executed"
+
+    lines = [
+        "# HCOMM Payload Channel-Handle Candidate Matrix",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- candidates_run: `{len(candidate_results)}`",
+        "",
+        f"decision: {decision}",
+        "",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | binding | batch | recv_path | completion | trace_path | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['step']} | {row['returncode']} | {row['selected']} | "
+            f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | {row['binding']} | "
+            f"{row['batch']} | {row['recv']} | {row['completion']} | "
+            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+    lines.extend([
+        "",
+        "A candidate can satisfy the strict-positive gate only when both ranks "
+        "show complete payload trace evidence, checksum match, and "
+        "`fallback=none`. This table is a triage aid; it does not weaken the "
+        "gate.",
+    ])
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload candidate matrix -> {note}")
+    return note
+
+
 def RunHcommPayloadChannelHandleFallbackCandidates(
         runner: Runner,
         base_command: list[str],
@@ -2357,10 +2443,24 @@ def RunHcommPayloadChannelHandleFallbackCandidates(
         timeout_seconds: int,
         default_log: Optional[Path],
         args: argparse.Namespace) -> Optional[Path]:
+    candidate_results: list[StepResult] = []
+    selected_log: Optional[Path] = None
+
+    def remember(result: StepResult) -> Optional[Path]:
+        nonlocal selected_log
+        candidate_results.append(result)
+        if StrictPayloadLogPassed(result.log_path):
+            selected_log = result.log_path
+            return result.log_path
+        return None
+
     channel_result = RunHcommPayloadChannelHandleCandidate(
         runner, base_command, env_updates, timeout_seconds, default_log)
-    if StrictPayloadLogPassed(channel_result.log_path):
-        return channel_result.log_path
+    passed_log = remember(channel_result)
+    if passed_log is not None:
+        WriteHcommPayloadCandidateMatrix(
+            runner.run_dir, default_log, candidate_results, selected_log)
+        return passed_log
 
     can_try_channel_fence = (
         args.auto_run_hcomm_payload_channel_fence_diagnostic and
@@ -2375,50 +2475,73 @@ def RunHcommPayloadChannelHandleFallbackCandidates(
     if can_try_channel_fence:
         channel_fence_result = RunHcommPayloadChannelHandleChannelFenceCandidate(
             runner, base_command, env_updates, timeout_seconds, default_log)
-        if StrictPayloadLogPassed(channel_fence_result.log_path):
-            return channel_fence_result.log_path
+        passed_log = remember(channel_fence_result)
+        if passed_log is not None:
+            WriteHcommPayloadCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
 
     if can_try_direct_output:
         direct_result = RunHcommPayloadChannelHandleDirectOutputCandidate(
             runner, base_command, env_updates, timeout_seconds, default_log)
-        if StrictPayloadLogPassed(direct_result.log_path):
-            return direct_result.log_path
+        passed_log = remember(direct_result)
+        if passed_log is not None:
+            WriteHcommPayloadCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
         if can_try_channel_fence:
             direct_fence_result = (
                 RunHcommPayloadChannelHandleDirectOutputCandidate(
                     runner, base_command, env_updates, timeout_seconds,
                     default_log, channel_fence=True))
-            if StrictPayloadLogPassed(direct_fence_result.log_path):
-                return direct_fence_result.log_path
+            passed_log = remember(direct_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results, selected_log)
+                return passed_log
 
     if can_try_no_batch:
         no_batch_result = RunHcommPayloadChannelHandleNoBatchCandidate(
             runner, base_command, env_updates, timeout_seconds, default_log)
-        if StrictPayloadLogPassed(no_batch_result.log_path):
-            return no_batch_result.log_path
+        passed_log = remember(no_batch_result)
+        if passed_log is not None:
+            WriteHcommPayloadCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
         if can_try_channel_fence:
             no_batch_fence_result = (
                 RunHcommPayloadChannelHandleNoBatchCandidate(
                     runner, base_command, env_updates, timeout_seconds,
                     default_log, channel_fence=True))
-            if StrictPayloadLogPassed(no_batch_fence_result.log_path):
-                return no_batch_fence_result.log_path
+            passed_log = remember(no_batch_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results, selected_log)
+                return passed_log
         if can_try_direct_output:
             no_batch_direct_result = (
                 RunHcommPayloadChannelHandleNoBatchCandidate(
                     runner, base_command, env_updates, timeout_seconds,
                     default_log, direct_output=True))
-            if StrictPayloadLogPassed(no_batch_direct_result.log_path):
-                return no_batch_direct_result.log_path
+            passed_log = remember(no_batch_direct_result)
+            if passed_log is not None:
+                WriteHcommPayloadCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results, selected_log)
+                return passed_log
             if can_try_channel_fence:
                 no_batch_direct_fence_result = (
                     RunHcommPayloadChannelHandleNoBatchCandidate(
                         runner, base_command, env_updates, timeout_seconds,
                         default_log, direct_output=True, channel_fence=True))
-                if StrictPayloadLogPassed(
-                        no_batch_direct_fence_result.log_path):
-                    return no_batch_direct_fence_result.log_path
+                passed_log = remember(no_batch_direct_fence_result)
+                if passed_log is not None:
+                    WriteHcommPayloadCandidateMatrix(
+                        runner.run_dir, default_log, candidate_results,
+                        selected_log)
+                    return passed_log
 
+    WriteHcommPayloadCandidateMatrix(
+        runner.run_dir, default_log, candidate_results, selected_log)
     return None
 
 
@@ -5487,12 +5610,11 @@ def parse_args() -> argparse.Namespace:
                               "and write HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md. "
                               "Unlike diagnostic-skip, a complete channel-handle "
                               "run can satisfy the strict-positive evidence gate. "
-                              "When channel-fence auto diagnostics are also "
-                              "enabled, a failing channel-handle run is followed "
-                              "by a channel-handle + channel-fence candidate. "
-                              "When direct-output auto diagnostics are also "
-                              "enabled, a failing channel-handle run is followed "
-                              "by a channel-handle + direct-output candidate."))
+                              "When channel-fence, direct-output, and no-batch "
+                              "auto diagnostics are also enabled, failing "
+                              "channel-handle runs are followed by the enabled "
+                              "cross-product candidates and summarized in "
+                              "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",
                         help=("Batch tag used by "

@@ -702,6 +702,16 @@ def main() -> int:
         assert "--hcomm-payload-disable-batch" in final_command
         assert "--hcomm-payload-recv-direct-output" in final_command
         assert "--hcomm-payload-channel-fence" in final_command
+        candidate_matrix = (
+            fake_runner.run_dir /
+            "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md")
+        assert candidate_matrix.exists()
+        candidate_matrix_text = candidate_matrix.read_text(encoding="utf-8")
+        assert "candidates_run: `8`" in candidate_matrix_text
+        assert ("hcomm-payload-channel-handle-nobatch-direct-output-"
+                "channel-fence-candidate | 0 | yes | passed"
+                in candidate_matrix_text)
+        assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",

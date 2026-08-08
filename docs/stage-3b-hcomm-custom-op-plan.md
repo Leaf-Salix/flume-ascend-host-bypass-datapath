@@ -415,7 +415,10 @@ the enabled channel-handle cross-product candidates, including
 `hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate`.
 Those variants let one log bundle cover comm-binding, read-completion,
 recv-output, and batch-submit hypotheses without weakening the strict evidence
-gate.
+gate. The tool also writes
+`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md`, which summarizes each tried
+candidate's failure step, HCOMM return code, recv path, completion mode, rank
+evidence, fallback marker, and selected status.
 
 If the batch-enabled strict gate fails inside the payload kernel, use the
 diagnostic no-batch variant to isolate HCOMM primitive execution from
