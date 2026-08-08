@@ -475,6 +475,15 @@ def main() -> int:
         no_batch_text = no_batch_note.read_text(encoding="utf-8")
         assert "no_batch_payload_copy_and_verify: `passed`" in no_batch_text
         assert "remaining issue is likely HcommBatchModeStart/End" in no_batch_text
+        assert "default_rank1_failure_step: `remote-read`" in no_batch_text
+        write(no_batch_dir / "02-hcomm-payload-nobatch-diagnostic.log",
+              strict_no_batch.read_text(encoding="utf-8"))
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_batch_dir, smoke, default_failure, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM payload no-batch diagnostic | passed |" in text
+        assert ("no-batch HCOMM payload copy passed; inspect "
+                "HcommBatchModeStart/End") in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
                                  strict_log(False))

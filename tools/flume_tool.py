@@ -1650,11 +1650,37 @@ def WriteHcommPayloadNoBatchDiagnostic(
     no_batch_rank_lines = ExtractStrictPayloadRankLines(no_batch_text)
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch_text))
-    default_failure_step = MarkerValue(default_text, "payload_failure_step")
-    no_batch_failure_step = MarkerValue(no_batch_text, "payload_failure_step")
-    no_batch_kernel = MarkerValue(no_batch_text, "payload_kernel_status")
-    no_batch_hcomm_ret = MarkerValue(no_batch_text, "payload_kernel_hcomm_ret")
-    no_batch_batch_mode = MarkerValue(no_batch_text, "payload_batch_mode")
+    default_rank0_failure_step = MarkerValueFromLine(
+        default_rank_lines[0], "payload_failure_step")
+    default_rank1_failure_step = MarkerValueFromLine(
+        default_rank_lines[1], "payload_failure_step")
+    default_failure_step = (
+        default_rank1_failure_step
+        if default_rank1_failure_step not in ("missing", "none") else
+        default_rank0_failure_step)
+    no_batch_rank0_failure_step = MarkerValueFromLine(
+        no_batch_rank_lines[0], "payload_failure_step")
+    no_batch_rank1_failure_step = MarkerValueFromLine(
+        no_batch_rank_lines[1], "payload_failure_step")
+    no_batch_failure_step = (
+        no_batch_rank1_failure_step
+        if no_batch_rank1_failure_step not in ("missing", "none") else
+        no_batch_rank0_failure_step)
+    no_batch_kernel = MarkerValueFromLine(
+        no_batch_rank_lines[1], "payload_kernel_status")
+    if no_batch_kernel == "missing":
+        no_batch_kernel = MarkerValueFromLine(
+            no_batch_rank_lines[0], "payload_kernel_status")
+    no_batch_hcomm_ret = MarkerValueFromLine(
+        no_batch_rank_lines[1], "payload_kernel_hcomm_ret")
+    if no_batch_hcomm_ret == "missing":
+        no_batch_hcomm_ret = MarkerValueFromLine(
+            no_batch_rank_lines[0], "payload_kernel_hcomm_ret")
+    no_batch_batch_mode = MarkerValueFromLine(
+        no_batch_rank_lines[1], "payload_batch_mode")
+    if no_batch_batch_mode == "missing":
+        no_batch_batch_mode = MarkerValueFromLine(
+            no_batch_rank_lines[0], "payload_batch_mode")
 
     if no_batch_ok:
         decision = (
@@ -1684,8 +1710,12 @@ def WriteHcommPayloadNoBatchDiagnostic(
         f"- default_strict_log: `{default_log}`",
         f"- no_batch_log: `{no_batch_log}`",
         f"- default_failure_step: `{default_failure_step}`",
+        f"- default_rank0_failure_step: `{default_rank0_failure_step}`",
+        f"- default_rank1_failure_step: `{default_rank1_failure_step}`",
         f"- no_batch_kernel_status: `{no_batch_kernel}`",
         f"- no_batch_failure_step: `{no_batch_failure_step}`",
+        f"- no_batch_rank0_failure_step: `{no_batch_rank0_failure_step}`",
+        f"- no_batch_rank1_failure_step: `{no_batch_rank1_failure_step}`",
         f"- no_batch_hcomm_ret: `{no_batch_hcomm_ret}`",
         f"- no_batch_batch_mode: `{no_batch_batch_mode}`",
         f"- no_batch_rank0_evidence: `{'passed' if no_batch_rank0_ok else 'missing'}`",
@@ -1960,6 +1990,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     smoke = read(smoke_log)
     strict = read(strict_log)
     package = read(package_log)
+    no_batch_log = FindStepLog(run_dir, ["hcomm-payload-nobatch-diagnostic"])
+    no_batch = read(no_batch_log)
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
@@ -2075,6 +2107,15 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
+    strict_batch_mode = marker_value(strict, "payload_batch_mode")
+    no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
+        StrictPayloadNoBatchDiagnosticPassed(no_batch))
+    no_batch_result = (
+        "passed" if no_batch_ok else (
+            "partial" if no_batch_rank0_ok or no_batch_rank1_ok else (
+                "not-run" if not no_batch else "not-passed")))
+    no_batch_failure_step = marker_value(no_batch, "payload_failure_step")
+    no_batch_hcomm_ret = marker_value(no_batch, "payload_kernel_hcomm_ret")
     rank_status = {}
     for rank in (0, 1):
         rank_line = strict_rank_lines[rank]
@@ -2155,6 +2196,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
+    lines.append(
+        f"| HCOMM payload no-batch diagnostic | {no_batch_result} | "
+        f"batch={strict_batch_mode}, no-batch failure `{no_batch_failure_step}`, "
+        f"hcomm ret `{no_batch_hcomm_ret}` |")
     if strict_log is not None:
         lines.extend([
             "",
@@ -2225,6 +2270,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect direct ACL payload descriptor handoff"
         elif strict_launch != "passed":
             next_action = "inspect direct ACL payload launch"
+        elif no_batch_ok and strict_batch_mode in ("on", "missing"):
+            next_action = (
+                "no-batch HCOMM payload copy passed; inspect "
+                "HcommBatchModeStart/End submit, ordering, and selected "
+                "engine batch-mode compatibility")
         elif any(rank_status[rank]["primitive_state"] == "pending"
                  for rank in (0, 1)):
             bad_rank = next(
