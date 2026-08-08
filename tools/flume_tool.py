@@ -2174,6 +2174,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "canary-ready" if package_canary_ready else (
             "not-ready" if package else "not-checked"))
     package_reason = PackageTextReason(package) if package else "missing"
+    package_source = marker_value(package, "root")
+    package_vendor = marker_value(package, "vendor")
+    package_tar = marker_value(package, "aicpu_tar")
+    package_tar_so = marker_value(
+        package, f"aicpu_tar_so.{HCOMM_CUSTOM_OP_KERNEL_SO}")
     strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
@@ -2286,6 +2291,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| HCOMM custom-op package reason | {package_reason} | "
         "`reason=` from preflight log |")
+    lines.append(
+        f"| HCOMM custom-op package source | source={package_source}, "
+        f"vendor={package_vendor}, tar={package_tar}, so={package_tar_so} | "
+        "preflight package identity without absolute paths |")
     lines.append(
         f"| HCOMM primitive ABI fixture | {hcomm_abi_status} | "
         f"{hcomm_abi_evidence} |")

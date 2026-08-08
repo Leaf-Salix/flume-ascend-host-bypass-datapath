@@ -289,7 +289,11 @@ def strict_log_with_canary_build_mode() -> str:
 
 
 def payload_ready_package_log() -> str:
-    return ("required=canary_direct_aclrt,payload_direct_aclrt,"
+    return ("root=<runtime-root>\n"
+            "vendor=flume\n"
+            "aicpu_tar=present\n"
+            "aicpu_tar_so.libflume_hcomm_payload_aicpu_kernel.so=present\n"
+            "required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v4,payload_semantic,payload_semantic_v5,"
             "payload_requires_comm_acquire,payload_status_schema,"
             "payload_status_word_count,build_mode_internal\n"
@@ -458,6 +462,8 @@ def main() -> int:
             pass_dir, smoke, strict_pass, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
+        assert ("| HCOMM custom-op package source | source=<runtime-root>, "
+                "vendor=flume, tar=present, so=present |") in text
         assert "`payload_kernel_hcomm_ret=0`" in text
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
