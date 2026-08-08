@@ -52,8 +52,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed" + desc +
-        " fallback=none\" "
+        "payload_status_word_count=8 payload_echo=passed "
+        "payload_thread_notify_order=not-used" + desc + " fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
@@ -64,7 +64,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed" + recv_desc +
+        "payload_status_word_count=8 payload_echo=passed "
+        "payload_thread_notify_order=not-used" + recv_desc +
         " fallback=none\" "
         "payload_expected_checksum=1234",
         "",

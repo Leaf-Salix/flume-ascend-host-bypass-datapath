@@ -112,9 +112,11 @@ payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路�
 日志还会包含
 `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`；
 kernel 会在 `HcommBatchModeEnd` 返回之后才 record host completion notify，
-避免 host wakeup 早于 HCOMM batch 执行。
+避免 host wakeup 早于 HCOMM batch 执行。对应日志 marker 是
+`payload_thread_notify_order=batch-end-before-host-notify`。
 否则会保留 direct ACL 路线并标记
-`payload_thread_notify=unavailable payload_completion=stream-sync+status-word`。
+`payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
+和 `payload_thread_notify_order=not-used`。
 如果 direct ACL launch
 和 stream sync 都通过但该字段不是 `success`，说明包加载/launch
 已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel 里的 HCOMM

@@ -70,7 +70,8 @@ distinguish a package/launch problem from a specific HCOMM primitive execution
 problem.
 When host/AICPU thread notify handles are available, the kernel records the
 host completion notify only after `HcommBatchModeEnd` returns, so host wakeup
-does not precede HCOMM batch execution.
+does not precede HCOMM batch execution. Host-side strict payload logs report
+this as `payload_thread_notify_order=batch-end-before-host-notify`.
 
 The legacy public-HCCL-launch notify-only kernel consumes `HcclP2pKernelParam`, decodes
 `flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:
