@@ -123,6 +123,7 @@ struct RankContext {
   bool hcomm_require_thread_export = false;
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
+  std::string hcomm_payload_batch_tag;
   uint64_t sym_win_gb = 1;
   int status = 0;
   std::string error;
@@ -1182,6 +1183,8 @@ void RankMain(RankContext* ctx) {
       options.timeout_sec = ctx->hcomm_timeout_sec;
       options.disable_payload_batch_mode =
           ctx->hcomm_payload_disable_batch ? 1U : 0U;
+      options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
+          nullptr : ctx->hcomm_payload_batch_tag.c_str();
       if (!CheckFlume(flume_hcomm_channel_probe_ex(client, peer_rank, &options,
                                                    stream, &hcomm_channel_io),
                       "flume_hcomm_channel_probe", &error) ||
@@ -1665,6 +1668,8 @@ void RankMain(RankContext* ctx) {
         options.timeout_sec = ctx->hcomm_timeout_sec;
         options.disable_payload_batch_mode =
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
+        options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
+            nullptr : ctx->hcomm_payload_batch_tag.c_str();
         if (!CheckFlume(flume_hcomm_payload_send_ex(
                             client, reduce_send_buf,
                             ctx->a3_symmetric ? layout.reduce_send_offset : 0,
@@ -1722,6 +1727,8 @@ void RankMain(RankContext* ctx) {
         options.timeout_sec = ctx->hcomm_timeout_sec;
         options.disable_payload_batch_mode =
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
+        options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
+            nullptr : ctx->hcomm_payload_batch_tag.c_str();
         if (!CheckFlume(flume_hcomm_payload_recv_ex(
                             client, reduce_recv_buf,
                             ctx->a3_symmetric ? layout.reduce_recv_offset : 0,
@@ -1888,6 +1895,7 @@ int main(int argc, char** argv) {
   bool hcomm_require_thread_export = false;
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
+  std::string hcomm_payload_batch_tag;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
   std::string rank_table_path;
@@ -1958,6 +1966,9 @@ int main(int argc, char** argv) {
       hcomm_require_payload_copy = true;
     } else if (arg == "--hcomm-payload-disable-batch") {
       hcomm_payload_disable_batch = true;
+    } else if (arg.rfind("--hcomm-payload-batch-tag=", 0) == 0) {
+      hcomm_payload_batch_tag =
+          arg.substr(std::string("--hcomm-payload-batch-tag=").size());
     } else if (arg.rfind("--hcomm-channel-engine=", 0) == 0) {
       if (!ParseHcommEngine(
               arg.substr(std::string("--hcomm-channel-engine=").size()),
@@ -2049,6 +2060,7 @@ int main(int argc, char** argv) {
                 << " [--hcomm-require-thread-export]"
                 << " [--hcomm-require-payload-copy]"
                 << " [--hcomm-payload-disable-batch]"
+                << " [--hcomm-payload-batch-tag=tag]"
                 << " [--sym-win-gb=1]\n";
       return 2;
     }
@@ -2472,6 +2484,7 @@ int main(int argc, char** argv) {
         hcomm_require_payload_copy;
     contexts[local_index].hcomm_payload_disable_batch =
         hcomm_payload_disable_batch;
+    contexts[local_index].hcomm_payload_batch_tag = hcomm_payload_batch_tag;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
   }
@@ -2528,6 +2541,8 @@ int main(int argc, char** argv) {
             << " hcomm_require_payload_copy="
             << (hcomm_require_payload_copy ? "on" : "off")
             << " hcomm_payload_disable_batch="
-            << (hcomm_payload_disable_batch ? "on" : "off") << "\n";
+            << (hcomm_payload_disable_batch ? "on" : "off")
+            << " hcomm_payload_batch_tag="
+            << (hcomm_payload_batch_tag.empty() ? "empty" : "set") << "\n";
   return 0;
 }

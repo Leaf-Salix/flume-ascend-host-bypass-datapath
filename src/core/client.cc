@@ -212,6 +212,7 @@ using flume::protocol::WriteFrame;
 
 constexpr int kSocketTimeoutSeconds = 30;
 constexpr uint32_t kDefaultHcommTimeoutSeconds = 60;
+constexpr const char* kDefaultHcommPayloadBatchTag = "";
 
 struct CommState {
   bool hccl_attached = false;
@@ -229,6 +230,7 @@ struct HcommProbeOptions {
   bool require_thread_export = false;
   uint32_t timeout_sec = kDefaultHcommTimeoutSeconds;
   bool disable_payload_batch_mode = false;
+  std::string payload_batch_tag = kDefaultHcommPayloadBatchTag;
 };
 
 struct HcommChannelResourceInfo {
@@ -516,6 +518,12 @@ bool NormalizeHcommProbeOptions(
       normalized.disable_payload_batch_mode =
           options->disable_payload_batch_mode != 0;
     }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t, payload_batch_tag) +
+            sizeof(options->payload_batch_tag) &&
+        options->payload_batch_tag != nullptr) {
+      normalized.payload_batch_tag = options->payload_batch_tag;
+    }
   }
 
   if (normalized.notify_num == 0 || normalized.notify_num > 64) {
@@ -553,6 +561,13 @@ bool NormalizeHcommProbeOptions(
   if (normalized.timeout_sec == 0 || normalized.timeout_sec > 86400) {
     if (error != nullptr) {
       *error = "HCOMM channel probe timeout_sec must be in [1, 86400]";
+    }
+    return false;
+  }
+  if (normalized.payload_batch_tag.size() >=
+      FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES) {
+    if (error != nullptr) {
+      *error = "HCOMM payload batch tag is too long";
     }
     return false;
   }
@@ -1941,8 +1956,6 @@ std::string MakeHcommNotifyOnlyDetail(
 }
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
-const char kFlumeHcommPayloadBatchTag[] = "";
-
 void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
                              const CommState& state,
                              uint32_t peer_rank,
@@ -1976,6 +1989,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               uint64_t bytes,
                               const char* comm_name,
                               bool disable_payload_batch_mode,
+                              const std::string& payload_batch_tag,
                               flume_hcomm_payload_copy_desc_v1* desc) {
   flume_hcomm_payload_copy_desc_init(desc);
   desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
@@ -2004,13 +2018,13 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       reinterpret_cast<uint64_t>(resource_info.remote_buffer);
   desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
   desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
-  // Empty tag still enables HCOMM temporary batch mode. HCOMM docs note that
-  // non-empty tag caching is not fully supported on AICPU+TS.
-  static_assert(sizeof(kFlumeHcommPayloadBatchTag) <=
-                    FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES,
-                "Flume HCOMM payload batch tag exceeds descriptor field");
-  memcpy(desc->batch_tag, kFlumeHcommPayloadBatchTag,
-         sizeof(kFlumeHcommPayloadBatchTag));
+  if (!payload_batch_tag.empty()) {
+    const size_t tag_len = std::min(
+        payload_batch_tag.size(),
+        static_cast<size_t>(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES - 1U));
+    memcpy(desc->batch_tag, payload_batch_tag.data(), tag_len);
+    desc->batch_tag[tag_len] = '\0';
+  }
   desc->reserved2[0] = disable_payload_batch_mode ?
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED :
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT;
@@ -2531,6 +2545,8 @@ std::string PayloadDescriptorDetail(
          " payload_desc_status_word_count=" +
          std::to_string(desc.status_word_count) +
          " payload_desc_batch_mode=" + (batch_disabled ? "off" : "on") +
+         " payload_desc_batch_tag=" +
+         (desc.batch_tag[0] == '\0' ? "empty" : "set") +
          " payload_desc_local_hccl_buffer_bytes=" +
          std::to_string(desc.local_hccl_buffer_bytes) +
          " payload_desc_remote_hccl_buffer_bytes=" +
@@ -2665,6 +2681,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     void* user_buffer,
     uint64_t bytes,
     bool disable_payload_batch_mode,
+    const std::string& payload_batch_tag,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
     int* status) {
@@ -2773,7 +2790,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   flume_hcomm_payload_copy_desc_v1 desc = {};
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
-                           bytes, comm_name, disable_payload_batch_mode, &desc);
+                           bytes, comm_name, disable_payload_batch_mode,
+                           payload_batch_tag, &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
   desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
   desc.status_schema_version = FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
@@ -3673,6 +3691,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     void* acl_stream,
     void* user_buffer,
     uint64_t bytes,
+    bool disable_payload_batch_mode,
+    const std::string& payload_batch_tag,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
     int* status) {
@@ -3682,6 +3702,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   (void)acl_stream;
   (void)user_buffer;
   (void)bytes;
+  (void)disable_payload_batch_mode;
+  (void)payload_batch_tag;
   (void)resource_info;
   if (status != nullptr) {
     *status = FLUME_ERR_UNSUPPORTED;
@@ -5290,8 +5312,8 @@ int flume_hcomm_payload_send_ex(
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, acl_stream,
       static_cast<uint8_t*>(src->ptr) + src_offset, bytes,
-      options.disable_payload_batch_mode, resource_info, launcher,
-      &launch_status);
+      options.disable_payload_batch_mode, options.payload_batch_tag,
+      resource_info, launcher, &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
       0,
@@ -5402,8 +5424,8 @@ int flume_hcomm_payload_recv_ex(
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, acl_stream,
       static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes,
-      options.disable_payload_batch_mode, resource_info, launcher,
-      &launch_status);
+      options.disable_payload_batch_mode, options.payload_batch_tag,
+      resource_info, launcher, &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
       0,

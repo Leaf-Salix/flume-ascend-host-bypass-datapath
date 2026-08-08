@@ -427,6 +427,29 @@ def main() -> int:
             tmp / "package.log",
             payload_ready_package_log())
 
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "build-command"),
+                "--hccl-devices", "0,1",
+                "--run-storage-hbm-smoke",
+                "--hcomm-require-payload-copy",
+                "--hcomm-payload-batch-tag=flume-payload-v1",
+                "ascend-probe",
+            ]
+            storage_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        commands = flume_tool.build_commands(
+            storage_args, enable_hccl=True, run_dir=tmp / "command-run")
+        smoke_command = next(
+            spec.command for spec in commands
+            if spec.name == "hccl-collective-smoke")
+        assert "--storage-hbm-smoke" in smoke_command
+        assert "--hcomm-require-payload-copy" in smoke_command
+        assert "--hcomm-payload-batch-tag=flume-payload-v1" in smoke_command
+
         strict_pass = write(tmp / "strict-pass.log", strict_log(True))
         pass_dir = tmp / "pass"
         pass_dir.mkdir()

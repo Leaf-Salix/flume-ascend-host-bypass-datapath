@@ -72,6 +72,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hcomm-payload-disable-batch", action="store_true",
                         help=("Diagnostic only: skip HCOMM BatchModeStart/End "
                               "inside the direct ACL payload kernel"))
+    parser.add_argument("--hcomm-payload-batch-tag", default="",
+                        help=("Optional HCOMM batch tag for direct ACL payload "
+                              "kernel experiments; empty uses temporary batch"))
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -102,8 +105,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--storage-hbm-smoke requires --storage-smoke-file")
     if args.storage_smoke_file and not Path(args.storage_smoke_file).exists():
         parser.error(f"--storage-smoke-file does not exist: {args.storage_smoke_file}")
-    if args.hcomm_require_payload_copy and not args.hcomm_payload_smoke:
-        parser.error("--hcomm-require-payload-copy requires --hcomm-payload-smoke")
+    if (args.hcomm_require_payload_copy and
+            not (args.hcomm_payload_smoke or args.storage_hbm_smoke)):
+        parser.error("--hcomm-require-payload-copy requires --hcomm-payload-smoke or --storage-hbm-smoke")
     if not Path(args.binary).exists():
         parser.error(f"--binary does not exist: {args.binary}")
     if args.init == "rank-table" and not args.rank_table:
@@ -153,7 +157,10 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append(f"--storage-smoke-bytes={args.storage_smoke_bytes}")
         if args.storage_smoke_checksum:
             command.append(f"--storage-smoke-checksum={args.storage_smoke_checksum}")
-    if args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or args.hcomm_resource_descriptor_smoke or args.hcomm_notify_only_smoke or args.hcomm_payload_smoke:
+    if (args.hcomm_channel_probe or args.hcomm_custom_op_launch_smoke or
+            args.hcomm_resource_descriptor_smoke or
+            args.hcomm_notify_only_smoke or args.hcomm_payload_smoke or
+            (args.storage_hbm_smoke and args.hcomm_require_payload_copy)):
         command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
         command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
         command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
@@ -164,6 +171,9 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
             command.append("--hcomm-require-payload-copy")
         if args.hcomm_payload_disable_batch:
             command.append("--hcomm-payload-disable-batch")
+        if args.hcomm_payload_batch_tag:
+            command.append(
+                f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
     return command
 
 

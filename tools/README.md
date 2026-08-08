@@ -123,6 +123,10 @@ kernel 会在 `HcommBatchModeEnd` 返回之后才 record host completion notify�
 否则会保留 direct ACL 路线并标记
 `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
 和 `payload_thread_notify_order=not-used`。
+默认 batch tag 为空，保持 HCOMM temporary batch 语义。如果 batch-enabled
+strict gate 失败但 no-batch 诊断通过，可以加
+`--hcomm-payload-batch-tag=flume-payload-v1` 跑一次非空 tag 对照；成功日志会用
+`payload_desc_batch_tag=empty|set` 标出本次 descriptor 传入的 tag 形态。
 如果 direct ACL launch
 和 stream sync 都通过但该字段不是 `success`，说明包加载/launch
 已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel 里的 HCOMM

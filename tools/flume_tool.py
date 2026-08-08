@@ -1398,7 +1398,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 args.run_hcomm_custom_op_launch_smoke or
                 args.run_hcomm_resource_descriptor_smoke or
                 args.run_hcomm_notify_only_smoke or
-                args.run_hcomm_payload_smoke):
+                args.run_hcomm_payload_smoke or
+                (args.run_storage_hbm_smoke and args.hcomm_require_payload_copy)):
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
             command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
@@ -1409,6 +1410,9 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-require-payload-copy")
             if args.hcomm_payload_disable_batch:
                 command.append("--hcomm-payload-disable-batch")
+            if args.hcomm_payload_batch_tag:
+                command.append(
+                    f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -3924,6 +3928,11 @@ def parse_args() -> argparse.Namespace:
                               "satisfy the strict-positive success gate; the "
                               "final path remains the default batch-enabled "
                               "mode."))
+    parser.add_argument("--hcomm-payload-batch-tag", default="",
+                        help=("Optional HCOMM batch tag for Stage 3B.3E "
+                              "experiments. Empty keeps HCOMM temporary batch "
+                              "mode; non-empty tags test CANN tag caching "
+                              "compatibility without disabling batch mode."))
     parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
@@ -4117,9 +4126,10 @@ def parse_args() -> argparse.Namespace:
     if args.run_hccl_p2p_smoke and args.run_a3_symmetric_smoke:
         parser.error("--run-hccl-p2p-smoke currently cannot be combined with "
                      "--run-a3-symmetric-smoke")
-    if args.hcomm_require_payload_copy and not args.run_hcomm_payload_smoke:
+    if (args.hcomm_require_payload_copy and
+            not (args.run_hcomm_payload_smoke or args.run_storage_hbm_smoke)):
         parser.error("--hcomm-require-payload-copy requires "
-                     "--run-hcomm-payload-smoke")
+                     "--run-hcomm-payload-smoke or --run-storage-hbm-smoke")
     try:
         parsed_hccl_devices = ParseDeviceList(args.hccl_devices)
     except ValueError as exc:
