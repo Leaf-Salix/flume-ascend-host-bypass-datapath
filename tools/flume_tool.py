@@ -267,6 +267,32 @@ def PackageTextCanaryReady(package_text: str) -> bool:
     return "status=PASS" in package_text and "canary_direct_aclrt" in required_set
 
 
+def PackageTextReason(package_text: str) -> str:
+    match = re.search(r"^reason=(.+)$", package_text, re.MULTILINE)
+    return match.group(1).strip() if match else "missing"
+
+
+def PackageTextNextAction(package_text: str) -> str:
+    reason = PackageTextReason(package_text)
+    if "stale legacy entrypoint" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload package with the "
+                "current V2 payload entrypoint")
+    if "canary-only" in reason:
+        return ("rebuild/reinstall custom-op package in payload mode; "
+                "installed package is canary/stub-only")
+    if "ABI version marker" in reason:
+        return ("rebuild/reinstall payload custom-op package with current "
+                "Flume ABI headers")
+    if "semantic marker" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package has stale semantics")
+    if "no Flume HCOMM custom-op JSON found" in reason:
+        return "install the Stage 3B.3E internal payload custom-op package"
+    if "missing or incomplete" in reason:
+        return "rebuild/reinstall the Stage 3B.3E internal payload custom-op package"
+    return "inspect hcomm-custom-op-package-preflight failure"
+
+
 def ValidateRuntimeCustomOpJson(args: argparse.Namespace) -> tuple[bool, str]:
     if not args.custom_op_json:
         return (True, "")
@@ -1340,6 +1366,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     package_status = "payload-ready" if package_payload_ready else (
         "canary-ready" if package_canary_ready else (
             "not-ready" if package else "not-checked"))
+    package_reason = PackageTextReason(package) if package else "missing"
     strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
@@ -1379,6 +1406,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| HCOMM custom-op package payload-ready? | {package_status} | "
         "`hcomm-custom-op-package-preflight` log |")
+    lines.append(
+        f"| HCOMM custom-op package reason | {package_reason} | "
+        "`reason=` from preflight log |")
     lines.append(
         f"| HCOMM payload scheduler candidate built? | "
         f"{'yes' if scheduler_candidate else 'no'} | "
@@ -1421,6 +1451,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         next_action = (
             "Stage 3B.3E strict payload copy passed; inspect checksum and "
             "start Stage 3B.4 storage rewiring")
+    elif package and not package_payload_ready:
+        next_action = PackageTextNextAction(package)
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
           (storage_hbm_ok or strict_log is not None)):
         if strict_loader != "passed":
@@ -1454,13 +1486,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect hcomm-payload-strict-positive failure"
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
           hcomm_payload_unsupported and not package_payload_ready):
-        if "reason=payload kernel package is missing the payload semantic marker" in package:
-            next_action = (
-                "rebuild/reinstall the Stage 3B.3E payload custom-op package "
-                "from current Flume; installed package has stale semantics")
-        else:
-            next_action = (
-                "build/install the Stage 3B.3E internal payload custom-op package")
+        next_action = PackageTextNextAction(package)
     else:
         next_action = "inspect first failed required matrix step"
     lines.extend(["", f"next action: {next_action}", ""])

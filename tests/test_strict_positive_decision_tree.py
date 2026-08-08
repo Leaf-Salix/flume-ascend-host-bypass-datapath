@@ -122,6 +122,27 @@ def stale_semantic_package_log() -> str:
     ])
 
 
+def canary_only_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
+        "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
+        "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
+        "status=FAIL",
+        "reason=payload kernel package is canary-only; V2 payload entrypoint is a compatibility stub",
+        "",
+    ])
+
+
+def abi_missing_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic,build_mode_internal",
+        "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=missing",
+        "status=FAIL",
+        "reason=payload kernel package is missing the payload ABI version marker",
+        "",
+    ])
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: test_strict_positive_decision_tree.py <repo-root>",
@@ -209,8 +230,30 @@ def main() -> int:
             stale_semantic_dir, smoke, strict_missing_semantic, stale_package)
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert ("| HCOMM custom-op package reason | payload kernel package is "
+                "missing the payload semantic marker |") in text
         assert "| payload semantic marker | missing |" in text
         assert "installed package has stale semantics" in text
+
+        canary_package = write(tmp / "package-canary-only.log",
+                               canary_only_package_log())
+        canary_package_dir = tmp / "canary-package"
+        canary_package_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            canary_package_dir, smoke, None, canary_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "installed package is canary/stub-only" in text
+
+        abi_missing_package = write(tmp / "package-abi-missing.log",
+                                    abi_missing_package_log())
+        abi_missing_dir = tmp / "abi-missing-package"
+        abi_missing_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            abi_missing_dir, smoke, None, abi_missing_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "current Flume ABI headers" in text
 
         strict_canary_mode = write(tmp / "strict-canary-mode.log",
                                    strict_log_with_canary_build_mode())
