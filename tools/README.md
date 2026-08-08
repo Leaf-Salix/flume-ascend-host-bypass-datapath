@@ -95,7 +95,7 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_status_word=0`、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
 已有日志也可以离线复核 strict-positive 门禁：
 
@@ -103,7 +103,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestamp>
 ```
 
-该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、status word 0、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、status word 0、kernel HCOMM ret 0、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-drain`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用 `HcommChannelDrainOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。
 成功日志还会包含 `payload_batch_mode=on` 和
@@ -411,9 +411,9 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 `hcomm payload smoke passed`，以及 `stage3b3e_payload_copy=passed`、
 `stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、
 `payload_kernel_status=success`、`payload_status_word=0`、
-`payload_verify=passed` 和 `fallback=none`。如果 preflight 失败，这个入口会
-在 launch 前停止，避免把 canary-only 包或旧 entrypoint 包误判成 payload
-copy 失败。
+`payload_kernel_hcomm_ret=0`、`payload_verify=passed` 和 `fallback=none`。
+如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
+entrypoint 包误判成 payload copy 失败。
 
 如果要同时采集 CANN fixture：
 

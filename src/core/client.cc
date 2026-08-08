@@ -2635,7 +2635,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_payload_sync=passed "
                      "payload_batch_mode=on payload_kernel_status=success "
                      "payload_status_word=0 "
-                     "kernel_func=") +
+                     "payload_kernel_hcomm_ret=") +
+         std::to_string(kernel_hcomm_ret) + " " +
+         "kernel_func=" +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
          HcommPayloadCompletionDetail(resource_info);
 }

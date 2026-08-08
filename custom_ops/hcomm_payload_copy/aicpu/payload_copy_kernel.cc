@@ -181,6 +181,9 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       return FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED;
     }
   }
+  if (result == kFlumePayloadSuccess) {
+    StorePayloadPrimitiveRet(desc, 0);
+  }
   return result;
 }
 

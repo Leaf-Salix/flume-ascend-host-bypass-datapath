@@ -64,7 +64,7 @@ Implemented and validated on Ascend hardware in the current test environment:
 
 Not complete yet:
 
-- Strict-positive validation of the HCOMM primitive / custom-op payload backend for direct HBM-to-HBM copy. The code path and package ABI exist; completion requires `hcomm-payload-strict-positive` to pass with `stage3b3e_payload_copy=passed`, `payload_verify=passed`, and `fallback=none` on Ascend hardware.
+- Strict-positive validation of the HCOMM primitive / custom-op payload backend for direct HBM-to-HBM copy. The code path and package ABI exist; completion requires `hcomm-payload-strict-positive` to pass with `stage3b3e_payload_copy=passed`, `payload_kernel_status=success`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_verify=passed`, and `fallback=none` on Ascend hardware.
 - Storage proxy rank backed by HCCL/HCOMM communication memory.
 - Full RDMA / NVMe-oF / SPDK to NPU HBM data path.
 - Transparent framework integration.

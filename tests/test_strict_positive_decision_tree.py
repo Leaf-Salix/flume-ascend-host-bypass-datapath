@@ -37,7 +37,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "fallback=none\"",
+        "payload_kernel_hcomm_ret=0 fallback=none\"",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -45,7 +45,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "fallback=none\"",
+        "payload_kernel_hcomm_ret=0 fallback=none\"",
         "",
     ])
 
@@ -60,7 +60,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "fallback=none payload_verify=passed\"",
+        "payload_kernel_hcomm_ret=0 fallback=none payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
         "payload_verify=passed detail=\"fallback=none\"",
         "",

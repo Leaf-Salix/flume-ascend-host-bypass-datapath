@@ -1219,6 +1219,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "stage3b3e_payload_sync=passed",
     "payload_kernel_status=success",
     "payload_status_word=0",
+    "payload_kernel_hcomm_ret=0",
     "fallback=none",
 )
 
@@ -1372,8 +1373,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
             f"| package preflight | {package_status} | `required=canary_direct_aclrt,payload_direct_aclrt` + `status=PASS` |",
-            f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/fallback markers |",
-            f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/verify/fallback markers |",
+            f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
+            f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
