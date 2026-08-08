@@ -78,6 +78,22 @@ def parse_args() -> argparse.Namespace:
                               "HCCL Buffer directly into the output HBM "
                               "buffer instead of staging through the local "
                               "HCCL Buffer"))
+    parser.add_argument("--hcomm-payload-channel-fence",
+                        action="store_true",
+                        help=("Ask the payload kernel to use the explicit "
+                              "HCOMM channel-fence completion mode"))
+    parser.add_argument("--hcomm-payload-write-path", action="store_true",
+                        help=("Run the Stage 3B.3F write-path candidate: "
+                              "send kernel writes local HCCL Buffer into the "
+                              "remote HCCL Buffer with HcommWriteOnThread; "
+                              "recv waits ready then local-copies output"))
+    parser.add_argument("--hcomm-payload-skip-comm-acquire",
+                        action="store_true",
+                        help=("Diagnostic only: skip in-kernel "
+                              "HcommAcquireComm/ReleaseComm"))
+    parser.add_argument("--hcomm-payload-comm-binding", default="",
+                        choices=["comm-name", "channel-handle",
+                                 "diagnostic-skip"])
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for direct ACL payload "
                               "kernel experiments; empty uses Flume's stable "
@@ -180,6 +196,15 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
             command.append("--hcomm-payload-disable-batch")
         if args.hcomm_payload_recv_direct_output:
             command.append("--hcomm-payload-recv-direct-output")
+        if args.hcomm_payload_channel_fence:
+            command.append("--hcomm-payload-channel-fence")
+        if args.hcomm_payload_write_path:
+            command.append("--hcomm-payload-write-path")
+        if args.hcomm_payload_skip_comm_acquire:
+            command.append("--hcomm-payload-skip-comm-acquire")
+        if args.hcomm_payload_comm_binding:
+            command.append(
+                f"--hcomm-payload-comm-binding={args.hcomm_payload_comm_binding}")
         if args.hcomm_payload_batch_tag:
             command.append(
                 f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")

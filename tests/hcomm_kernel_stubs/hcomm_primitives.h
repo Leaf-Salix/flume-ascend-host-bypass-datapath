@@ -21,6 +21,7 @@ enum Call {
   kChannelFence = 9,
   kAcquireComm = 10,
   kReleaseComm = 11,
+  kWrite = 12,
 };
 
 extern int32_t acquire_comm_ret;
@@ -31,6 +32,7 @@ extern int32_t thread_wait_ret;
 extern int32_t thread_record_ret;
 extern int32_t local_copy_ret;
 extern int32_t read_ret;
+extern int32_t write_ret;
 extern int32_t notify_record_ret;
 extern int32_t notify_wait_ret;
 extern int32_t channel_drain_ret;
@@ -42,6 +44,8 @@ extern void* last_local_copy_dst;
 extern const void* last_local_copy_src;
 extern void* last_read_dst;
 extern const void* last_read_src;
+extern void* last_write_dst;
+extern const void* last_write_src;
 extern uint32_t* status_probe_words;
 extern int status_probe_call;
 extern uint32_t status_observed_at_probe;
@@ -116,6 +120,18 @@ inline int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void* dst,
     memcpy(dst, src, static_cast<size_t>(bytes));
   }
   return read_ret;
+}
+
+inline int32_t HcommWriteOnThread(ThreadHandle, ChannelHandle, void* dst,
+                                  const void* src, uint64_t bytes) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kWrite);
+  last_write_dst = dst;
+  last_write_src = src;
+  if (write_ret == 0) {
+    memcpy(dst, src, static_cast<size_t>(bytes));
+  }
+  return write_ret;
 }
 
 inline int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle,

@@ -54,6 +54,7 @@ HCOMM_PRIMITIVE_NAMES = [
     "HcommBatchModeEnd",
     "HcommLocalCopyOnThread",
     "HcommReadOnThread",
+    "HcommWriteOnThread",
     "HcommChannelNotifyRecordOnThread",
     "HcommChannelNotifyWaitOnThread",
     "HcommChannelFenceOnThread",
@@ -86,6 +87,7 @@ int main() {
   auto acquire_ret = HcommAcquireComm(tag);
   auto local_copy_ret = HcommLocalCopyOnThread(thread, dst, src, bytes);
   auto read_ret = HcommReadOnThread(thread, channel, dst, src, bytes);
+  auto write_ret = HcommWriteOnThread(thread, channel, dst, src, bytes);
   auto record_ret =
       HcommChannelNotifyRecordOnThread(thread, channel, notify_idx);
   auto wait_ret =
@@ -101,6 +103,7 @@ int main() {
   (void)acquire_ret;
   (void)local_copy_ret;
   (void)read_ret;
+  (void)write_ret;
   (void)record_ret;
   (void)wait_ret;
   (void)fence_ret;

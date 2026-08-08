@@ -39,7 +39,7 @@ python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 - 强制检查 CANN/HCCL 布局。
 - 以 `FLUME_ENABLE_HCCL=ON` 配置 CMake。
 - 编译并链接 HCCL/HCOMM；HCOMM public header 依赖的 `securec.h` 也需要在 CANN include 路径下可见。
-- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。其中 `FLUME_HAVE_HCOMM_PRIMITIVES` 是 compile-only call-shape probe，要求真实头文件接受 Flume payload kernel 当前使用的 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、Notify、Batch 调用形状。
+- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。其中 `FLUME_HAVE_HCOMM_PRIMITIVES` 是 compile-only call-shape probe，要求真实头文件接受 Flume payload kernel 当前使用的 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、`HcommWriteOnThread`、Notify、Batch 调用形状。
 - 执行当前 CTest、storage sim demo 和 collective sim demo。
 
 默认边界：`ascend-probe` 只验证环境发现、编译和链接，以及当前 mock/sim 回归。它不会默认跑真实 HCCL 数据面，也不会要求 A3 试用 API 必须存在。
@@ -99,7 +99,7 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 默认走 `Notify + HcommReadOnThread(remote HCCL Buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*`、`payload_trace_result=success`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 先走 `HcommLocalCopyOnThread(input -> local_hccl_buffer)`。默认 read-path 下，rank1 走 `Notify + HcommReadOnThread(remote HCCL Buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`；追加 `--hcomm-payload-write-path` 后，rank0 走 `HcommWriteOnThread(local HCCL Buffer -> remote HCCL Buffer) + Notify`，rank1 等 ready 后本地 copy 自己的 HCCL Buffer 到 output。两条路径都校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_result=success`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
 如果默认 `comm-name` 路径卡在 `payload_failure_step=comm-acquire`，可以显式尝试 direct ACL 的 ChannelHandle backend：
 
@@ -173,7 +173,7 @@ completion mode、rank evidence 和 selected 状态；真机失败时优先看�
 python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestamp>
 ```
 
-该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*`、`payload_trace_result=success`、两 rank 一致的 `payload_comm_binding=comm-name` 或 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_pattern=strict-v1`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_result=success`、两 rank 一致的 `payload_comm_binding=comm-name` 或 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`、`payload_pattern=strict-v1`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
 若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
 把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
 `output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
@@ -185,7 +185,7 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 用于核对 payload bytes、local/remote HCCL Buffer size、engine/protocol、
 Channel desc source、channel count 和 notify 数量是否符合预期。
 
-payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
+payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`。read-path 会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done；write-path 会在 send kernel 的 `HcommWriteOnThread` 后 fence 再 record ready，避免把“请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on|off`、`payload_comm_binding=...` 和
 `payload_kernel_status=success`。payload kernel 默认使用稳定非空 batch tag
 `flume_hcomm_payload`，对齐公开 HCCL custom P2P 示例里用 tag 绑定 batch
@@ -217,10 +217,10 @@ primitive 调用。该字段会细分为 `local-copy-failed`、
 `payload_failure_step` 对应的 HCOMM primitive，但 status read 时该
 primitive 仍未返回，通常应按 timeout/hang 定位该阶段，而不是把
 `4294967295` 当成真实 HCOMM 返回码。
-semantic v8 payload 包还会输出 `payload_trace_*`。完整成功要求
+semantic v10 payload 包还会输出 `payload_trace_*`。完整成功要求
 `payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、
-`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*`
-和 `payload_trace_result=success`；失败时重点看 `payload_trace_event`、
+`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、
+`payload_transfer_mode=read|write` 和 `payload_trace_result=success`；失败时重点看 `payload_trace_event`、
 `payload_trace_ret` 和 `payload_trace_sequence`，它们表示 kernel-side
 最后进入或返回的 primitive 事件、该事件的原始返回码和已执行的 primitive
 顺序。
@@ -352,16 +352,19 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopySemanticVersion`、
 `FlumeHcommPayloadCopySemanticVersion6`、
 `FlumeHcommPayloadCopySemanticVersion7`、
-`FlumeHcommPayloadCopySemanticVersion8` 以及
+`FlumeHcommPayloadCopySemanticVersion8`、
+`FlumeHcommPayloadCopySemanticVersion9`、
+`FlumeHcommPayloadCopySemanticVersion10` 以及
 `FlumeHcommPayloadCopyRequiresCommAcquire`、`FlumeHcommPayloadStatusSchemaVersion`
 、`FlumeHcommPayloadStatusWordCount`、`FlumeHcommPayloadTraceSchemaVersion`
 和 `FlumeHcommPayloadTraceWordCount` 同时出现在 JSON 和 SO 里。此外，
 payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
-`HcommReadOnThread`、HCOMM Channel Notify、Batch、Comm Acquire/Release
-等 primitive 依赖；只导出 Flume marker 但没有引用 HCOMM primitive 的
-marker-only 包会被拒绝。上述条件共同作为当前 descriptor ABI、payload
-success-status schema/word-count、device-side primitive trace 与 HCOMM comm
-acquire/release 语义 marker。
+`HcommReadOnThread`、`HcommWriteOnThread`、HCOMM Channel Notify、Batch、
+Comm Acquire/Release 等 primitive 依赖；只导出 Flume marker 但没有引用
+HCOMM primitive 的 marker-only 包会被拒绝。上述条件共同作为当前
+descriptor ABI、payload success-status schema/word-count、device-side
+primitive trace、write-path candidate 与 HCOMM comm acquire/release 语义
+marker。
 默认 canary-only
 包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
 ABI v4 marker、semantic v8 marker、comm-acquire marker、status schema marker
@@ -532,7 +535,7 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
 
-HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持，也不阻止 direct ACL payload route 使用 `stream-sync+status-word` completion。`hcomm_primitives=off` 是 host-side primitive probe 结果；direct ACL payload 路径的 primitive 调用发生在已安装 custom-op package 内部，因此 package-ready + strict smoke 才是最终证据。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL payload scheduler 候选路径；真正成功仍以 strict payload smoke 同时输出两 rank passed、`stage3b3e_payload_copy=passed`、direct ACL payload launch/sync passed、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*`、`payload_trace_result=success`、一致的 `payload_comm_binding=comm-name|channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none` 为准。
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持，也不阻止 direct ACL payload route 使用 `stream-sync+status-word` completion。`hcomm_primitives=off` 是 host-side primitive probe 结果；direct ACL payload 路径的 primitive 调用发生在已安装 custom-op package 内部，因此 package-ready + strict smoke 才是最终证据。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL payload scheduler 候选路径；真正成功仍以 strict payload smoke 同时输出两 rank passed、`stage3b3e_payload_copy=passed`、direct ACL payload launch/sync passed、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_result=success`、一致的 `payload_comm_binding=comm-name|channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none` 为准。
 
 完整两卡矩阵建议用：
 
@@ -580,7 +583,7 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 `hcomm payload smoke passed`，以及 `stage3b3e_payload_copy=passed`、
 `stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、
 `payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、
-`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*`、`payload_trace_result=success`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。
+`payload_kernel_hcomm_ret=0`、`payload_status_schema=v3`、`payload_status_word_count=10`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_result=success`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
 
@@ -641,7 +644,7 @@ python3 tools/collect_cann_compat.py --label cann-8.5.0-aarch64 --flume-log-dir 
 Stage 3B.3E payload copy 调试时，优先查看这些新增 fixture：
 
 - `hcomm-primitive-headers.txt`：真实 `hcomm_primitives.h` 中和 Flume payload kernel 有关的声明摘录。
-- `hcomm-primitive-call-shape-probe.txt`：只编译、不链接、不运行，验证当前 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、Notify、Batch 调用形状是否被真实 CANN 头文件接受；`status: PASS` 才说明 ABI 形状匹配。
+- `hcomm-primitive-call-shape-probe.txt`：只编译、不链接、不运行，验证当前 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、`HcommWriteOnThread`、Notify、Batch 调用形状是否被真实 CANN 头文件接受；`status: PASS` 才说明 ABI 形状匹配。
 - `hcomm-primitive-symbols.txt`：`libhcomm` 中这些 primitive 的目标符号是否存在。
 
 常见判读：

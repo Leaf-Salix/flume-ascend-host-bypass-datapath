@@ -26,7 +26,7 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 9,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 10,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -76,6 +76,9 @@ int main() {
                 "ordered-notify payload completion mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN == 1,
                 "channel-fence payload completion mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH ==
+                    0x20000000U,
+                "payload write-path flag changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT == 0,
                 "payload default batch mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED == 1,
@@ -120,7 +123,17 @@ int main() {
                 "payload comm release status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED == 16,
                 "payload output-copy status changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT == 30,
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED == 17,
+                "payload remote-write status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER == 30,
+                "payload send-write enter event changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_DONE == 31,
+                "payload send-write done event changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER == 32,
+                "payload send-channel-fence enter event changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_DONE == 33,
+                "payload send-channel-fence done event changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT == 34,
                 "payload trace kernel-exit event changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
                 "notify success status changed");
@@ -176,6 +189,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC,
       "FlumeHcommPayloadCopySemanticVersion9") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion10") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);

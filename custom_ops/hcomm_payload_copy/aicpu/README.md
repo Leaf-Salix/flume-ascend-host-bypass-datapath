@@ -56,6 +56,15 @@ recv rank: HcommChannelNotifyWaitOnThread(ready)
            HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer)
            HcommLocalCopyOnThread(local_hccl_buffer -> dst_hbm)
            HcommChannelNotifyRecordOnThread(done)
+
+write-path candidate:
+send rank: HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)
+           HcommChannelNotifyRecordOnThread(ready)
+           HcommChannelNotifyWaitOnThread(done)
+
+recv rank: HcommChannelNotifyWaitOnThread(ready)
+           HcommLocalCopyOnThread(local_hccl_buffer -> dst_hbm)
+           HcommChannelNotifyRecordOnThread(done)
 ```
 
 The default recv path is `payload_recv_path=local-buffer`. A diagnostic
@@ -63,6 +72,9 @@ descriptor bit can switch recv to `payload_recv_path=direct-output`, which calls
 `HcommReadOnThread(remote_hccl_buffer -> dst_hbm)` directly and skips the final
 local copy. This is for isolating output-copy failures; it does not replace the
 default staging path.
+The write-path candidate is selected by `--hcomm-payload-write-path` and is
+reported as `payload_transfer_mode=write`; the default read-path reports
+`payload_transfer_mode=read`.
 
 The descriptor also carries a batch tag and a device-visible `status_word`.
 The runtime fills a stable default batch tag, `flume_hcomm_payload`, unless the

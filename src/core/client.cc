@@ -237,6 +237,7 @@ struct HcommProbeOptions {
   flume_hcomm_payload_comm_binding_t payload_comm_binding =
       FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
   bool payload_force_channel_fence = false;
+  bool payload_write_path = false;
 };
 
 struct HcommChannelResourceInfo {
@@ -563,6 +564,12 @@ bool NormalizeHcommProbeOptions(
             sizeof(options->payload_force_channel_fence)) {
       normalized.payload_force_channel_fence =
           options->payload_force_channel_fence != 0;
+    }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t,
+                 payload_write_path) +
+            sizeof(options->payload_write_path)) {
+      normalized.payload_write_path = options->payload_write_path != 0;
     }
   }
 
@@ -2123,6 +2130,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               const std::string& payload_batch_tag,
                               bool payload_recv_direct_output,
                               bool payload_force_channel_fence,
+                              bool payload_write_path,
                               flume_hcomm_payload_comm_binding_t
                                   payload_comm_binding,
                               flume_hcomm_payload_copy_desc_v1* desc) {
@@ -2155,6 +2163,9 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
         FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
         FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING;
   }
+  if (payload_write_path) {
+    desc->completion_mode |= FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH;
+  }
   desc->aicpu_thread = resource_info.aicpu_ts_thread;
   desc->channel_handle = resource_info.channel_handle;
   desc->user_buffer = reinterpret_cast<uint64_t>(user_buffer);
@@ -2174,7 +2185,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
   desc->reserved2[0] = disable_payload_batch_mode ?
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED :
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT;
-  desc->reserved2[1] = payload_recv_direct_output ?
+  desc->reserved2[1] = (payload_recv_direct_output && !payload_write_path) ?
       FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT :
       FLUME_HCOMM_PAYLOAD_RECV_PATH_LOCAL_BUFFER;
   desc->cpu_thread_on_aicpu = resource_info.cpu_thread_on_aicpu;
@@ -2611,6 +2622,8 @@ std::string PayloadKernelStatusName(uint32_t status) {
       return "comm-release-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED:
       return "output-copy-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED:
+      return "remote-write-failed";
     default:
       return std::string("unknown-") + std::to_string(status);
   }
@@ -2654,6 +2667,8 @@ std::string PayloadFailureStepName(uint32_t status) {
       return "comm-release";
     case FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED:
       return "output-copy";
+    case FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED:
+      return "remote-write";
     default:
       return std::string("unknown-") + std::to_string(status);
   }
@@ -2736,6 +2751,9 @@ std::string PayloadDescriptorDetail(
   }
   const bool recv_direct_output =
       desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  const bool write_path =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
   const flume_hcomm_payload_comm_binding_t comm_binding =
       PayloadDescCommBinding(desc);
   const bool skip_comm_acquire =
@@ -2767,6 +2785,7 @@ std::string PayloadDescriptorDetail(
          std::to_string(flume_hcomm_payload_copy_desc_fingerprint(&desc)) +
          " payload_desc_batch_mode=" + (batch_disabled ? "off" : "on") +
          " payload_desc_batch_tag=" + batch_tag_state +
+         " payload_transfer_mode=" + (write_path ? "write" : "read") +
          " payload_recv_path=" +
          (recv_direct_output ? "direct-output" : "local-buffer") +
          " payload_desc_local_hccl_buffer_bytes=" +
@@ -2868,6 +2887,14 @@ std::string PayloadTraceEventName(uint32_t event) {
       return "comm-release-enter";
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE:
       return "comm-release-done";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER:
+      return "send-remote-write-enter";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_DONE:
+      return "send-remote-write-done";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER:
+      return "send-channel-fence-enter";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_DONE:
+      return "send-channel-fence-done";
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT:
       return "kernel-exit";
     default:
@@ -2973,6 +3000,8 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
       (trace_words[12] &
        (FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
         FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING)) != 0;
+  const bool write_path =
+      (trace_words[12] & FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
   if (!skip_comm_acquire) {
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE);
@@ -2988,6 +3017,15 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
   if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE);
+    if (write_path) {
+      append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_DONE);
+      if ((trace_words[12] & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK) ==
+          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+        append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER,
+               FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_DONE);
+      }
+    }
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE);
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
@@ -2995,14 +3033,17 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
   } else if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE);
-    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER,
-           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE);
-    if ((trace_words[12] & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK) ==
-        FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
-      append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER,
-             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE);
+    if (!write_path) {
+      append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE);
+      if ((trace_words[12] & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK) ==
+          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+        append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER,
+               FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE);
+      }
     }
-    if (trace_words[11] != FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT) {
+    if (write_path ||
+        trace_words[11] != FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT) {
       append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_ENTER,
              FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_DONE);
     }
@@ -3049,6 +3090,8 @@ bool PayloadTraceEventIsEnter(uint32_t event) {
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER:
@@ -3099,10 +3142,15 @@ std::string PayloadTracePrimitivePath(const uint32_t* trace_words) {
       trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
     return "missing";
   }
+  const bool write_path =
+      (trace_words[12] & FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
   if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
-    return "send-local-copy";
+    return write_path ? "send-write" : "send-local-copy";
   }
   if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    if (write_path) {
+      return "recv-write-local-copy";
+    }
     return trace_words[11] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT ?
         "recv-read-direct-output" : "recv-read-local-copy";
   }
@@ -3157,6 +3205,10 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
               (((trace_words[12] &
                  FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0) ?
                    "diagnostic-skip" : "comm-name")) +
+         " payload_trace_transfer_mode=" +
+         (((trace_words[12] &
+            FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0) ?
+              "write" : "read") +
          " payload_trace_ready_notify_idx=" + std::to_string(trace_words[13]) +
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
@@ -3253,6 +3305,17 @@ std::string HcommPayloadCompletionDetail(
                 FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN ?
       " payload_completion_mode=channel-fence" :
       " payload_completion_mode=ordered-notify";
+  const bool write_path =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
+  if (write_path) {
+    detail += desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND ?
+        " payload_transfer=send-write" :
+        " payload_transfer=recv-write-local-copy";
+  } else {
+    detail += desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND ?
+        " payload_transfer=send-read-source" : " payload_transfer=recv-read";
+  }
   detail += resource_info.host_thread_notify_ready ?
       " payload_completion=thread-notify+stream-sync+status-word" :
       " payload_completion=stream-sync+status-word";
@@ -3285,6 +3348,7 @@ std::string HcommPayloadRuntimeDetail(
          " payload_semantic=present payload_semantic_v5=present "
          "payload_semantic_v6=present payload_semantic_v7=present "
          "payload_semantic_v8=present payload_semantic_v9=present "
+         "payload_semantic_v10=present "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }
@@ -3301,6 +3365,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
     bool payload_force_channel_fence,
+    bool payload_write_path,
     flume_hcomm_payload_comm_binding_t payload_comm_binding,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
@@ -3420,6 +3485,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                            bytes, comm_name, disable_payload_batch_mode,
                            payload_batch_tag, payload_recv_direct_output,
                            payload_force_channel_fence,
+                           payload_write_path,
                            payload_comm_binding,
                            &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
@@ -3590,6 +3656,29 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v8=present payload_semantic_v9=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle semantic_v10_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC,
+      &semantic_v10_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_semantic=present payload_semantic_v5=present "
+           "payload_semantic_v6=present payload_semantic_v7=present "
+           "payload_semantic_v8=present payload_semantic_v9=present "
+           "payload_semantic_v10=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC +
            PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
@@ -4532,6 +4621,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
     bool payload_force_channel_fence,
+    bool payload_write_path,
     flume_hcomm_payload_comm_binding_t payload_comm_binding,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
@@ -4546,6 +4636,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   (void)payload_batch_tag;
   (void)payload_recv_direct_output;
   (void)payload_force_channel_fence;
+  (void)payload_write_path;
   (void)payload_comm_binding;
   (void)resource_info;
   if (status != nullptr) {
@@ -6165,7 +6256,8 @@ int flume_hcomm_payload_send_ex(
       static_cast<uint8_t*>(src->ptr) + src_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
       options.payload_recv_direct_output, options.payload_force_channel_fence,
-      options.payload_comm_binding, resource_info, launcher,
+      options.payload_write_path, options.payload_comm_binding,
+      resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
@@ -6287,7 +6379,8 @@ int flume_hcomm_payload_recv_ex(
       static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
       options.payload_recv_direct_output, options.payload_force_channel_fence,
-      options.payload_comm_binding, resource_info, launcher,
+      options.payload_write_path, options.payload_comm_binding,
+      resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,

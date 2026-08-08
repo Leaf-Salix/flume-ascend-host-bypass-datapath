@@ -20,12 +20,17 @@ Current status:
   `FlumeHcommCanaryDirectAclrtKernel`. The default device kernel build now
   compiles this canary without `pkg_inc`, `hccl_launch.h`,
   `hcomm_primitives.h`, or `hccl_res_expt.h`.
-- Stage 3B.3E adds the first true HCOMM pair-copy kernel:
+- Stage 3B.3E adds the first true HCOMM read-path pair-copy kernel:
   `FlumeHcommPayloadCopyDirectAclrtKernel`. It is behind
   `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` because the kernel itself
   calls public `hcomm_primitives.h` APIs: `HcommLocalCopyOnThread`,
   `HcommReadOnThread`, and Channel Notify primitives. This direct ACL payload
   package does not require `hccl_launch.h` or `pkg_inc`.
+- Stage 3B.3F adds a write-path candidate behind the same payload kernel:
+  `--hcomm-payload-write-path` makes the send rank call
+  `HcommWriteOnThread(local HCCL Buffer -> remote HCCL Buffer)` after copying
+  user HBM into its local HCCL Buffer. The recv rank waits for ready and then
+  locally copies from its HCCL Buffer into output HBM.
 - Payload copy now has an experimental kernel path, but it is not part of the
   default no-internal-header canary build and still requires remote validation
   with the HCOMM primitive payload package enabled.
@@ -50,6 +55,10 @@ recv rank:
   HcommReadOnThread(remote HCCL Buffer -> local HCCL Buffer)
   HcommLocalCopyOnThread(local HCCL Buffer -> output)
   HcommChannelNotifyRecordOnThread(done)
+
+write-path candidate:
+  send rank performs HcommWriteOnThread(local HCCL Buffer -> remote HCCL Buffer)
+  recv rank waits ready and local-copies its HCCL Buffer into output HBM
 ```
 
 The default recv path intentionally stages through the local HCCL Buffer before
@@ -274,6 +283,8 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion6`,
 `FlumeHcommPayloadCopySemanticVersion7`,
 `FlumeHcommPayloadCopySemanticVersion8`,
+`FlumeHcommPayloadCopySemanticVersion9`,
+`FlumeHcommPayloadCopySemanticVersion10`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
 `FlumeHcommPayloadStatusWordCount`,
@@ -285,9 +296,9 @@ second status word is written as `payload_kernel_hcomm_ret=0`, the expected
 status word count, and the requirement that the kernel acquires/releases the
 HCOMM communicator by name. Payload-ready preflight also requires the AICPU SO
 to reference the HCOMM primitive symbols used by the payload path, including
-`HcommLocalCopyOnThread`, `HcommReadOnThread`, HCOMM Channel Notify, Batch, and
-Comm Acquire/Release APIs. A marker-only SO is therefore not accepted as a real
-payload package.
+`HcommLocalCopyOnThread`, `HcommReadOnThread`, `HcommWriteOnThread`, HCOMM
+Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
+therefore not accepted as a real payload package.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and
@@ -326,12 +337,15 @@ Strict-positive success must include
 `payload_status_schema=v3`, `payload_status_word_count=10`,
 `payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_schema=v2`, `payload_trace_word_count=80`, `payload_trace_event=kernel-exit`,
-`payload_trace_order=passed`, `payload_trace_ret_order=passed`, `payload_trace_primitive_path=send-local-copy|recv-read-*`, `payload_trace_result=success`,
+`payload_trace_order=passed`, `payload_trace_ret_order=passed`,
+`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`,
+`payload_transfer_mode=read|write`, `payload_trace_result=success`,
 `payload_comm_binding=comm-name` plus `payload_comm_acquire=default`, or
 explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
-`payload_semantic_v7=present`, `payload_semantic_v8=present`, `payload_semantic_v9=present`,
+`payload_semantic_v7=present`, `payload_semantic_v8=present`,
+`payload_semantic_v9=present`, `payload_semantic_v10=present`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and
 `fallback=none` on both ranks.

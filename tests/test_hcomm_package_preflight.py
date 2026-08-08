@@ -50,6 +50,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "int HcommBatchModeEnd(const char*);",
             "int HcommLocalCopyOnThread(ThreadHandle, void*, const void*, unsigned long long);",
             "int HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, unsigned long long);",
+            "int HcommWriteOnThread(ThreadHandle, ChannelHandle, void*, const void*, unsigned long long);",
             "int HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, unsigned int);",
             "int HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, unsigned int, unsigned int);",
             "int HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);",
@@ -65,6 +66,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "  r += HcommChannelNotifyRecordOnThread(1, 2, 0);",
             "  r += HcommChannelNotifyWaitOnThread(1, 2, 1, 60);",
             "  r += HcommReadOnThread(1, 2, a, b, 8);",
+            "  r += HcommWriteOnThread(1, 2, b, a, 8);",
             "  r += HcommChannelFenceOnThread(1, 2);",
             "  r += HcommThreadNotifyWaitOnThread(1, 0, 60);",
             "  r += HcommThreadNotifyRecordOnThread(1, 3, 0);",
@@ -139,6 +141,14 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
                     "stale_semantic_v7", "stale_semantic_v8"):
         lines.append(
             "unsigned int FlumeHcommPayloadCopySemanticVersion9(void) "
+            "{ return 1; }"
+        )
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopySemanticVersion10(void) "
             "{ return 1; }"
         )
     if mode not in ("legacy", "stale_v2", "stale_v3",
@@ -297,6 +307,17 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopySemanticVersion9",
             }
         }
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9"):
+        payload["FlumeHcommPayloadCopySemanticVersion10"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopySemanticVersion10",
+            }
+        }
     if mode not in ("legacy", "stale_v2", "stale_v3",
                     "stale_v4_no_comm_acquire",
                     "canary"):
@@ -373,6 +394,7 @@ typedef uint64_t ChannelHandle;
 typedef uint64_t ThreadHandle;
 int32_t HcommLocalCopyOnThread(ThreadHandle, void*, const void*, uint64_t);
 int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
+int32_t HcommWriteOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, uint32_t);
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, uint32_t, uint32_t);
 int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);
@@ -401,6 +423,7 @@ typedef uint64_t ChannelHandle;
 typedef uint64_t ThreadHandle;
 int32_t HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, uint64_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
+int32_t HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, uint32_t c, uint32_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
@@ -651,6 +674,20 @@ def main() -> int:
         assert "reason=payload kernel package has a stale payload semantic marker" in stale_semantic_v8.stdout
         assert "current Flume semantic v9 descriptor-fingerprint-capable payload kernel" in stale_semantic_v8.stdout
 
+        stale_semantic_v9_json, stale_semantic_v9_tar = write_package(
+            tmp, mode="stale_semantic_v9")
+        stale_semantic_v9 = run_preflight(
+            repo, stale_semantic_v9_json, stale_semantic_v9_tar)
+        if stale_semantic_v9.returncode == 0:
+            print(stale_semantic_v9.stdout)
+            print(stale_semantic_v9.stderr, file=sys.stderr)
+            raise AssertionError("stale semantic v9 package passed")
+        assert "function.payload_semantic_v9.FlumeHcommPayloadCopySemanticVersion9=present" in stale_semantic_v9.stdout
+        assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=missing" in stale_semantic_v9.stdout
+        assert "function_so.payload_semantic_version_v10.FlumeHcommPayloadCopySemanticVersion10=missing" in stale_semantic_v9.stdout
+        assert "reason=payload kernel package has a stale payload semantic marker" in stale_semantic_v9.stdout
+        assert "current Flume semantic v10 write-path-capable payload kernel" in stale_semantic_v9.stdout
+
         stale_schema_json, stale_schema_tar = write_package(
             tmp, mode="stale_v4_no_status_schema")
         stale_schema = run_preflight(repo, stale_schema_json, stale_schema_tar)
@@ -687,9 +724,11 @@ def main() -> int:
         assert "function.payload_semantic_v7.FlumeHcommPayloadCopySemanticVersion7=present" in marker_only.stdout
         assert "function.payload_semantic_v8.FlumeHcommPayloadCopySemanticVersion8=present" in marker_only.stdout
         assert "function.payload_semantic_v9.FlumeHcommPayloadCopySemanticVersion9=present" in marker_only.stdout
+        assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in marker_only.stdout
         assert "payload_primitive_deps=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
+        assert "function_so.payload_primitive_dep.HcommWriteOnThread=missing" in marker_only.stdout
         assert "reason=payload kernel package is missing HCOMM primitive dependencies" in marker_only.stdout
 
         v4_json, v4_tar = write_package(tmp, mode="v4")
@@ -716,6 +755,8 @@ def main() -> int:
         assert "function_so.payload_semantic_version_v8.FlumeHcommPayloadCopySemanticVersion8=present" in v4.stdout
         assert "function.payload_semantic_v9.FlumeHcommPayloadCopySemanticVersion9=present" in v4.stdout
         assert "function_so.payload_semantic_version_v9.FlumeHcommPayloadCopySemanticVersion9=present" in v4.stdout
+        assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in v4.stdout
+        assert "function_so.payload_semantic_version_v10.FlumeHcommPayloadCopySemanticVersion10=present" in v4.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
@@ -730,6 +771,7 @@ def main() -> int:
         assert "payload_primitive_deps=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in v4.stdout
+        assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
@@ -880,11 +922,13 @@ def main() -> int:
             fixture / "hcomm-primitive-headers.txt").read_text(
                 encoding="utf-8")
         assert "HcommReadOnThread" in primitive_headers
+        assert "HcommWriteOnThread" in primitive_headers
         assert "ThreadHandle" in primitive_headers
         primitive_symbols = (
             fixture / "hcomm-primitive-symbols.txt").read_text(
                 encoding="utf-8")
         assert "HcommReadOnThread: present" in primitive_symbols
+        assert "HcommWriteOnThread: present" in primitive_symbols
         call_shape = (
             fixture / "hcomm-primitive-call-shape-probe.txt").read_text(
                 encoding="utf-8")
