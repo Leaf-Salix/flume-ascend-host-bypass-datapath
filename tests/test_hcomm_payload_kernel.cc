@@ -200,6 +200,22 @@ int main() {
   FLUME_TEST_CHECK(CallsEqual(acquire_fail_calls, 1));
 
   Reset();
+  acquire_comm_ret = 100;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+  FLUME_TEST_CHECK(status[1] == 100U);
+  const int acquire_notify_fail_calls[] = {kAcquireComm, kThreadRecord};
+  FLUME_TEST_CHECK(CallsEqual(acquire_notify_fail_calls, 2));
+
+  Reset();
   release_comm_ret = 98;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
@@ -313,6 +329,21 @@ int main() {
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(call_count == 0);
+
+  Reset();
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  send_desc.comm_name[0] = '\0';
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  const int invalid_notify_calls[] = {kThreadRecord};
+  FLUME_TEST_CHECK(CallsEqual(invalid_notify_calls, 1));
 
   return 0;
 }

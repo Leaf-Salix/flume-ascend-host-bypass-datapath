@@ -48,6 +48,24 @@ void StorePayloadPrimitiveRet(const flume_hcomm_payload_copy_desc_v1& desc,
   status_words[1] = static_cast<unsigned int>(ret);
 }
 
+bool CanRecordPayloadCompletionNotify(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  return HasPayloadDescHeader(desc) &&
+         desc.thread_notify_mode ==
+             FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU &&
+         desc.aicpu_thread != 0 && desc.cpu_thread_on_aicpu != 0;
+}
+
+void BestEffortPayloadCompletionNotify(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (!CanRecordPayloadCompletionNotify(desc)) {
+    return;
+  }
+  (void)HcommThreadNotifyRecordOnThread(
+      static_cast<ThreadHandle>(desc.aicpu_thread),
+      static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
+}
+
 bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
   return HasPayloadDescHeader(desc) && desc.rank_size == 2 &&
          desc.local_rank < desc.rank_size &&
@@ -137,6 +155,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
 unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (!ValidatePayloadDesc(desc)) {
     StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
+    BestEffortPayloadCompletionNotify(desc);
     return kFlumePayloadInvalidArgument;
   }
   StorePayloadStatus(desc, kFlumePayloadHcommError);
@@ -150,6 +169,7 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     StorePayloadPrimitiveRet(desc, ret);
     StorePayloadStatus(desc,
                        FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+    BestEffortPayloadCompletionNotify(desc);
     return FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED;
   }
 
