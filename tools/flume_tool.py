@@ -1346,6 +1346,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_word = marker_value(strict, "payload_status_word")
     strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
     strict_semantic = marker_value(strict, "payload_semantic")
+    strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
 
@@ -1407,6 +1408,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
+            f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
             f"| fallback | {strict_fallback} | expected `none` for real HCOMM payload copy |",
         ])
@@ -1417,7 +1419,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
           (storage_hbm_ok or strict_log is not None)):
         if strict_loader != "passed":
-            if strict_semantic == "missing":
+            if strict_build_mode == "not-internal":
+                next_action = (
+                    "rebuild/reinstall custom-op package in payload mode; "
+                    "installed package is canary/stub-only")
+            elif strict_semantic == "missing":
                 next_action = (
                     "rebuild/reinstall payload custom-op package; semantic "
                     "marker is missing")

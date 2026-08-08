@@ -86,6 +86,20 @@ def strict_log_with_missing_semantic() -> str:
     ])
 
 
+def strict_log_with_canary_build_mode() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=unsupported "
+        "stage3b3e_direct_aclrt_payload_loader=unsupported "
+        "payload_build_mode=not-internal "
+        "stage3b3e_payload_descriptor_handoff=blocked "
+        "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+        "fallback=none\"",
+        "",
+    ])
+
+
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v2,payload_semantic,build_mode_internal\n"
@@ -180,6 +194,16 @@ def main() -> int:
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "| payload semantic marker | missing |" in text
         assert "installed package has stale semantics" in text
+
+        strict_canary_mode = write(tmp / "strict-canary-mode.log",
+                                   strict_log_with_canary_build_mode())
+        canary_mode_dir = tmp / "canary-mode"
+        canary_mode_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            canary_mode_dir, smoke, strict_canary_mode, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| payload build mode | not-internal |" in text
+        assert "installed package is canary/stub-only" in text
 
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()
