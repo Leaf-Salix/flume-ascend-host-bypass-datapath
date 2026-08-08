@@ -15,6 +15,7 @@ extern "C" {
   "FlumeHcommNotifyOnlyDirectAclrtKernel"
 #define FLUME_HCOMM_CANARY_MAGIC 0x4643414eU
 #define FLUME_HCOMM_CANARY_VERSION 1U
+#define FLUME_HCOMM_CANARY_TOKEN 0x43414e59U
 #define FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommCanaryDirectAclrtKernel"
 #define FLUME_HCOMM_PAYLOAD_COPY_MAGIC 0x46504350U
@@ -75,7 +76,9 @@ typedef struct {
   uint32_t rank_size;
   uint32_t expected_token;
   uint32_t observed_token;
-  uint64_t reserved[8];
+  uint64_t status_word;
+  uint64_t observed_token_word;
+  uint64_t reserved[6];
 } flume_hcomm_canary_desc_v1;
 
 typedef struct {
@@ -121,7 +124,7 @@ static inline void flume_hcomm_canary_desc_init(
   desc->magic = FLUME_HCOMM_CANARY_MAGIC;
   desc->version = FLUME_HCOMM_CANARY_VERSION;
   desc->size = (uint32_t)sizeof(flume_hcomm_canary_desc_v1);
-  desc->expected_token = 0x43414e59U;
+  desc->expected_token = FLUME_HCOMM_CANARY_TOKEN;
 }
 
 static inline void flume_hcomm_payload_copy_desc_init(

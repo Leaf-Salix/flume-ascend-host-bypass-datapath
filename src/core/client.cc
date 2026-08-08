@@ -2622,9 +2622,40 @@ std::string TryLaunchHcommDirectAclrtCanary(
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
+  void* canary_status_dev = nullptr;
+  uint32_t canary_status_words[2] = {0xFFFFFFFFU, 0U};
+  acl_ret = aclrtMalloc(&canary_status_dev, sizeof(canary_status_words),
+                        ACL_MEM_MALLOC_HUGE_FIRST);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "api=aclrtMalloc(canary_status) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+  acl_ret = aclrtMemcpy(canary_status_dev, sizeof(canary_status_words),
+                        canary_status_words, sizeof(canary_status_words),
+                        ACL_MEMCPY_HOST_TO_DEVICE);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(canary_status_dev);
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3d_no_internal_headers=on "
+                       "stage3b3d_direct_aclrt_canary_loader=passed "
+                       "stage3b3d_direct_aclrt_canary_handoff=failed "
+                       "api=aclrtMemcpy(canary_status_h2d) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+  desc.status_word = reinterpret_cast<uint64_t>(canary_status_dev);
+  desc.observed_token_word = reinterpret_cast<uint64_t>(
+      static_cast<uint8_t*>(canary_status_dev) + sizeof(uint32_t));
+
   aclrtArgsHandle args_handle = nullptr;
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(canary_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3d_no_internal_headers=on "
@@ -2638,6 +2669,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
   acl_ret =
       aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(canary_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3d_no_internal_headers=on "
@@ -2649,6 +2681,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
 
   acl_ret = aclrtKernelArgsFinalize(args_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(canary_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3d_no_internal_headers=on "
@@ -2670,6 +2703,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
   if (acl_ret == ACL_SUCCESS) {
     acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
     if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtFree(canary_status_dev);
       (void)aclrtBinaryUnLoad(bin_handle);
       *status = FLUME_ERR_BACKEND;
       return std::string("stage3b3d_no_internal_headers=on "
@@ -2681,17 +2715,52 @@ std::string TryLaunchHcommDirectAclrtCanary(
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
     }
+    acl_ret = aclrtMemcpy(canary_status_words, sizeof(canary_status_words),
+                          canary_status_dev, sizeof(canary_status_words),
+                          ACL_MEMCPY_DEVICE_TO_HOST);
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtFree(canary_status_dev);
+      (void)aclrtBinaryUnLoad(bin_handle);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3d_no_internal_headers=on "
+                         "stage3b3d_direct_aclrt_canary_loader=passed "
+                         "stage3b3d_direct_aclrt_canary_handoff=passed "
+                         "stage3b3d_direct_aclrt_canary_launch=passed "
+                         "stage3b3d_direct_aclrt_canary_sync=failed "
+                         "api=aclrtMemcpy(canary_status_d2h) error=\"") +
+             AclErrorMessage(acl_ret) + "\" kernel_func=" +
+             FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+    (void)aclrtFree(canary_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
+    if (canary_status_words[0] != 0 ||
+        canary_status_words[1] != FLUME_HCOMM_CANARY_TOKEN) {
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3d_no_internal_headers=on "
+                         "stage3b3d_direct_aclrt_canary_loader=passed "
+                         "stage3b3d_direct_aclrt_canary_handoff=passed "
+                         "stage3b3d_direct_aclrt_canary_launch=passed "
+                         "stage3b3d_direct_aclrt_canary_sync=passed "
+                         "stage3b3d_direct_aclrt_canary=failed "
+                         "canary_status_word=") +
+             std::to_string(canary_status_words[0]) +
+             " canary_observed_token=" +
+             std::to_string(canary_status_words[1]) + " kernel_func=" +
+             FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
     *status = FLUME_OK;
     return std::string("stage3b3d_no_internal_headers=on "
                        "stage3b3d_direct_aclrt_canary_loader=passed "
                        "stage3b3d_direct_aclrt_canary_handoff=passed "
                        "stage3b3d_direct_aclrt_canary_launch=passed "
                        "stage3b3d_direct_aclrt_canary_sync=passed "
-                       "stage3b3d_direct_aclrt_canary=passed kernel_func=") +
+                       "stage3b3d_direct_aclrt_canary=passed "
+                       "canary_status_word=0 canary_observed_token=") +
+           std::to_string(FLUME_HCOMM_CANARY_TOKEN) + " kernel_func=" +
            FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
   }
 
+  (void)aclrtFree(canary_status_dev);
   (void)aclrtBinaryUnLoad(bin_handle);
   *status = FLUME_ERR_BACKEND;
   return std::string("stage3b3d_no_internal_headers=on "

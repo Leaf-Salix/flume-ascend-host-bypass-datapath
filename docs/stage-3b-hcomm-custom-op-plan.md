@@ -203,9 +203,11 @@ public ACL runtime APIs, and complete on the stream:
 direct_aclrt_canary:
   aclrtBinaryLoadFromFile(...)
   -> aclrtBinaryGetFunction(FlumeHcommCanaryDirectAclrtKernel)
+  -> aclrtMalloc(canary status word)
   -> aclrtKernelArgsAppend(flume_hcomm_canary_desc_v1)
   -> aclrtLaunchKernelWithConfig(...)
   -> aclrtSynchronizeStream(...)
+  -> aclrtMemcpy(canary status word D2H)
 ```
 
 The canary kernel includes only `flume_hcomm_notify_only_abi.h`. It deliberately
@@ -233,12 +235,16 @@ stage3b3d_direct_aclrt_canary_loader=passed
 stage3b3d_direct_aclrt_canary_handoff=passed
 stage3b3d_direct_aclrt_canary_launch=passed
 stage3b3d_direct_aclrt_canary_sync=passed
+canary_status_word=0
+canary_observed_token=1128357465
 stage3b3d_direct_aclrt_canary=passed
 ```
 
-This success marker means the public direct ACL custom-op canary path works. It
-does not mean `HcommChannelNotifyRecordOnThread`, `HcommChannelNotifyWaitOnThread`,
-or payload copy has executed.
+This success marker means the public direct ACL custom-op canary path works and
+the kernel consumed the Flume descriptor strongly enough to write back the
+expected device-visible status/token. It does not mean
+`HcommChannelNotifyRecordOnThread`, `HcommChannelNotifyWaitOnThread`, or payload
+copy has executed.
 
 Stage 3B.3E wires the same direct ACL launch surface to the actual pair-copy
 primitive plan. Host code still does not call HCOMM primitives and does not

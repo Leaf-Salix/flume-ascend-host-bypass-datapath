@@ -415,6 +415,7 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b3c_direct_aclrt_launch|"
                 r"stage3b3d_no_internal_headers|direct_aclrt_canary_candidate|"
                 r"stage3b3d_direct_aclrt_canary|"
+                r"canary_status_word|canary_observed_token|"
                 r"stage3b3e_payload_copy|stage3b3e_direct_aclrt_payload|"
                 r"stage3b3e_payload_descriptor_handoff|stage3b3e_payload_sync|"
                 r"payload_kernel|payload_status_word|"

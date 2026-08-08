@@ -13,6 +13,26 @@ bool ValidateCanaryDesc(const flume_hcomm_canary_desc_v1& desc) {
          desc.peer_rank < desc.rank_size && desc.local_rank != desc.peer_rank;
 }
 
+void StoreCanaryStatus(const flume_hcomm_canary_desc_v1& desc,
+                       unsigned int status) {
+  if (desc.magic != FLUME_HCOMM_CANARY_MAGIC || desc.status_word == 0) {
+    return;
+  }
+  auto* status_word = reinterpret_cast<unsigned int*>(desc.status_word);
+  *status_word = status;
+}
+
+void StoreCanaryToken(const flume_hcomm_canary_desc_v1& desc,
+                      unsigned int token) {
+  if (desc.magic != FLUME_HCOMM_CANARY_MAGIC ||
+      desc.observed_token_word == 0) {
+    return;
+  }
+  auto* token_word = reinterpret_cast<unsigned int*>(
+      desc.observed_token_word);
+  *token_word = token;
+}
+
 }  // namespace
 
 extern "C" unsigned int FlumeHcommCanaryDirectAclrtKernel(void* param) {
@@ -21,9 +41,12 @@ extern "C" unsigned int FlumeHcommCanaryDirectAclrtKernel(void* param) {
   }
   auto* desc = static_cast<flume_hcomm_canary_desc_v1*>(param);
   if (!ValidateCanaryDesc(*desc)) {
+    StoreCanaryStatus(*desc, kFlumeCanaryInvalidArgument);
     return kFlumeCanaryInvalidArgument;
   }
   desc->observed_token = desc->expected_token;
+  StoreCanaryToken(*desc, desc->expected_token);
+  StoreCanaryStatus(*desc, kFlumeCanarySuccess);
   return kFlumeCanarySuccess;
 }
 

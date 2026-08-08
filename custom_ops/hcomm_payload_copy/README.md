@@ -112,14 +112,16 @@ Stage 3B.3D no-internal-header canary path:
 host:
   aclrtBinaryLoadFromFile(installed Flume custom-op JSON)
   aclrtBinaryGetFunction(FlumeHcommCanaryDirectAclrtKernel)
+  aclrtMalloc(canary status word)
   aclrtKernelArgsAppend(flume_hcomm_canary_desc_v1)
   aclrtLaunchKernelWithConfig(...)
   aclrtSynchronizeStream(...)
+  aclrtMemcpy(canary status word D2H)
 
 AICPU/custom-op kernel:
   include only flume_hcomm_notify_only_abi.h
   validate flume_hcomm_canary_desc_v1
-  record a canary token
+  record a device-visible canary status/token
 ```
 
 Stage 3B.3E payload-copy path:

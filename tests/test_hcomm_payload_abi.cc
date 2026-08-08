@@ -15,6 +15,11 @@ int main() {
                 "notify descriptor ABI size changed");
   static_assert(sizeof(flume_hcomm_canary_desc_v1) == 96,
                 "canary descriptor ABI size changed");
+  static_assert(offsetof(flume_hcomm_canary_desc_v1, status_word) == 32,
+                "canary status word offset changed");
+  static_assert(
+      offsetof(flume_hcomm_canary_desc_v1, observed_token_word) == 40,
+      "canary observed token word offset changed");
   static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 176,
                 "payload descriptor ABI size changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, bytes) == 48,
@@ -84,8 +89,11 @@ int main() {
 
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);
-  FLUME_TEST_CHECK(canary.expected_token == 0x43414e59U);
+  FLUME_TEST_CHECK(FLUME_HCOMM_CANARY_TOKEN == 0x43414e59U);
+  FLUME_TEST_CHECK(canary.expected_token == FLUME_HCOMM_CANARY_TOKEN);
   FLUME_TEST_CHECK(canary.observed_token == 0);
+  FLUME_TEST_CHECK(canary.status_word == 0);
+  FLUME_TEST_CHECK(canary.observed_token_word == 0);
 
   flume_hcomm_notify_only_desc_v1 notify = {};
   flume_hcomm_notify_only_desc_init(&notify);
