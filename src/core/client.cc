@@ -14,10 +14,12 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -2017,9 +2019,11 @@ enum class HcommLauncherBackend {
 
 struct HcommCustomOpPackageProbe {
   bool installed = false;
+  bool payload_ready = false;
   std::string vendor = "none";
   std::string json_path;
   std::string source = "none";
+  std::string payload_reason = "not-checked";
 };
 
 struct HcommLauncherDecision {
@@ -2041,6 +2045,49 @@ void AppendMissing(std::vector<std::string>* missing, const std::string& item) {
 
 bool FileExists(const std::string& path) {
   return !path.empty() && access(path.c_str(), F_OK) == 0;
+}
+
+std::string ReadTextFile(const std::string& path) {
+  std::ifstream input(path);
+  if (!input) {
+    return "";
+  }
+  std::ostringstream out;
+  out << input.rdbuf();
+  return out.str();
+}
+
+bool TextContains(const std::string& text, const char* needle) {
+  return needle != nullptr && text.find(needle) != std::string::npos;
+}
+
+bool JsonLooksPayloadReady(const std::string& json_text,
+                           std::string* reason) {
+  const char* required[] = {
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
+      FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC,
+  };
+  if (json_text.empty()) {
+    if (reason != nullptr) {
+      *reason = "payload JSON unreadable or empty";
+    }
+    return false;
+  }
+  for (const char* item : required) {
+    if (!TextContains(json_text, item)) {
+      if (reason != nullptr) {
+        *reason = std::string("payload JSON missing ") + item;
+      }
+      return false;
+    }
+  }
+  if (reason != nullptr) {
+    *reason = "payload-ready JSON markers present";
+  }
+  return true;
 }
 
 std::string NormalizeAscendRoot(std::string root) {
@@ -2113,6 +2160,13 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
     probe.vendor = "explicit";
     probe.json_path = explicit_json;
     probe.source = probe.installed ? "explicit-json" : "explicit-json-missing";
+    if (probe.installed) {
+      probe.payload_ready =
+          JsonLooksPayloadReady(ReadTextFile(probe.json_path),
+                                &probe.payload_reason);
+    } else {
+      probe.payload_reason = "custom-op JSON missing";
+    }
     return probe;
   }
   std::vector<std::string> vendors =
@@ -2131,6 +2185,9 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
         probe.vendor = vendor;
         probe.json_path = json_path;
         probe.source = "root-scan";
+        probe.payload_ready =
+            JsonLooksPayloadReady(ReadTextFile(probe.json_path),
+                                  &probe.payload_reason);
         return probe;
       }
     }
@@ -2212,8 +2269,11 @@ std::string DescribeHcommLauncherDecision(
          " hcomm_primitives=" + (decision.hcomm_primitives ? "on" : "off") +
          " custom_op_package=" +
          (decision.package.installed ? "present" : "missing") +
+         " payload_package=" +
+         (decision.package.payload_ready ? "ready" : "not-ready") +
          " package_vendor=" + decision.package.vendor +
          " package_source=" + decision.package.source +
+         " payload_package_reason=\"" + decision.package.payload_reason + "\"" +
          " reason=\"" + JoinReasons(decision.missing) + "\"";
 }
 
@@ -2354,6 +2414,12 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     *status = FLUME_ERR_UNSUPPORTED;
     return MakeDirectAclrtPayloadBlockedDetail(decision,
                                                "custom_op_package missing");
+  }
+  if (!decision.package.payload_ready) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, std::string("payload package not ready: ") +
+                      decision.package.payload_reason);
   }
   if (acl_stream == nullptr || user_buffer == nullptr || bytes == 0) {
     *status = FLUME_ERR_INVALID_ARGUMENT;
