@@ -1897,6 +1897,86 @@ std::string MakeHcommPayloadPlanDetail(
          channel_detail + "\"";
 }
 
+std::string DetailQuote(const std::string& text) {
+  std::string out;
+  out.reserve(text.size());
+  for (char ch : text) {
+    if (ch == '"') {
+      out.push_back('\'');
+    } else if (ch == '\n' || ch == '\r' || ch == '\t') {
+      out.push_back(' ');
+    } else {
+      out.push_back(ch);
+    }
+  }
+  return out;
+}
+
+std::string PayloadResourceStepFromError(const std::string& error) {
+  auto has = [&error](const char* needle) {
+    return error.find(needle) != std::string::npos;
+  };
+  if (has("HcclGetHcclBuffer returned an empty HCCL buffer")) {
+    return "local-hccl-buffer-empty";
+  }
+  if (has("HcclGetHcclBuffer returned an empty remote HCCL buffer")) {
+    return "remote-hccl-buffer-empty";
+  }
+  if (has("HcclGetHcclBuffer")) {
+    return "local-hccl-buffer";
+  }
+  if (has("HcclThreadAcquireWithStream(CPU_TS)")) {
+    return "cpu-ts-thread";
+  }
+  if (has("HcclThreadAcquire(AICPU_TS)")) {
+    return "aicpu-ts-thread";
+  }
+  if (has("HcclThreadExportToCommEngine")) {
+    return "thread-export";
+  }
+  if (has("rank graph")) {
+    return "rank-graph";
+  }
+  if (has("HcclChannelAcquire")) {
+    return "channel-acquire";
+  }
+  if (has("HcclChannelGetHcclBuffer")) {
+    return "remote-hccl-buffer";
+  }
+  if (has("protocol")) {
+    return "protocol-select";
+  }
+  if (has("engine")) {
+    return "engine-select";
+  }
+  return "unknown";
+}
+
+std::string MakeHcommPayloadResourceAcquireFailedDetail(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    uint64_t bytes,
+    int probe_status,
+    const std::string& error) {
+  const bool unsupported = probe_status == FLUME_ERR_UNSUPPORTED;
+  return std::string("stage3b3e_payload_copy=") +
+         (unsupported ? "unsupported" : "failed") +
+         " stage3b3e_direct_aclrt_payload_loader=not-attempted "
+         "stage3b3e_payload_descriptor_handoff=blocked "
+         "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+         "stage3b3e_payload_sync=not-attempted "
+         "payload_resource_acquire=failed payload_resource_step=" +
+         PayloadResourceStepFromError(error) +
+         " payload_resource_status=" +
+         (unsupported ? "unsupported" : "backend-error") +
+         " payload_role=" + PayloadRoleName(role) +
+         " payload_local_rank=" + std::to_string(state.rank) +
+         " payload_peer_rank=" + std::to_string(peer_rank) +
+         " payload_bytes=" + std::to_string(bytes) +
+         " error=\"" + DetailQuote(error) + "\"";
+}
+
 std::string MakeHcommCustomOpLaunchSmokeDetail(
     const CommState& state,
     uint32_t peer_rank,
@@ -5333,7 +5413,15 @@ int flume_hcomm_payload_send_ex(
   if (!ProbeHcommChannelResources(state, dest_rank, options, acl_stream,
                                   &usable_buffer_bytes, &probe_status,
                                   &detail, &error, &resource_info)) {
-    *out = MakeIo(probe_status, 0, 0, error);
+    std::string resource_detail = MakeHcommPayloadResourceAcquireFailedDetail(
+        flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, bytes,
+        probe_status, error);
+    *out = MakeIo(
+        probe_status, 0, 0,
+        std::string("HCOMM payload send custom-op/AICPU resource acquisition "
+                    "failed; fallback=") +
+            (FLUME_HAVE_HCCL_P2P ? "hccl-p2p; " : "none; ") +
+            resource_detail);
     return FLUME_OK;
   }
   std::string plan_detail = MakeHcommPayloadPlanDetail(
@@ -5445,7 +5533,15 @@ int flume_hcomm_payload_recv_ex(
   if (!ProbeHcommChannelResources(state, src_rank, options, acl_stream,
                                   &usable_buffer_bytes, &probe_status,
                                   &detail, &error, &resource_info)) {
-    *out = MakeIo(probe_status, 0, 0, error);
+    std::string resource_detail = MakeHcommPayloadResourceAcquireFailedDetail(
+        flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, bytes,
+        probe_status, error);
+    *out = MakeIo(
+        probe_status, 0, 0,
+        std::string("HCOMM payload recv custom-op/AICPU resource acquisition "
+                    "failed; fallback=") +
+            (FLUME_HAVE_HCCL_P2P ? "hccl-p2p; " : "none; ") +
+            resource_detail);
     return FLUME_OK;
   }
   std::string plan_detail = MakeHcommPayloadPlanDetail(

@@ -111,6 +111,10 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
 把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
 `output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
+如果失败发生在 kernel launch 之前的 HCOMM resource acquisition 阶段，
+日志会打印 `payload_resource_acquire=failed` 和
+`payload_resource_step=cpu-ts-thread|aicpu-ts-thread|channel-acquire|remote-hccl-buffer|...`，
+用于区分 thread/channel/HCCL Buffer 资源问题和 custom-op package/primitive 问题。
 它还会输出 host descriptor fingerprint 和 HCOMM resource fingerprint，
 用于核对 payload bytes、local/remote HCCL Buffer size、engine/protocol、
 Channel desc source、channel count 和 notify 数量是否符合预期。

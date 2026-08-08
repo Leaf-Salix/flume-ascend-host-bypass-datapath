@@ -2218,6 +2218,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
     strict_sync = marker_state(strict, "stage3b3e_payload_sync")
+    strict_resource_acquire = marker_value(strict, "payload_resource_acquire")
+    strict_resource_step = marker_value(strict, "payload_resource_step")
+    strict_resource_status = marker_value(strict, "payload_resource_status")
     strict_kernel = marker_value(strict, "payload_kernel_status")
     strict_failure_step = marker_value(strict, "payload_failure_step")
     strict_status_word = marker_value(strict, "payload_status_word")
@@ -2393,6 +2396,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 primitive state | {rank_status[1]['primitive_state']} | rank1 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
             f"| rank0 suggested action | {rank_status[0]['action']} | stage-specific HCOMM payload diagnostic hint |",
             f"| rank1 suggested action | {rank_status[1]['action']} | stage-specific HCOMM payload diagnostic hint |",
+            f"| payload resource acquisition | {strict_resource_acquire} | step={strict_resource_step}, status={strict_resource_status}; this runs before direct ACL package load/launch |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
@@ -2428,7 +2432,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         next_action = PackageTextNextAction(package)
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
           (storage_hbm_ok or strict_log is not None)):
-        if strict_loader != "passed":
+        if strict_resource_step != "missing":
+            next_action = (
+                "fix HCOMM payload resource acquisition before debugging the "
+                f"custom-op package: step `{strict_resource_step}`, "
+                f"status `{strict_resource_status}`")
+        elif strict_loader != "passed":
             if strict_build_mode == "not-internal":
                 next_action = (
                     "rebuild/reinstall custom-op package in payload mode; "

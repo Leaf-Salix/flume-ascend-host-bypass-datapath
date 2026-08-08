@@ -139,6 +139,24 @@ def strict_log_with_comm_acquire_failure() -> str:
         1)
 
 
+def strict_log_with_resource_acquire_failure() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke unsupported: fallback=hccl-p2p "
+        "detail=\"stage3b3e_payload_copy=failed "
+        "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+        "stage3b3e_payload_descriptor_handoff=blocked "
+        "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+        "stage3b3e_payload_sync=not-attempted "
+        "payload_resource_acquire=failed "
+        "payload_resource_step=aicpu-ts-thread "
+        "payload_resource_status=backend-error "
+        "payload_role=send payload_peer_rank=1 payload_bytes=4096 "
+        "fallback=hccl-p2p\"",
+        "",
+    ])
+
+
 def strict_log_with_rank1_remote_read_failure() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -652,6 +670,19 @@ def main() -> int:
         assert "| kernel failure step | local-copy |" in text
         assert ("inspect rank 0 HcommLocalCopyOnThread input HBM to local "
                 "HCCL Buffer path") in text
+
+        strict_resource_fail = write(
+            tmp / "strict-resource-fail.log",
+            strict_log_with_resource_acquire_failure())
+        resource_fail_dir = tmp / "resource-fail"
+        resource_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            resource_fail_dir, smoke, strict_resource_fail, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| payload resource acquisition | failed |" in text
+        assert "step=aicpu-ts-thread, status=backend-error" in text
+        assert ("fix HCOMM payload resource acquisition before debugging "
+                "the custom-op package") in text
 
         strict_comm_acquire_fail = write(
             tmp / "strict-comm-acquire-fail.log",
