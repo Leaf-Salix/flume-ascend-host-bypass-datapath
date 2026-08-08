@@ -2281,6 +2281,28 @@ std::string AclErrorMessage(aclError ret) {
   return std::string("ACL_ERROR(") + std::to_string(static_cast<int>(ret)) + ")";
 }
 
+const char* AclStreamSyncApiName() {
+#if FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
+  return "aclrtSynchronizeStreamWithTimeout";
+#else
+  return "aclrtSynchronizeStream";
+#endif
+}
+
+aclError SyncAclStreamForHcomm(aclrtStream stream, uint32_t timeout_sec) {
+#if FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
+  const uint64_t timeout_ms = static_cast<uint64_t>(timeout_sec) * 1000U;
+  const int32_t acl_timeout =
+      timeout_ms > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) ?
+          std::numeric_limits<int32_t>::max() :
+          static_cast<int32_t>(timeout_ms);
+  return aclrtSynchronizeStreamWithTimeout(stream, acl_timeout);
+#else
+  (void)timeout_sec;
+  return aclrtSynchronizeStream(stream);
+#endif
+}
+
 std::string PayloadKernelStatusName(uint32_t status) {
   switch (status) {
     case 0xFFFFFFFFU:
@@ -2716,8 +2738,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
         static_cast<ThreadHandle>(resource_info.cpu_ts_thread), 0,
         desc.timeout_sec);
     if (notify_ret != 0) {
-      aclError sync_ret =
-          aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+      aclError sync_ret = SyncAclStreamForHcomm(
+          static_cast<aclrtStream>(acl_stream), desc.timeout_sec);
       uint32_t observed_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
       aclError status_ret = aclrtMemcpy(
           observed_status_words, sizeof(observed_status_words),
@@ -2734,7 +2756,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                          "payload_thread_notify=host-aicpu "
                          "api=HcommThreadNotifyWaitOnThread hcomm_ret=") +
              std::to_string(notify_ret) + " post_notify_stream_sync=\"" +
-             AclErrorMessage(sync_ret) + "\" payload_kernel_status=" +
+             AclErrorMessage(sync_ret) + "\" post_notify_stream_sync_api=" +
+             AclStreamSyncApiName() +
+             " payload_kernel_status=" +
              PayloadKernelStatusName(observed_status_words[0]) +
              " payload_status_word=" +
              std::to_string(observed_status_words[0]) +
@@ -2747,7 +2771,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   }
 #endif
 
-  acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+  acl_ret = SyncAclStreamForHcomm(static_cast<aclrtStream>(acl_stream),
+                                  desc.timeout_sec);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
     (void)aclrtFree(kernel_status_dev);
@@ -2757,7 +2782,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=failed "
-                       "api=aclrtSynchronizeStream error=\"") +
+                       "api=") + AclStreamSyncApiName() + " error=\"" +
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
   }
@@ -2968,7 +2993,8 @@ std::string TryLaunchHcommDirectAclrtCanary(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
   if (acl_ret == ACL_SUCCESS) {
-    acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+    acl_ret = SyncAclStreamForHcomm(static_cast<aclrtStream>(acl_stream),
+                                    kDefaultHcommTimeoutSeconds);
     if (acl_ret != ACL_SUCCESS) {
       (void)aclrtFree(canary_status_dev);
       (void)aclrtBinaryUnLoad(bin_handle);
@@ -2978,7 +3004,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
                          "stage3b3d_direct_aclrt_canary_handoff=passed "
                          "stage3b3d_direct_aclrt_canary_launch=passed "
                          "stage3b3d_direct_aclrt_canary_sync=failed "
-                         "api=aclrtSynchronizeStream error=\"") +
+                         "api=") + AclStreamSyncApiName() + " error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC;
     }
@@ -3172,7 +3198,8 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
   if (acl_ret == ACL_SUCCESS) {
-    acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+    acl_ret = SyncAclStreamForHcomm(static_cast<aclrtStream>(acl_stream),
+                                    desc.timeout_sec);
     if (acl_ret != ACL_SUCCESS) {
       (void)aclrtFree(notify_status_dev);
       (void)aclrtBinaryUnLoad(bin_handle);
@@ -3181,7 +3208,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
                          "stage3b3c_descriptor_handoff=passed "
                          "stage3b3c_direct_aclrt_launch=passed "
                          "stage3b3c_direct_aclrt_sync=failed "
-                         "api=aclrtSynchronizeStream error=\"") +
+                         "api=") + AclStreamSyncApiName() + " error=\"" +
              AclErrorMessage(acl_ret) + "\" kernel_func=" +
              FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
     }
