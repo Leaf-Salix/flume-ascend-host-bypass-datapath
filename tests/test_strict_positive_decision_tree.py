@@ -316,6 +316,32 @@ def smoke_with_hcomm_storage_path() -> str:
     ])
 
 
+def smoke_with_rank0_only_hcomm_storage_path() -> str:
+    return "\n".join([
+        "FLUME_BACKEND_CAPS hcomm_primitives=on "
+        "hcomm_payload_scheduler_candidate=on",
+        "hccl collective smoke passed p2p_copy=on",
+        "hcomm channel probe passed",
+        "rank 0 storage HBM smoke sent: "
+        "storage_hbm=hcomm-payload-staging bytes=4096 checksum=7",
+        "",
+    ])
+
+
+def smoke_with_mixed_storage_path() -> str:
+    return "\n".join([
+        "FLUME_BACKEND_CAPS hcomm_primitives=on "
+        "hcomm_payload_scheduler_candidate=on",
+        "hccl collective smoke passed p2p_copy=on",
+        "hcomm channel probe passed",
+        "rank 0 storage HBM smoke sent: "
+        "storage_hbm=hcomm-payload-staging bytes=4096 checksum=7",
+        "rank 1 storage HBM smoke passed: "
+        "storage_hbm=hccl-p2p-staging bytes=4096 checksum=7",
+        "",
+    ])
+
+
 def stale_status_schema_package_log() -> str:
     return "\n".join([
         "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
@@ -851,6 +877,26 @@ def main() -> int:
             hcomm_storage_dir, hcomm_storage_smoke, None, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |" in text
+        assert not flume_tool.DecisionTreeHcommStoragePassed(tree)
+
+        rank0_only_storage = write(tmp / "smoke-rank0-only-storage.log",
+                                   smoke_with_rank0_only_hcomm_storage_path())
+        rank0_only_dir = tmp / "rank0-only-storage-path"
+        rank0_only_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank0_only_dir, rank0_only_storage, strict_pass, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Storage to HBM path ok? | no | `storage_hbm=missing` marker |" in text
+        assert not flume_tool.DecisionTreeHcommStoragePassed(tree)
+
+        mixed_storage = write(tmp / "smoke-mixed-storage.log",
+                              smoke_with_mixed_storage_path())
+        mixed_storage_dir = tmp / "mixed-storage-path"
+        mixed_storage_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            mixed_storage_dir, mixed_storage, strict_pass, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Storage to HBM path ok? | yes | `storage_hbm=hccl-p2p-staging` marker |" in text
         assert not flume_tool.DecisionTreeHcommStoragePassed(tree)
 
         hcomm_storage_strict_dir = tmp / "hcomm-storage-strict-path"

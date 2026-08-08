@@ -1601,6 +1601,25 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
 
 
+def StorageHbmRank1Passed(text: str) -> bool:
+    return re.search(r"\brank 1 storage HBM smoke passed\b", text) is not None
+
+
+def StorageHbmRank1Path(text: str) -> str:
+    for line in text.splitlines():
+        if re.search(r"\brank 1 storage HBM smoke passed\b", line):
+            return MarkerValueFromLine(line, "storage_hbm")
+    return "missing"
+
+
+def StorageHbmHcommPathPassed(text: str) -> bool:
+    for line in text.splitlines():
+        if (re.search(r"\brank 1 storage HBM smoke passed\b", line) and
+                "storage_hbm=hcomm-payload-staging" in line):
+            return True
+    return False
+
+
 def MarkerValueFromLine(line: str, name: str) -> str:
     match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", line)
     return match.group(1) if match else "missing"
@@ -2131,11 +2150,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "hcomm notify-only smoke unsupported" in combined)
     hcomm_payload_ok = "hcomm payload smoke passed" in combined
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in combined
-    storage_hbm_ok = "storage HBM smoke passed" in combined
-    storage_hbm_path = "hcomm-payload-staging" if (
-        "storage_hbm=hcomm-payload-staging" in combined) else (
-            "hccl-p2p-staging" if
-            "storage_hbm=hccl-p2p-staging" in combined else "missing")
+    storage_hbm_ok = StorageHbmRank1Passed(combined)
+    storage_hbm_path = ("hcomm-payload-staging" if
+                        StorageHbmHcommPathPassed(combined) else
+                        StorageHbmRank1Path(combined))
     strict_positive_ok, strict_rank0_ok, strict_rank1_ok = (
         StrictPayloadRankEvidencePassed(strict))
     strict_rank_lines = ExtractStrictPayloadRankLines(strict)
