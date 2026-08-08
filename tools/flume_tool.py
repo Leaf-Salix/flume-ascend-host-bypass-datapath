@@ -1570,12 +1570,16 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         timeout_seconds=args.step_timeout_sec,
     )
     if package_result.returncode != 0:
+        next_steps = WritePayloadPackageBuildNextSteps(runner.run_dir, args)
+        print(f"[ok] payload package next steps -> {next_steps}")
         note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
         note.write_text(
             "hcomm-payload-strict-positive stopped before launch because the "
             "installed Flume HCOMM custom-op package is not payload-ready. "
             "The package must declare and export the V2 direct ACL payload "
-            "kernel and the internal-payload build marker.\n",
+            "kernel and the internal-payload build marker. See "
+            "HCOMM_PAYLOAD_PACKAGE_NEXT_STEPS.txt for the build/install "
+            "command to run before retrying strict-positive.\n",
             encoding="utf-8",
         )
         print(f"[ok] strict-positive scope -> {note}")
@@ -1735,6 +1739,31 @@ def WriteCustomOpInstallNextSteps(
         "when multiple CANN/OPP roots are present because strict-positive "
         "runtime launch treats that JSON as authoritative.",
     ])
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return note
+
+
+def WritePayloadPackageBuildNextSteps(run_dir: Path,
+                                      args: argparse.Namespace) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_PACKAGE_NEXT_STEPS.txt"
+    source_root = ResolveHcclSourceRoot(args)
+    lines = [
+        "Flume HCOMM payload package is not ready",
+        "",
+        "Build and install the internal payload custom-op package, then rerun "
+        "hcomm-payload-strict-positive:",
+        "",
+        "python3 tools/flume_tool.py \\",
+        f"  --hccl-source-root {source_root} \\",
+        "  --custom-op-build-mode payload \\",
+        "  --install-custom-op-package \\",
+        "  hcomm-custom-op-build",
+        "",
+        "After that command passes, follow the generated "
+        "HCOMM_CUSTOM_OP_INSTALL_NEXT_STEPS.txt file. The install step is "
+        "explicit because it changes the target CANN/OPP custom-op "
+        "installation.",
+    ]
     note.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return note
 

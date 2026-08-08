@@ -210,6 +210,13 @@ def main() -> int:
         next_steps_text = next_steps.read_text(encoding="utf-8")
         assert str(installed_json) in next_steps_text
         assert "hcomm-payload-strict-positive" in next_steps_text
+        build_steps = flume_tool.WritePayloadPackageBuildNextSteps(
+            tmp, SimpleNamespace(hccl_source_root=str(repo / "refer" /
+                                                      "cann-src" / "hccl")))
+        build_steps_text = build_steps.read_text(encoding="utf-8")
+        assert "--custom-op-build-mode payload" in build_steps_text
+        assert "--install-custom-op-package" in build_steps_text
+        assert "hcomm-custom-op-build" in build_steps_text
         inferred_tar_preflight = subprocess.run(
             [
                 sys.executable,
