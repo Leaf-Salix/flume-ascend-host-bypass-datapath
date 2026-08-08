@@ -441,6 +441,13 @@ gate. The tool also writes
 candidate's failure step, HCOMM return code, recv path, completion mode, rank
 evidence, fallback marker, and selected status.
 
+For failed payload kernels, host-side trace parsing also emits
+`payload_trace_first_error_event`, `payload_trace_first_error_ret`, and
+`payload_trace_first_error_index`. These markers summarize the first non-zero
+device-side HCOMM primitive return from the trace ring. They are diagnostic
+only; strict-positive success still requires full rank evidence, checksum
+match, and `fallback=none`.
+
 If the batch-enabled strict gate fails inside the payload kernel, use the
 diagnostic no-batch variant to isolate HCOMM primitive execution from
 `HcommBatchModeStart/End` submit semantics:

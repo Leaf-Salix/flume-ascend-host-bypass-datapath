@@ -184,6 +184,11 @@ channel-handle 候选时都会生成
 completion mode、rank evidence 和 selected 状态；真机失败时优先看这个
 矩阵文件。
 
+失败日志还会尽量输出 `payload_trace_first_error_event`、
+`payload_trace_first_error_ret` 和 `payload_trace_first_error_index`。这些字段由
+host 侧解析 device trace 得到，表示第一处非 0 HCOMM primitive 返回；它们只用于
+定位问题，不放宽 strict-positive 门禁。
+
 已有日志也可以离线复核 strict-positive 门禁：
 
 ```bash

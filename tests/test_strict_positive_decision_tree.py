@@ -231,6 +231,9 @@ def strict_log_with_rank1_remote_read_failure() -> str:
         "payload_failure_step=remote-read payload_status_word=9 "
         "payload_kernel_hcomm_ret=88 payload_status_schema=v3 "
         "payload_status_word_count=10 payload_echo=observed "
+        "payload_trace_first_error_event=recv-remote-read-done "
+        "payload_trace_first_error_ret=88 "
+        "payload_trace_first_error_index=7 "
         "fallback=none\"",
         "",
     ])
@@ -1041,6 +1044,7 @@ def main() -> int:
         assert "| rank1 kernel status | remote-read-failed |" in text
         assert "| rank0 kernel HCOMM ret | 0 |" in text
         assert "| rank1 kernel HCOMM ret | 88 |" in text
+        assert "| rank1 first trace error | recv-remote-read-done / 88 |" in text
         assert ("inspect rank 1 HcommReadOnThread remote HCCL Buffer to "
                 "local HCCL Buffer path") in text
 

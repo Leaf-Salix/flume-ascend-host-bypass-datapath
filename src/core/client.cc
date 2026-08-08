@@ -2986,6 +2986,29 @@ std::string PayloadTraceReturnSequence(const std::vector<uint32_t>& returns) {
   return sequence;
 }
 
+std::string PayloadTraceFirstErrorDetail(
+    const std::vector<uint32_t>& events,
+    const std::vector<uint32_t>& returns) {
+  if (events.empty() || events.size() != returns.size()) {
+    return " payload_trace_first_error_event=missing"
+           " payload_trace_first_error_ret=missing"
+           " payload_trace_first_error_index=missing";
+  }
+  for (size_t i = 0; i < events.size(); ++i) {
+    if (returns[i] == 0U || returns[i] == 0xFFFFFFFFU) {
+      continue;
+    }
+    return std::string(" payload_trace_first_error_event=") +
+           PayloadTraceEventName(events[i]) +
+           " payload_trace_first_error_ret=" +
+           std::to_string(static_cast<int32_t>(returns[i])) +
+           " payload_trace_first_error_index=" + std::to_string(i);
+  }
+  return " payload_trace_first_error_event=none"
+         " payload_trace_first_error_ret=0"
+         " payload_trace_first_error_index=-1";
+}
+
 std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
                                                 bool include_thread_notify) {
   std::vector<uint32_t> expected;
@@ -3221,7 +3244,8 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          std::to_string(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) +
          " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) +
          "\" payload_trace_ret_sequence=\"" +
-         PayloadTraceReturnSequence(returns) + "\"";
+         PayloadTraceReturnSequence(returns) + "\"" +
+         PayloadTraceFirstErrorDetail(events, returns);
 }
 
 std::string NotifyKernelStatusName(uint32_t status) {

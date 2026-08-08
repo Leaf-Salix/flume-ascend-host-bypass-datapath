@@ -2299,6 +2299,10 @@ def WriteHcommPayloadWritePathCandidateMatrix(
             "rank1": "passed" if rank1_ok else "missing",
             "failure": _CandidateMarker(text, "payload_failure_step"),
             "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "trace_error": _CandidateMarker(
+                text, "payload_trace_first_error_event"),
+            "trace_error_ret": _CandidateMarker(
+                text, "payload_trace_first_error_ret"),
             "binding": _CandidateMarker(text, "payload_comm_binding"),
             "batch": _CandidateMarker(text, "payload_batch_mode"),
             "completion": _CandidateMarker(text, "payload_completion_mode"),
@@ -2328,15 +2332,17 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['step']} | {row['returncode']} | {row['selected']} | "
             f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
-            f"{row['failure']} | {row['hcomm_ret']} | {row['binding']} | "
-            f"{row['batch']} | {row['completion']} | {row['transfer']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | "
+            f"{row['trace_error']} | {row['trace_error_ret']} | "
+            f"{row['binding']} | {row['batch']} | "
+            f"{row['completion']} | {row['transfer']} | "
             f"{row['trace']} | {row['fallback']} | {row['log']} |")
     lines.extend([
         "",
@@ -2734,6 +2740,10 @@ def WriteHcommPayloadCandidateMatrix(
             "rank1": "passed" if rank1_ok else "missing",
             "failure": _CandidateMarker(text, "payload_failure_step"),
             "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "trace_error": _CandidateMarker(
+                text, "payload_trace_first_error_event"),
+            "trace_error_ret": _CandidateMarker(
+                text, "payload_trace_first_error_ret"),
             "binding": _CandidateMarker(text, "payload_comm_binding"),
             "batch": _CandidateMarker(text, "payload_batch_mode"),
             "recv": _CandidateMarker(text, "payload_recv_path"),
@@ -2763,15 +2773,17 @@ def WriteHcommPayloadCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | binding | batch | recv_path | completion | trace_path | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | recv_path | completion | trace_path | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['step']} | {row['returncode']} | {row['selected']} | "
             f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
-            f"{row['failure']} | {row['hcomm_ret']} | {row['binding']} | "
-            f"{row['batch']} | {row['recv']} | {row['completion']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | "
+            f"{row['trace_error']} | {row['trace_error_ret']} | "
+            f"{row['binding']} | {row['batch']} | {row['recv']} | "
+            f"{row['completion']} | "
             f"{row['trace']} | {row['fallback']} | {row['log']} |")
     lines.extend([
         "",
@@ -3595,6 +3607,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                                   "payload_status_word"),
             "hcomm_ret": marker_value_from_line(rank_line,
                                                 "payload_kernel_hcomm_ret"),
+            "trace_first_error_event": marker_value_from_line(
+                rank_line, "payload_trace_first_error_event"),
+            "trace_first_error_ret": marker_value_from_line(
+                rank_line, "payload_trace_first_error_ret"),
+            "trace_first_error_index": marker_value_from_line(
+                rank_line, "payload_trace_first_error_index"),
             "primitive_state": marker_value_from_line(
                 rank_line, "payload_primitive_state"),
             "fallback": marker_value_from_line(rank_line, "fallback"),
@@ -3705,6 +3723,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 kernel failure step | {rank_status[1]['failure_step']} | rank1 `payload_failure_step` |",
             f"| rank0 kernel HCOMM ret | {rank_status[0]['hcomm_ret']} | rank0 `payload_kernel_hcomm_ret` |",
             f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
+            f"| rank0 first trace error | {rank_status[0]['trace_first_error_event']} / {rank_status[0]['trace_first_error_ret']} | rank0 first non-zero HCOMM trace return, index `{rank_status[0]['trace_first_error_index']}` |",
+            f"| rank1 first trace error | {rank_status[1]['trace_first_error_event']} / {rank_status[1]['trace_first_error_ret']} | rank1 first non-zero HCOMM trace return, index `{rank_status[1]['trace_first_error_index']}` |",
             f"| rank0 primitive state | {rank_status[0]['primitive_state']} | rank0 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
             f"| rank1 primitive state | {rank_status[1]['primitive_state']} | rank1 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
             f"| rank0 suggested action | {rank_status[0]['action']} | stage-specific HCOMM payload diagnostic hint |",
