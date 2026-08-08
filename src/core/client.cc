@@ -2248,6 +2248,8 @@ bool JsonLooksPayloadReady(const std::string& json_text,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC,
+      FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC,
+      FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC,
       FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC,
   };
   if (json_text.empty()) {
@@ -3501,6 +3503,46 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_status_word_count_marker=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle trace_schema_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC,
+      &trace_schema_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_trace_schema_marker=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle trace_word_count_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC,
+      &trace_word_count_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_trace_word_count_marker=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC +
            PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
