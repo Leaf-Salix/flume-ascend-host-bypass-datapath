@@ -296,6 +296,26 @@ def HcclHeaderSyntaxCommand() -> Optional[list[str]]:
     return command
 
 
+def HcommPayloadKernelSyntaxCommand() -> Optional[list[str]]:
+    cxx = os.environ.get("CXX", "c++")
+    if shutil.which(cxx) is None:
+        return None
+    include_roots = [
+        REPO_ROOT / "custom_ops" / "hcomm_payload_copy" / "include",
+        REPO_ROOT / "refer" / "cann-src" / "hcomm" / "include",
+        REPO_ROOT / "refer" / "cann-src" / "runtime" / "include" / "external",
+        REPO_ROOT / "refer" / "cann-src" / "hcomm" / "test" / "stub" /
+        "depends" / "include",
+    ]
+    if not all(path.exists() for path in include_roots[1:]):
+        return None
+    command = [cxx, "-std=c++17", "-fsyntax-only"]
+    command.extend(f"-I{path}" for path in include_roots)
+    command.append(str(REPO_ROOT / "custom_ops" / "hcomm_payload_copy" /
+                       "aicpu" / "payload_copy_kernel.cc"))
+    return command
+
+
 def ResolveHcclSourceRoot(args: argparse.Namespace) -> Path:
     if args.hccl_source_root:
         return Path(args.hccl_source_root).expanduser().resolve()
@@ -1077,6 +1097,11 @@ def run_local(args: argparse.Namespace) -> int:
     syntax_command = HcclHeaderSyntaxCommand()
     if syntax_command is not None:
         runner.run("hccl-header-syntax", syntax_command, required=False,
+                   timeout_seconds=args.step_timeout_sec)
+    payload_kernel_syntax_command = HcommPayloadKernelSyntaxCommand()
+    if payload_kernel_syntax_command is not None:
+        runner.run("hcomm-payload-kernel-syntax",
+                   payload_kernel_syntax_command, required=False,
                    timeout_seconds=args.step_timeout_sec)
     return runner.write_summary()
 
