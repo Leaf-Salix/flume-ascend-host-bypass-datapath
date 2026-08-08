@@ -47,7 +47,8 @@ send rank:
 
 recv rank:
   HcommChannelNotifyWaitOnThread(ready)
-  HcommReadOnThread(remote HCCL Buffer -> output)
+  HcommReadOnThread(remote HCCL Buffer -> local HCCL Buffer)
+  HcommLocalCopyOnThread(local HCCL Buffer -> output)
   HcommChannelNotifyRecordOnThread(done)
 ```
 
@@ -135,7 +136,8 @@ send rank kernel:
 
 recv rank kernel:
   HcommChannelNotifyWaitOnThread(ready)
-  HcommReadOnThread(remote HCCL Buffer -> dst_hbm)
+  HcommReadOnThread(remote HCCL Buffer -> local HCCL Buffer)
+  HcommLocalCopyOnThread(local HCCL Buffer -> dst_hbm)
   HcommChannelNotifyRecordOnThread(done)
 ```
 

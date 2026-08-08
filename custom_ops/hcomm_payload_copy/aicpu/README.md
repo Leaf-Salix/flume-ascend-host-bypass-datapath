@@ -53,7 +53,8 @@ send rank: HcommLocalCopyOnThread(src_hbm -> local_hccl_buffer)
            HcommChannelNotifyWaitOnThread(done)
 
 recv rank: HcommChannelNotifyWaitOnThread(ready)
-           HcommReadOnThread(remote_hccl_buffer -> dst_hbm)
+           HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer)
+           HcommLocalCopyOnThread(local_hccl_buffer -> dst_hbm)
            HcommChannelNotifyRecordOnThread(done)
 ```
 

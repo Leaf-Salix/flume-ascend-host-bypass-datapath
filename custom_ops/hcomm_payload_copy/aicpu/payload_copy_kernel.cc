@@ -162,8 +162,8 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
       return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED;
     }
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
-    ret = HcommReadOnThread(thread, channel, user_buffer, remote_hccl_buffer,
-                            desc.bytes);
+    ret = HcommReadOnThread(thread, channel, local_hccl_buffer,
+                            remote_hccl_buffer, desc.bytes);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED;
@@ -177,6 +177,14 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED;
       }
+    }
+    BeginPayloadPrimitive(desc,
+                          FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+    ret = HcommLocalCopyOnThread(thread, user_buffer, local_hccl_buffer,
+                                 desc.bytes);
+    if (ret != 0) {
+      StorePayloadPrimitiveRet(desc, ret);
+      return FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED;
     }
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);

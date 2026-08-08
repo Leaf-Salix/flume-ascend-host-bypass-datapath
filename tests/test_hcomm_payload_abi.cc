@@ -26,7 +26,7 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 4,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 5,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -102,6 +102,8 @@ int main() {
                 "payload comm acquire status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED == 15,
                 "payload comm release status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED == 16,
+                "payload output-copy status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
                 "notify success status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT == 1,

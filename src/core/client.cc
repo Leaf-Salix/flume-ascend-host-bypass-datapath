@@ -2408,6 +2408,8 @@ std::string PayloadKernelStatusName(uint32_t status) {
       return "comm-acquire-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
       return "comm-release-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED:
+      return "output-copy-failed";
     default:
       return std::string("unknown-") + std::to_string(status);
   }
@@ -2449,6 +2451,8 @@ std::string PayloadFailureStepName(uint32_t status) {
       return "comm-acquire";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
       return "comm-release";
+    case FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED:
+      return "output-copy";
     default:
       return std::string("unknown-") + std::to_string(status);
   }

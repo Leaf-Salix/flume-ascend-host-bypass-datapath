@@ -188,9 +188,11 @@ int main() {
   FLUME_TEST_CHECK(status[6] == 1U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
+  FLUME_TEST_CHECK(std::memcmp(local, remote, 16) == 0);
   const int recv_calls[] = {kAcquireComm, kBatchStart, kNotifyWait,
-                            kRead, kNotifyRecord, kBatchEnd, kReleaseComm};
-  FLUME_TEST_CHECK(CallsEqual(recv_calls, 7));
+                            kRead, kLocalCopy, kNotifyRecord, kBatchEnd,
+                            kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(recv_calls, 8));
 
   Reset();
   std::memset(user, 0, sizeof(user));
@@ -208,6 +210,20 @@ int main() {
 
   Reset();
   std::memset(user, 0, sizeof(user));
+  reset_status();
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  status_probe_words = status;
+  status_probe_call = kLocalCopy;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status_observed_at_probe ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+
+  Reset();
+  std::memset(user, 0, sizeof(user));
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
   recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
@@ -219,8 +235,8 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 0U);
   const int recv_drain_calls[] = {
       kAcquireComm, kBatchStart, kNotifyWait, kRead, kChannelFence,
-      kNotifyRecord, kBatchEnd, kReleaseComm};
-  FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 8));
+      kLocalCopy, kNotifyRecord, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 9));
 
   Reset();
   status[0] = 0xFFFFFFFFU;
@@ -416,6 +432,22 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 88U);
 
   Reset();
+  local_copy_ret = 91;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+  FLUME_TEST_CHECK(status[1] == 91U);
+  const int output_copy_failure_calls[] = {
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kLocalCopy, kBatchEnd,
+      kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(output_copy_failure_calls, 7));
+
+  Reset();
   channel_drain_ret = 44;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
@@ -440,9 +472,9 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);
   FLUME_TEST_CHECK(status[1] == 57U);
   const int done_record_failure_calls[] = {
-      kAcquireComm, kBatchStart, kNotifyWait, kRead, kNotifyRecord,
-      kBatchEnd, kReleaseComm};
-  FLUME_TEST_CHECK(CallsEqual(done_record_failure_calls, 7));
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kLocalCopy,
+      kNotifyRecord, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(done_record_failure_calls, 8));
 
   Reset();
   batch_end_ret = 66;

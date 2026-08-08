@@ -272,7 +272,8 @@ recv rank:
   -> package flume_hcomm_payload_copy_desc_v1
   -> FlumeHcommPayloadCopyDirectAclrtKernel
   -> HcommChannelNotifyWaitOnThread(ready)
-  -> HcommReadOnThread(remote_hccl_buffer -> dst_hbm)
+  -> HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer)
+  -> HcommLocalCopyOnThread(local_hccl_buffer -> dst_hbm)
   -> HcommChannelNotifyRecordOnThread(done)
 ```
 
@@ -463,7 +464,7 @@ installation rather than waiting for public HCCL launch exposure.
 | Rank | Steps |
 | --- | --- |
 | send rank | `HcommLocalCopyOnThread(input -> local_hccl_buffer)` -> `HcommChannelNotifyRecordOnThread(ready)` -> `HcommChannelNotifyWaitOnThread(done)` |
-| recv rank | `HcommChannelNotifyWaitOnThread(ready)` -> `HcommReadOnThread(remote_hccl_buffer -> output)` -> `HcommChannelNotifyRecordOnThread(done)` |
+| recv rank | `HcommChannelNotifyWaitOnThread(ready)` -> `HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer)` -> `HcommLocalCopyOnThread(local_hccl_buffer -> output)` -> `HcommChannelNotifyRecordOnThread(done)` |
 
 Success changes backend capability semantics from:
 
