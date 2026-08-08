@@ -1105,12 +1105,20 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                              strict_log: Optional[Path],
                              package_log: Optional[Path]) -> Path:
     def read(path: Optional[Path]) -> str:
-      if path is None:
-          return ""
-      try:
-          return path.read_text(encoding="utf-8", errors="replace")
-      except OSError:
-          return ""
+        if path is None:
+            return ""
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    def marker_state(text: str, name: str) -> str:
+        match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", text)
+        return match.group(1) if match else "missing"
+
+    def marker_value(text: str, name: str) -> str:
+        match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", text)
+        return match.group(1) if match else "missing"
 
     smoke = read(smoke_log)
     strict = read(strict_log)
@@ -1172,6 +1180,14 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     package_status = "payload-ready" if package_payload_ready else (
         "canary-ready" if package_canary_ready else (
             "not-ready" if package else "not-checked"))
+    strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
+    strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
+    strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
+    strict_sync = marker_state(strict, "stage3b3e_payload_sync")
+    strict_kernel = marker_value(strict, "payload_kernel_status")
+    strict_status_word = marker_value(strict, "payload_status_word")
+    strict_verify = marker_value(strict, "payload_verify")
+    strict_fallback = marker_value(strict, "fallback")
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
@@ -1216,13 +1232,42 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_verify=passed` + `fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
+    if strict_log is not None:
+        lines.extend([
+            "",
+            "| Strict Payload Stage | Result | Evidence |",
+            "| --- | --- | --- |",
+            f"| package preflight | {package_status} | `required=canary_direct_aclrt,payload_direct_aclrt` + `status=PASS` |",
+            f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
+            f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
+            f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
+            f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
+            f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
+            f"| rank1 verify | {strict_verify} | `payload_verify` |",
+            f"| fallback | {strict_fallback} | expected `none` for real HCOMM payload copy |",
+        ])
     if strict_positive_ok:
         next_action = (
             "Stage 3B.3E strict payload copy passed; inspect checksum and "
             "start Stage 3B.4 storage rewiring")
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
           (storage_hbm_ok or strict_log is not None)):
-        next_action = "inspect hcomm-payload-strict-positive failure"
+        if strict_loader != "passed":
+            next_action = "inspect payload custom-op package loading"
+        elif strict_handoff != "passed":
+            next_action = "inspect direct ACL payload descriptor handoff"
+        elif strict_launch != "passed":
+            next_action = "inspect direct ACL payload launch"
+        elif strict_sync != "passed":
+            next_action = "inspect payload stream sync or kernel hang"
+        elif strict_kernel not in ("success", "missing"):
+            next_action = f"inspect in-kernel HCOMM primitive failure: {strict_kernel}"
+        elif strict_verify not in ("passed", "missing"):
+            next_action = "inspect rank1 payload verification mismatch"
+        elif strict_fallback not in ("none", "missing"):
+            next_action = "remove unexpected fallback from strict payload path"
+        else:
+            next_action = "inspect hcomm-payload-strict-positive failure"
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
           hcomm_payload_unsupported and not package_payload_ready):
         next_action = (
