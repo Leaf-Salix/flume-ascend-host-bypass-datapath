@@ -130,6 +130,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion5() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion6() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion7() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion8() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
@@ -182,6 +183,29 @@ int main() {
   FLUME_TEST_CHECK(trace[7] == 1U);
   FLUME_TEST_CHECK(trace[8] == 16U);
   FLUME_TEST_CHECK(trace[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  const uint32_t send_events[] = {
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT,
+  };
+  FLUME_TEST_CHECK(trace[4] == sizeof(send_events) / sizeof(send_events[0]));
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    FLUME_TEST_CHECK(trace[event_base + i] == send_events[i]);
+  }
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
   const int send_calls[] = {kAcquireComm, kBatchStart, kLocalCopy,
                             kNotifyRecord, kNotifyWait, kBatchEnd,

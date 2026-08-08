@@ -2197,6 +2197,8 @@ bool JsonLooksPayloadReady(const std::string& json_text,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC,
@@ -2770,6 +2772,121 @@ std::string PayloadTraceEventName(uint32_t event) {
   }
 }
 
+std::vector<uint32_t> PayloadTraceEvents(const uint32_t* trace_words) {
+  std::vector<uint32_t> events;
+  if (trace_words == nullptr ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return events;
+  }
+  const uint32_t count = trace_words[4];
+  const uint32_t capacity = FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  if (count == 0 || capacity == 0) {
+    return events;
+  }
+  if (count <= capacity) {
+    events.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+      events.push_back(trace_words[event_base + i]);
+    }
+    return events;
+  }
+  events.reserve(capacity);
+  const uint32_t first = count % capacity;
+  for (uint32_t i = 0; i < capacity; ++i) {
+    events.push_back(trace_words[event_base + ((first + i) % capacity)]);
+  }
+  return events;
+}
+
+std::string PayloadTraceEventSequence(const std::vector<uint32_t>& events) {
+  if (events.empty()) {
+    return "empty";
+  }
+  std::string sequence;
+  for (size_t i = 0; i < events.size(); ++i) {
+    if (i != 0) {
+      sequence += ">";
+    }
+    sequence += PayloadTraceEventName(events[i]);
+  }
+  return sequence;
+}
+
+std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
+                                                bool include_thread_notify) {
+  std::vector<uint32_t> expected;
+  auto append = [&expected](uint32_t enter, uint32_t done) {
+    expected.push_back(enter);
+    expected.push_back(done);
+  };
+  expected.push_back(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER);
+  append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
+         FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE);
+  const bool batch_enabled =
+      trace_words[10] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  if (batch_enabled) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE);
+  }
+  if (include_thread_notify) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_DONE);
+  }
+  if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE);
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE);
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE);
+  } else if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE);
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE);
+    if (trace_words[12] == FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+      append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE);
+    }
+    if (trace_words[11] != FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT) {
+      append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_ENTER,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_DONE);
+    }
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_DONE);
+  }
+  if (include_thread_notify) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_DONE);
+  }
+  if (batch_enabled) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE);
+  }
+  append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER,
+         FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE);
+  expected.push_back(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
+  return expected;
+}
+
+std::string PayloadTraceOrderState(const uint32_t* trace_words,
+                                   const std::vector<uint32_t>& events) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return "missing";
+  }
+  if (trace_words[4] > FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) {
+    return "truncated";
+  }
+  if (events == ExpectedPayloadTraceEvents(trace_words, false) ||
+      events == ExpectedPayloadTraceEvents(trace_words, true)) {
+    return "passed";
+  }
+  return "observed";
+}
+
 std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
                                     aclError read_status = ACL_SUCCESS) {
   if (trace_words == nullptr) {
@@ -2778,11 +2895,13 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
   const bool schema_ok =
       trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
       trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
+  const std::vector<uint32_t> events = PayloadTraceEvents(trace_words);
   std::string state = schema_ok ? "observed" : "missing";
   if (schema_ok &&
       trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
       trace_words[3] == 0U &&
-      trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS) {
+      trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+      PayloadTraceOrderState(trace_words, events) == "passed") {
     state = "passed";
   }
   return std::string(" payload_trace=") + state +
@@ -2804,7 +2923,11 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_completion_mode=" + std::to_string(trace_words[12]) +
          " payload_trace_ready_notify_idx=" + std::to_string(trace_words[13]) +
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
-         " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]);
+         " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
+         " payload_trace_order=" + PayloadTraceOrderState(trace_words, events) +
+         " payload_trace_capacity=" +
+         std::to_string(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) +
+         " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) + "\"";
 }
 
 std::string NotifyKernelStatusName(uint32_t status) {
@@ -2916,6 +3039,7 @@ std::string HcommPayloadRuntimeDetail(
          HcommPayloadCompletionDetail(resource_info) +
          " payload_semantic=present payload_semantic_v5=present "
          "payload_semantic_v6=present payload_semantic_v7=present "
+         "payload_semantic_v8=present "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }
@@ -3165,6 +3289,28 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v6=present payload_semantic_v7=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle semantic_v8_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC,
+      &semantic_v8_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_semantic=present payload_semantic_v5=present "
+           "payload_semantic_v6=present payload_semantic_v7=present "
+           "payload_semantic_v8=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC +
            PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }

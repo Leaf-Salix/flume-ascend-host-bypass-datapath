@@ -40,6 +40,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_semantic_v5": "FlumeHcommPayloadCopySemanticVersion5",
     "payload_semantic_v6": "FlumeHcommPayloadCopySemanticVersion6",
     "payload_semantic_v7": "FlumeHcommPayloadCopySemanticVersion7",
+    "payload_semantic_v8": "FlumeHcommPayloadCopySemanticVersion8",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
@@ -56,6 +57,7 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION = "FlumeHcommPayloadCopySemanticVersion"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5 = "FlumeHcommPayloadCopySemanticVersion5"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6 = "FlumeHcommPayloadCopySemanticVersion6"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7 = "FlumeHcommPayloadCopySemanticVersion7"
+HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8 = "FlumeHcommPayloadCopySemanticVersion8"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
@@ -367,6 +369,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_semantic_v5",
         "payload_semantic_v6",
         "payload_semantic_v7",
+        "payload_semantic_v8",
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
@@ -1589,6 +1592,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_primitive_state=completed",
     "payload_trace=passed",
     "payload_trace_event=kernel-exit",
+    "payload_trace_order=passed",
     "payload_trace_result=success",
     "payload_role=",
     "payload_batch_mode=on",
@@ -1596,6 +1600,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_recv_path=",
     "payload_semantic_v6=present",
     "payload_semantic_v7=present",
+    "payload_semantic_v8=present",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -2379,6 +2384,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_echo = marker_value(strict, "payload_echo")
     strict_trace = marker_value(strict, "payload_trace")
     strict_trace_event = marker_value(strict, "payload_trace_event")
+    strict_trace_order = marker_value(strict, "payload_trace_order")
     strict_trace_result = marker_value(strict, "payload_trace_result")
     strict_rank0_role = marker_value_from_line(strict_rank_lines[0],
                                                "payload_role")
@@ -2413,6 +2419,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic_v5 = marker_value(strict, "payload_semantic_v5")
     strict_semantic_v6 = marker_value(strict, "payload_semantic_v6")
     strict_semantic_v7 = marker_value(strict, "payload_semantic_v7")
+    strict_semantic_v8 = marker_value(strict, "payload_semantic_v8")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_runtime_package_source = marker_value(strict, "package_source")
     strict_runtime_package_tar = marker_value(strict, "package_aicpu_tar")
@@ -2583,7 +2590,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
-            f"| payload primitive trace | {strict_trace} | event={strict_trace_event}, result={strict_trace_result}; trace must end at `kernel-exit` with success |",
+            f"| payload primitive trace | {strict_trace} | event={strict_trace_event}, order={strict_trace_order}, result={strict_trace_result}; trace must end at `kernel-exit` with expected HCOMM primitive order and success |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
@@ -2592,6 +2599,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic v5 marker | {strict_semantic_v5} | `payload_semantic_v5=missing` means the package predates the current recv local-buffer scheduler |",
             f"| payload semantic v6 marker | {strict_semantic_v6} | `payload_semantic_v6=missing` means the package predates the direct-output scheduler contract |",
             f"| payload semantic v7 marker | {strict_semantic_v7} | `payload_semantic_v7=missing` means the package predates the device trace contract |",
+            f"| payload semantic v8 marker | {strict_semantic_v8} | `payload_semantic_v8=missing` means the package predates ordered primitive trace validation |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -2631,6 +2639,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 next_action = (
                     "rebuild/reinstall payload custom-op package with current "
                     "Flume semantic v7 device-trace-capable kernel")
+            elif strict_semantic_v8 == "missing":
+                next_action = (
+                    "rebuild/reinstall payload custom-op package with current "
+                    "Flume semantic v8 ordered-trace-capable kernel")
             elif strict_semantic == "missing":
                 next_action = (
                     "rebuild/reinstall payload custom-op package; semantic "
@@ -3163,8 +3175,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
         "markers, payload_echo=passed, payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
-        "payload_trace_result=success, payload_desc_batch_tag=default|custom, "
-        "payload_semantic_v7=present, payload_thread_notify_order=..., "
+        "payload_trace_order=passed, payload_trace_result=success, "
+        "payload_desc_batch_tag=default|custom, payload_semantic_v7=present, "
+        "payload_semantic_v8=present, payload_thread_notify_order=..., "
         "source/received/expected checksum match, payload_verify=passed, and "
         "fallback=none.\n",
         encoding="utf-8",
@@ -3952,6 +3965,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_semantic_v5")
         required_functions.append("payload_semantic_v6")
         required_functions.append("payload_semantic_v7")
+        required_functions.append("payload_semantic_v8")
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
@@ -3970,6 +3984,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_semantic_v5_marker = False
     found_payload_semantic_v6_marker = False
     found_payload_semantic_v7_marker = False
+    found_payload_semantic_v8_marker = False
     found_payload_requires_comm_acquire_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
@@ -4017,6 +4032,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7,
+            HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
@@ -4064,6 +4080,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_semantic_v7_marker = (
                 found_payload_semantic_v7_marker or
                 functions_present.get("payload_semantic_v7", False))
+            found_payload_semantic_v8_marker = (
+                found_payload_semantic_v8_marker or
+                functions_present.get("payload_semantic_v8", False))
             found_payload_requires_comm_acquire_marker = (
                 found_payload_requires_comm_acquire_marker or
                 functions_present.get("payload_requires_comm_acquire", False))
@@ -4115,6 +4134,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_semantic_v7_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7,
                                         False))
+                found_payload_semantic_v8_marker = (
+                    found_payload_semantic_v8_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8,
+                                        False))
                 found_payload_requires_comm_acquire_marker = (
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
@@ -4160,6 +4183,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_semantic_version_v7."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, False) else 'missing'}")
+                print("function_so.payload_semantic_version_v8."
+                      f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8, False) else 'missing'}")
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
@@ -4218,6 +4244,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
@@ -4235,6 +4262,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6}")
             print("required_payload_semantic_v7_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7}")
+            print("required_payload_semantic_v8_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
             print("required_payload_status_schema_symbol="
@@ -4319,6 +4348,18 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v5_marker and
                   found_payload_semantic_v6_marker and
                   found_payload_semantic_v7_marker and
+                  not found_payload_semantic_v8_marker):
+                print("reason=payload kernel package has a stale payload "
+                      "semantic marker")
+                print("action=rebuild package with current Flume semantic "
+                      "v8 ordered-trace-capable payload kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
                   not found_payload_requires_comm_acquire_marker):
                 print("reason=payload kernel package is missing the payload "
                       "comm-acquire marker")
@@ -4330,6 +4371,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v5_marker and
                   found_payload_semantic_v6_marker and
                   found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
                   found_payload_requires_comm_acquire_marker and
                   (not found_payload_status_schema_marker or
                    not found_payload_status_word_count_marker)):
@@ -4343,6 +4385,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v5_marker and
                   found_payload_semantic_v6_marker and
                   found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and

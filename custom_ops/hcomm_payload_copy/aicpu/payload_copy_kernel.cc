@@ -92,6 +92,9 @@ void InitPayloadTrace(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (trace_words == nullptr) {
     return;
   }
+  for (unsigned int i = 0; i < FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT; ++i) {
+    trace_words[i] = 0xFFFFFFFFU;
+  }
   trace_words[0] = FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION;
   trace_words[1] = FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
   trace_words[2] = FLUME_HCOMM_PAYLOAD_TRACE_EVENT_NONE;
@@ -121,9 +124,17 @@ void TracePayloadEvent(const flume_hcomm_payload_copy_desc_v1& desc,
       trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
     InitPayloadTrace(desc);
   }
+  const unsigned int event_count = trace_words[4];
+  const unsigned int slot = event_count % FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  const unsigned int event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  const unsigned int ret_base =
+      FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT +
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  trace_words[event_base + slot] = event;
+  trace_words[ret_base + slot] = static_cast<unsigned int>(ret);
   trace_words[2] = event;
   trace_words[3] = static_cast<unsigned int>(ret);
-  trace_words[4] += 1U;
+  trace_words[4] = event_count + 1U;
 }
 
 void StorePayloadTraceResult(const flume_hcomm_payload_copy_desc_v1& desc,
@@ -509,7 +520,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion6() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion7() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 7U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 7U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion8() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 8U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
