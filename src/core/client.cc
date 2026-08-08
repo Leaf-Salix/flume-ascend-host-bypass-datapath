@@ -236,6 +236,7 @@ struct HcommProbeOptions {
   bool payload_skip_comm_acquire = false;
   flume_hcomm_payload_comm_binding_t payload_comm_binding =
       FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
+  bool payload_force_channel_fence = false;
 };
 
 struct HcommChannelResourceInfo {
@@ -555,6 +556,13 @@ bool NormalizeHcommProbeOptions(
       normalized.payload_skip_comm_acquire =
           normalized.payload_comm_binding !=
           FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
+    }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t,
+                 payload_force_channel_fence) +
+            sizeof(options->payload_force_channel_fence)) {
+      normalized.payload_force_channel_fence =
+          options->payload_force_channel_fence != 0;
     }
   }
 
@@ -2114,6 +2122,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               bool disable_payload_batch_mode,
                               const std::string& payload_batch_tag,
                               bool payload_recv_direct_output,
+                              bool payload_force_channel_fence,
                               flume_hcomm_payload_comm_binding_t
                                   payload_comm_binding,
                               flume_hcomm_payload_copy_desc_v1* desc) {
@@ -2132,7 +2141,8 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU :
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE;
   desc->completion_mode =
-      resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
+      (payload_force_channel_fence ||
+       resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE) ?
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
           FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
   if (payload_comm_binding ==
@@ -3221,6 +3231,7 @@ std::string MakeDirectAclrtPayloadBlockedDetail(
 }
 
 std::string HcommPayloadCompletionDetail(
+    const flume_hcomm_payload_copy_desc_v1& desc,
     const HcommChannelResourceInfo& resource_info) {
   std::string detail = resource_info.host_thread_notify_ready ?
       " payload_thread_notify=host-aicpu" :
@@ -3228,7 +3239,9 @@ std::string HcommPayloadCompletionDetail(
   detail += std::string(" payload_sync_api=") + AclStreamSyncApiName();
   detail += " payload_sync_timeout_sec=" +
       std::to_string(resource_info.timeout_sec);
-  detail += resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
+  detail += (desc.completion_mode &
+             FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK) ==
+                FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN ?
       " payload_completion_mode=channel-fence" :
       " payload_completion_mode=ordered-notify";
   detail += resource_info.host_thread_notify_ready ?
@@ -3259,7 +3272,7 @@ std::string HcommPayloadRuntimeDetail(
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision) {
   return PayloadDescriptorDetail(desc) +
-         HcommPayloadCompletionDetail(resource_info) +
+         HcommPayloadCompletionDetail(desc, resource_info) +
          " payload_semantic=present payload_semantic_v5=present "
          "payload_semantic_v6=present payload_semantic_v7=present "
          "payload_semantic_v8=present "
@@ -3278,6 +3291,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     bool disable_payload_batch_mode,
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
+    bool payload_force_channel_fence,
     flume_hcomm_payload_comm_binding_t payload_comm_binding,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
@@ -3396,6 +3410,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
                            bytes, comm_name, disable_payload_batch_mode,
                            payload_batch_tag, payload_recv_direct_output,
+                           payload_force_channel_fence,
                            payload_comm_binding,
                            &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
@@ -4474,6 +4489,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     bool disable_payload_batch_mode,
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
+    bool payload_force_channel_fence,
     flume_hcomm_payload_comm_binding_t payload_comm_binding,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
@@ -4487,6 +4503,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   (void)disable_payload_batch_mode;
   (void)payload_batch_tag;
   (void)payload_recv_direct_output;
+  (void)payload_force_channel_fence;
   (void)payload_comm_binding;
   (void)resource_info;
   if (status != nullptr) {
@@ -6105,8 +6122,8 @@ int flume_hcomm_payload_send_ex(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, acl_stream,
       static_cast<uint8_t*>(src->ptr) + src_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
-      options.payload_recv_direct_output, options.payload_comm_binding,
-      resource_info, launcher,
+      options.payload_recv_direct_output, options.payload_force_channel_fence,
+      options.payload_comm_binding, resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
@@ -6227,8 +6244,8 @@ int flume_hcomm_payload_recv_ex(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, acl_stream,
       static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
-      options.payload_recv_direct_output, options.payload_comm_binding,
-      resource_info, launcher,
+      options.payload_recv_direct_output, options.payload_force_channel_fence,
+      options.payload_comm_binding, resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,

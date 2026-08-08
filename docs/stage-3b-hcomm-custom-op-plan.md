@@ -400,6 +400,14 @@ direct-output rerun produces the full strict-positive marker set with checksum
 match and `fallback=none`, the tools accept that log as real HCOMM payload-copy
 evidence and record the variant explicitly in the decision tree.
 
+If the recv side appears to need stronger read completion semantics, pass
+`--hcomm-payload-channel-fence` or enable
+`--auto-run-hcomm-payload-channel-fence-diagnostic`. That variant keeps the same
+payload path but forces `HcommChannelFenceOnThread` after `HcommReadOnThread`,
+including on HCCS/SIO protocols where the default is ordered notify. A complete
+channel-fence pass is accepted as HCOMM payload-copy evidence and is recorded as
+`payload_completion_mode=channel-fence`.
+
 If the batch-enabled strict gate fails inside the payload kernel, use the
 diagnostic no-batch variant to isolate HCOMM primitive execution from
 `HcommBatchModeStart/End` submit semantics:

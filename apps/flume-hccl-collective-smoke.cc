@@ -124,6 +124,7 @@ struct RankContext {
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
   bool hcomm_payload_recv_direct_output = false;
+  bool hcomm_payload_channel_fence = false;
   bool hcomm_payload_skip_comm_acquire = false;
   flume_hcomm_payload_comm_binding_t hcomm_payload_comm_binding =
       FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
@@ -1302,6 +1303,8 @@ void RankMain(RankContext* ctx) {
           ctx->hcomm_payload_disable_batch ? 1U : 0U;
       options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
           nullptr : ctx->hcomm_payload_batch_tag.c_str();
+      options.payload_force_channel_fence =
+          ctx->hcomm_payload_channel_fence ? 1U : 0U;
       if (!CheckFlume(flume_hcomm_channel_probe_ex(client, peer_rank, &options,
                                                    stream, &hcomm_channel_io),
                       "flume_hcomm_channel_probe", &error) ||
@@ -1530,6 +1533,8 @@ void RankMain(RankContext* ctx) {
           nullptr : ctx->hcomm_payload_batch_tag.c_str();
       options.payload_recv_direct_output =
           ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+      options.payload_force_channel_fence =
+          ctx->hcomm_payload_channel_fence ? 1U : 0U;
       options.payload_skip_comm_acquire =
           ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
       options.payload_comm_binding = ctx->hcomm_payload_comm_binding;
@@ -1620,6 +1625,8 @@ void RankMain(RankContext* ctx) {
              << (ctx->hcomm_require_payload_copy ? "on" : "off")
              << " payload_recv_direct_output="
              << (ctx->hcomm_payload_recv_direct_output ? "on" : "off")
+             << " payload_channel_fence="
+             << (ctx->hcomm_payload_channel_fence ? "on" : "off")
              << " payload_batch_diagnostic="
              << (ctx->hcomm_payload_disable_batch ? "no-batch" : "batch")
              << " payload_comm_acquire_mode="
@@ -1776,6 +1783,8 @@ void RankMain(RankContext* ctx) {
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
         options.payload_recv_direct_output =
             ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+        options.payload_force_channel_fence =
+            ctx->hcomm_payload_channel_fence ? 1U : 0U;
         options.payload_skip_comm_acquire =
             ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
         options.payload_comm_binding = ctx->hcomm_payload_comm_binding;
@@ -1846,6 +1855,8 @@ void RankMain(RankContext* ctx) {
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
         options.payload_recv_direct_output =
             ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+        options.payload_force_channel_fence =
+            ctx->hcomm_payload_channel_fence ? 1U : 0U;
         options.payload_skip_comm_acquire =
             ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
         options.payload_comm_binding = ctx->hcomm_payload_comm_binding;
@@ -2024,6 +2035,7 @@ int main(int argc, char** argv) {
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
   bool hcomm_payload_recv_direct_output = false;
+  bool hcomm_payload_channel_fence = false;
   bool hcomm_payload_skip_comm_acquire = false;
   flume_hcomm_payload_comm_binding_t hcomm_payload_comm_binding =
       FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
@@ -2100,6 +2112,8 @@ int main(int argc, char** argv) {
       hcomm_payload_disable_batch = true;
     } else if (arg == "--hcomm-payload-recv-direct-output") {
       hcomm_payload_recv_direct_output = true;
+    } else if (arg == "--hcomm-payload-channel-fence") {
+      hcomm_payload_channel_fence = true;
     } else if (arg == "--hcomm-payload-skip-comm-acquire") {
       hcomm_payload_skip_comm_acquire = true;
       hcomm_payload_comm_binding =
@@ -2211,6 +2225,7 @@ int main(int argc, char** argv) {
                 << " [--hcomm-require-payload-copy]"
                 << " [--hcomm-payload-disable-batch]"
                 << " [--hcomm-payload-recv-direct-output]"
+                << " [--hcomm-payload-channel-fence]"
                 << " [--hcomm-payload-batch-tag=tag]"
                 << " [--sym-win-gb=1]\n";
       return 2;
@@ -2374,6 +2389,8 @@ int main(int argc, char** argv) {
             << (hcomm_require_payload_copy ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_channel_fence="
+            << (hcomm_payload_channel_fence ? "on" : "off")
             << " hcomm_payload_skip_comm_acquire="
             << (hcomm_payload_skip_comm_acquire ? "on" : "off")
             << " hcomm_payload_comm_binding="
@@ -2643,6 +2660,8 @@ int main(int argc, char** argv) {
         hcomm_payload_disable_batch;
     contexts[local_index].hcomm_payload_recv_direct_output =
         hcomm_payload_recv_direct_output;
+    contexts[local_index].hcomm_payload_channel_fence =
+        hcomm_payload_channel_fence;
     contexts[local_index].hcomm_payload_skip_comm_acquire =
         hcomm_payload_skip_comm_acquire;
     contexts[local_index].hcomm_payload_comm_binding =
@@ -2707,6 +2726,8 @@ int main(int argc, char** argv) {
             << (hcomm_payload_disable_batch ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_channel_fence="
+            << (hcomm_payload_channel_fence ? "on" : "off")
             << " hcomm_payload_skip_comm_acquire="
             << (hcomm_payload_skip_comm_acquire ? "on" : "off")
             << " hcomm_payload_comm_binding="

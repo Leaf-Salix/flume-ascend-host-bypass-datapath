@@ -99,6 +99,7 @@ typedef struct {
   uint32_t payload_recv_direct_output;
   uint32_t payload_skip_comm_acquire;
   flume_hcomm_payload_comm_binding_t payload_comm_binding;
+  uint32_t payload_force_channel_fence;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {

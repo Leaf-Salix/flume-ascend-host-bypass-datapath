@@ -1466,6 +1466,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-payload-disable-batch")
             if args.hcomm_payload_recv_direct_output:
                 command.append("--hcomm-payload-recv-direct-output")
+            if args.hcomm_payload_channel_fence:
+                command.append("--hcomm-payload-channel-fence")
             if args.hcomm_payload_skip_comm_acquire:
                 command.append("--hcomm-payload-skip-comm-acquire")
             if args.hcomm_payload_comm_binding:
@@ -2093,6 +2095,10 @@ def CommandUsesDirectOutputRecv(command: list[str]) -> bool:
     return "--hcomm-payload-recv-direct-output" in command
 
 
+def CommandUsesChannelFence(command: list[str]) -> bool:
+    return "--hcomm-payload-channel-fence" in command
+
+
 def WriteHcommPayloadChannelHandleCandidate(
         run_dir: Path,
         default_log: Optional[Path],
@@ -2341,8 +2347,9 @@ def WriteHcommPayloadTaggedDiagnostic(
             "tagged batch HCOMM payload copy and checksum verification passed; "
             "the default batch tag path is the likely compatibility problem")
         next_action = (
-            "rerun strict-positive with the same --hcomm-payload-batch-tag and "
-            "then wire Stage 3B.4 storage once the strict gate is green")
+            "use the accepted tagged-batch evidence for this CANN environment "
+            "or rerun strict-positive with the same --hcomm-payload-batch-tag "
+            "before wiring Stage 3B.4 storage")
     elif tagged_failure_step != "missing":
         decision = (
             "tagged batch diagnostic reached the payload kernel but failed "
@@ -2370,9 +2377,10 @@ def WriteHcommPayloadTaggedDiagnostic(
         f"decision: {decision}",
         f"next_action: {next_action}",
         "",
-        "The tagged batch path is diagnostic unless the user explicitly reruns "
-        "the strict-positive gate with the same tag. It does not make a "
-        "failed default strict run pass retroactively.",
+        "The tagged batch path can satisfy the strict-positive gate when both "
+        "ranks pass with checksum match, complete trace evidence, and "
+        "`fallback=none`. The accepted variant remains visible through "
+        "`payload_desc_batch_tag=custom`.",
         "",
         "## Rank Evidence",
         "",
@@ -2438,9 +2446,9 @@ def WriteHcommPayloadDirectOutputDiagnostic(
             "passed; the default local-buffer path is likely failing in the "
             "recv output local-copy stage")
         next_action = (
-            "rerun hcomm-payload-strict-positive explicitly with "
-            "--hcomm-payload-recv-direct-output, then use that green strict "
-            "gate as the Stage 3B.3E evidence before wiring Stage 3B.4 storage")
+            "use the accepted direct-output evidence for this CANN environment "
+            "or rerun hcomm-payload-strict-positive explicitly with "
+            "--hcomm-payload-recv-direct-output before wiring Stage 3B.4 storage")
     elif direct_failure_step != "missing":
         decision = (
             "direct-output diagnostic reached the payload kernel but failed "
@@ -2476,9 +2484,10 @@ def WriteHcommPayloadDirectOutputDiagnostic(
         f"decision: {decision}",
         f"next_action: {next_action}",
         "",
-        "The direct-output path is diagnostic unless the user explicitly reruns "
-        "the strict-positive gate with --hcomm-payload-recv-direct-output. It "
-        "does not make a failed default strict run pass retroactively.",
+        "The direct-output path can satisfy the strict-positive gate when both "
+        "ranks pass with checksum match, complete trace evidence, and "
+        "`fallback=none`. The accepted variant remains visible through "
+        "`payload_recv_path=direct-output`.",
         "",
         "## Rank Evidence",
         "",
@@ -2514,6 +2523,28 @@ def RunHcommPayloadDirectOutputDiagnostic(
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadDirectOutputDiagnostic(
         runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def RunHcommPayloadChannelFenceDiagnostic(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int) -> StepResult:
+    command = [
+        item for item in base_command
+        if item != "--hcomm-payload-channel-fence"
+    ]
+    command.append("--hcomm-payload-channel-fence")
+    result = runner.run(
+        "hcomm-payload-channel-fence-diagnostic",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     return result
 
 
@@ -3249,6 +3280,7 @@ def FindStepLog(run_dir: Path, step_names: Iterable[str]) -> Optional[Path]:
 HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-nobatch-diagnostic",
     "hcomm-payload-direct-output-diagnostic",
+    "hcomm-payload-channel-fence-diagnostic",
     "hcomm-payload-tagged-diagnostic",
     "hcomm-payload-channel-handle-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
@@ -3620,6 +3652,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                 RunHcommPayloadDirectOutputDiagnostic(
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
+            if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                    package_payload_ready and
+                    not CommandUsesChannelFence(strict_command)):
+                RunHcommPayloadChannelFenceDiagnostic(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec)
             if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-skip-comm-acquire" not in strict_command):
@@ -3832,6 +3870,10 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                     RunHcommPayloadDirectOutputDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
+                if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                        not CommandUsesChannelFence(spec.command)):
+                    RunHcommPayloadChannelFenceDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout)
                 if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
                         not args.hcomm_payload_skip_comm_acquire and
                         "--hcomm-payload-skip-comm-acquire" not in spec.command):
@@ -4051,6 +4093,10 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                     RunHcommPayloadDirectOutputDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
+                if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                        not CommandUsesChannelFence(spec.command)):
+                    RunHcommPayloadChannelFenceDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout)
                 if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
                         not args.hcomm_payload_skip_comm_acquire and
                         "--hcomm-payload-skip-comm-acquire" not in spec.command):
@@ -5312,6 +5358,13 @@ def parse_args() -> argparse.Namespace:
                               "HBM buffer. The default remains local-buffer "
                               "staging, which reads remote HCCL Buffer into "
                               "local HCCL Buffer before the output copy."))
+    parser.add_argument("--hcomm-payload-channel-fence",
+                        action="store_true",
+                        help=("Ask the recv payload kernel to call "
+                              "HcommChannelFenceOnThread after "
+                              "HcommReadOnThread even on non-RoCE protocols. "
+                              "This isolates HCOMM read completion ordering "
+                              "from output-copy and done-notify behavior."))
     parser.add_argument("--hcomm-payload-skip-comm-acquire",
                         action="store_true",
                         help=("Diagnostic only: ask the direct ACL payload "
@@ -5369,6 +5422,15 @@ def parse_args() -> argparse.Namespace:
                               "A complete direct-output HCOMM primitive copy "
                               "can satisfy the strict-positive gate and marks "
                               "the accepted recv path explicitly."))
+    parser.add_argument("--auto-run-hcomm-payload-channel-fence-diagnostic",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the strict payload gate fails, automatically "
+                              "rerun the same smoke with "
+                              "--hcomm-payload-channel-fence. A complete "
+                              "channel-fence HCOMM primitive copy can satisfy "
+                              "the strict-positive gate and proves the recv "
+                              "rank fenced the HCOMM read before completion."))
     parser.add_argument("--auto-run-hcomm-payload-no-comm-acquire-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "

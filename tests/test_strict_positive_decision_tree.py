@@ -1225,6 +1225,28 @@ def main() -> int:
         assert payload_passed
         assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
 
+        comm_name_channel_fence_diagnostic_dir = (
+            tmp / "flume-check-comm-name-channel-fence-diagnostic")
+        comm_name_channel_fence_diagnostic_dir.mkdir()
+        write(comm_name_channel_fence_diagnostic_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(comm_name_channel_fence_diagnostic_dir /
+              "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        write(comm_name_channel_fence_diagnostic_dir /
+              "02-hcomm-payload-channel-fence-diagnostic.log",
+              strict_log(True).replace("payload_desc_completion_mode=0",
+                                       "payload_desc_completion_mode=1"))
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                comm_name_channel_fence_diagnostic_dir))
+        assert payload_strict_log is not None
+        assert payload_strict_log.name.endswith(
+            "hcomm-payload-channel-fence-diagnostic.log")
+        assert payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+
         channel_skip_failed_candidates_dir = (
             tmp / "flume-check-channel-skip-failed-candidates")
         channel_skip_failed_candidates_dir.mkdir()
@@ -1329,6 +1351,29 @@ def main() -> int:
         assert storage_strict_log is not None
         assert storage_strict_log.name.endswith(
             "hcomm-payload-nobatch-diagnostic.log")
+        assert storage_passed
+        assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+
+        storage_comm_name_channel_fence_diagnostic_dir = (
+            tmp / "flume-check-storage-comm-name-channel-fence-diagnostic")
+        storage_comm_name_channel_fence_diagnostic_dir.mkdir()
+        write(storage_comm_name_channel_fence_diagnostic_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(storage_comm_name_channel_fence_diagnostic_dir /
+              "01-hcomm-storage-strict-positive.log",
+              strict_log(False))
+        write(storage_comm_name_channel_fence_diagnostic_dir /
+              "02-hcomm-payload-channel-fence-diagnostic.log",
+              strict_log(True).replace("payload_desc_completion_mode=0",
+                                       "payload_desc_completion_mode=1") +
+              smoke_with_hcomm_storage_path())
+        analyzed_tree, storage_passed, _, storage_strict_log, _ = (
+            flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
+                storage_comm_name_channel_fence_diagnostic_dir))
+        assert storage_strict_log is not None
+        assert storage_strict_log.name.endswith(
+            "hcomm-payload-channel-fence-diagnostic.log")
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
 

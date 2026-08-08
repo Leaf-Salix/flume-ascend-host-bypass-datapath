@@ -145,6 +145,15 @@ strict-positive 证据、checksum match 和 `fallback=none`，工具会把它选
 通过的 HCOMM payload-copy evidence。此时 accepted recv path 会明确记录为
 `payload_recv_path=direct-output`。
 
+若怀疑 `HcommReadOnThread` 返回后 local-buffer 数据尚未完成落地，可以显式加
+`--hcomm-payload-channel-fence`。该模式会让 recv kernel 在 remote read 后调用
+`HcommChannelFenceOnThread`，即使当前协议不是 RoCE；日志会出现
+`payload_completion_mode=channel-fence` 和
+`payload_trace_primitive_path=recv-read-local-copy|recv-read-direct-output`。
+如果希望 strict-positive 失败时自动采集这个 completion 语义对照，可以追加
+`--auto-run-hcomm-payload-channel-fence-diagnostic`；完整通过时同样可以作为
+HCOMM payload-copy evidence。
+
 已有日志也可以离线复核 strict-positive 门禁：
 
 ```bash
