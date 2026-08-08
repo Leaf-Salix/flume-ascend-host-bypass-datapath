@@ -408,8 +408,14 @@ including on HCCS/SIO protocols where the default is ordered notify. A complete
 channel-fence pass is accepted as HCOMM payload-copy evidence and is recorded as
 `payload_completion_mode=channel-fence`.
 When channel-handle auto candidates are enabled, the same diagnostic also tries
-`hcomm-payload-channel-handle-channel-fence-candidate`, so one log bundle can
-cover the combined comm-binding and read-completion hypothesis.
+the enabled channel-handle cross-product candidates, including
+`hcomm-payload-channel-handle-channel-fence-candidate`,
+`hcomm-payload-channel-handle-direct-output-channel-fence-candidate`,
+`hcomm-payload-channel-handle-nobatch-channel-fence-candidate`, and
+`hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate`.
+Those variants let one log bundle cover comm-binding, read-completion,
+recv-output, and batch-submit hypotheses without weakening the strict evidence
+gate.
 
 If the batch-enabled strict gate fails inside the payload kernel, use the
 diagnostic no-batch variant to isolate HCOMM primitive execution from

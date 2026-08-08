@@ -296,6 +296,11 @@ def strict_log_with_recv_direct_output() -> str:
                         "payload_trace_primitive_path=recv-read-direct-output")
 
 
+def strict_log_with_channel_fence(text: str) -> str:
+    return text.replace("payload_desc_completion_mode=0",
+                        "payload_desc_completion_mode=1")
+
+
 def strict_log_with_missing_handoff() -> str:
     return strict_log(True).replace(
         "stage3b3e_payload_descriptor_handoff=passed ", "")
@@ -609,6 +614,15 @@ def main() -> int:
         strict_channel_handle_no_batch_direct_output = (
             strict_channel_handle_direct_output.replace(
                 "payload_batch_mode=on", "payload_batch_mode=off"))
+        strict_channel_handle_fence = strict_log_with_channel_fence(
+            strict_channel_handle)
+        strict_channel_handle_direct_output_fence = strict_log_with_channel_fence(
+            strict_channel_handle_direct_output)
+        strict_channel_handle_no_batch_fence = strict_log_with_channel_fence(
+            strict_channel_handle_no_batch)
+        strict_channel_handle_no_batch_direct_output_fence = (
+            strict_log_with_channel_fence(
+                strict_channel_handle_no_batch_direct_output))
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
@@ -617,6 +631,14 @@ def main() -> int:
             strict_channel_handle_direct_output)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_no_batch_direct_output)[0]
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_channel_handle_fence)[0]
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_channel_handle_direct_output_fence)[0]
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_channel_handle_no_batch_fence)[0]
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_channel_handle_no_batch_direct_output_fence)[0]
         channel_log = write(tmp / "strict-channel-handle.log",
                             strict_channel_handle)
         channel_note = flume_tool.WriteHcommPayloadChannelHandleCandidate(
@@ -625,6 +647,62 @@ def main() -> int:
         assert "channel_payload_copy_and_verify: `passed`" in channel_text
         assert "strict-positive evidence" in channel_text
         assert "payload_comm_binding=channel-handle" in channel_text
+
+        class FakeCandidateRunner:
+            def __init__(self, run_dir: Path) -> None:
+                self.run_dir = run_dir
+                self.run_dir.mkdir()
+                self.calls: list[tuple[str, list[str]]] = []
+
+            def run(self, name, command, *, required=False,
+                    timeout_seconds=0, env_updates=None):
+                del timeout_seconds, env_updates
+                self.calls.append((name, list(command)))
+                log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
+                if name == ("hcomm-payload-channel-handle-nobatch-"
+                             "direct-output-channel-fence-candidate"):
+                    text = strict_channel_handle_no_batch_direct_output_fence
+                    returncode = 0
+                else:
+                    text = strict_log(False)
+                    returncode = 1
+                log_path.write_text(text, encoding="utf-8")
+                return flume_tool.StepResult(
+                    name=name,
+                    command=list(command),
+                    returncode=returncode,
+                    seconds=0.0,
+                    log_path=log_path,
+                    required=required)
+
+        candidate_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_fence_diagnostic": True,
+            "auto_run_hcomm_payload_direct_output_diagnostic": True,
+            "auto_run_hcomm_payload_nobatch_diagnostic": True,
+        })()
+        fake_runner = FakeCandidateRunner(tmp / "candidate-sequence")
+        selected_candidate = (
+            flume_tool.RunHcommPayloadChannelHandleFallbackCandidates(
+                fake_runner,
+                ["flume-hccl-collective-smoke",
+                 "--hcomm-require-payload-copy"],
+                None,
+                10,
+                channel_log,
+                candidate_args))
+        assert selected_candidate is not None
+        assert selected_candidate.name.endswith(
+            "hcomm-payload-channel-handle-nobatch-direct-output-"
+            "channel-fence-candidate.log")
+        assert fake_runner.calls[-1][0] == (
+            "hcomm-payload-channel-handle-nobatch-direct-output-"
+            "channel-fence-candidate")
+        final_command = fake_runner.calls[-1][1]
+        assert "--hcomm-payload-comm-binding=channel-handle" in final_command
+        assert "--hcomm-payload-disable-batch" in final_command
+        assert "--hcomm-payload-recv-direct-output" in final_command
+        assert "--hcomm-payload-channel-fence" in final_command
+
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle",
@@ -1276,6 +1354,62 @@ def main() -> int:
         assert payload_passed
         assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
 
+        channel_handle_direct_fence_fallback_dir = (
+            tmp / "flume-check-channel-handle-direct-fence-fallback")
+        channel_handle_direct_fence_fallback_dir.mkdir()
+        write(channel_handle_direct_fence_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(channel_handle_direct_fence_fallback_dir /
+              "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        write(
+            channel_handle_direct_fence_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_log(False).replace(
+                "payload_comm_acquire=default payload_comm_binding=comm-name",
+                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"))
+        write(
+            channel_handle_direct_fence_fallback_dir /
+            "03-hcomm-payload-channel-handle-direct-output-channel-fence-candidate.log",
+            strict_channel_handle_direct_output_fence)
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                channel_handle_direct_fence_fallback_dir))
+        assert payload_strict_log is not None
+        assert payload_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-direct-output-channel-fence-candidate.log")
+        assert payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+
+        channel_handle_nobatch_fence_fallback_dir = (
+            tmp / "flume-check-channel-handle-nobatch-fence-fallback")
+        channel_handle_nobatch_fence_fallback_dir.mkdir()
+        write(channel_handle_nobatch_fence_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(channel_handle_nobatch_fence_fallback_dir /
+              "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        write(
+            channel_handle_nobatch_fence_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_log(False).replace(
+                "payload_comm_acquire=default payload_comm_binding=comm-name",
+                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"))
+        write(
+            channel_handle_nobatch_fence_fallback_dir /
+            "03-hcomm-payload-channel-handle-nobatch-channel-fence-candidate.log",
+            strict_channel_handle_no_batch_fence)
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                channel_handle_nobatch_fence_fallback_dir))
+        assert payload_strict_log is not None
+        assert payload_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-nobatch-channel-fence-candidate.log")
+        assert payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+
         channel_skip_failed_candidates_dir = (
             tmp / "flume-check-channel-skip-failed-candidates")
         channel_skip_failed_candidates_dir.mkdir()
@@ -1435,6 +1569,36 @@ def main() -> int:
         assert storage_strict_log is not None
         assert storage_strict_log.name.endswith(
             "hcomm-payload-channel-handle-channel-fence-candidate.log")
+        assert storage_passed
+        assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+
+        storage_channel_handle_combo_fallback_dir = (
+            tmp / "flume-check-storage-channel-handle-combo-fallback")
+        storage_channel_handle_combo_fallback_dir.mkdir()
+        write(storage_channel_handle_combo_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(storage_channel_handle_combo_fallback_dir /
+              "01-hcomm-storage-strict-positive.log",
+              strict_log(False))
+        write(
+            storage_channel_handle_combo_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_log(False).replace(
+                "payload_comm_acquire=default payload_comm_binding=comm-name",
+                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"
+            ) + smoke_with_hcomm_storage_path())
+        write(
+            storage_channel_handle_combo_fallback_dir /
+            "03-hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate.log",
+            strict_channel_handle_no_batch_direct_output_fence +
+            smoke_with_hcomm_storage_path())
+        analyzed_tree, storage_passed, _, storage_strict_log, _ = (
+            flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
+                storage_channel_handle_combo_fallback_dir))
+        assert storage_strict_log is not None
+        assert storage_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate.log")
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
 

@@ -154,9 +154,13 @@ strict-positive 证据、checksum match 和 `fallback=none`，工具会把它选
 `--auto-run-hcomm-payload-channel-fence-diagnostic`；完整通过时同样可以作为
 HCOMM payload-copy evidence。
 如果同时打开 `--auto-run-hcomm-payload-channel-handle-candidate`，plain
-channel-handle 候选失败后还会追加
-`hcomm-payload-channel-handle-channel-fence-candidate`，用于一次性测试
-ChannelHandle 绑定和显式 read fence 的交叉组合。
+channel-handle 候选失败后，会按已启用的 diagnostics 继续追加交叉组合：
+`hcomm-payload-channel-handle-channel-fence-candidate`、
+`hcomm-payload-channel-handle-direct-output-channel-fence-candidate`、
+`hcomm-payload-channel-handle-nobatch-channel-fence-candidate` 和
+`hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate`。
+这些候选仍必须满足完整 strict-positive evidence、checksum match 和
+`fallback=none` 才会被选为真正 HCOMM payload-copy 证据。
 
 已有日志也可以离线复核 strict-positive 门禁：
 
