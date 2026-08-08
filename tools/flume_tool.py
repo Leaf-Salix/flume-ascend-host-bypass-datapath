@@ -1438,6 +1438,61 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
 
 
+def AnalyzeNpuRuntimeDiagnostics(run_dir: Path,
+                                  combined_smoke_text: str) -> tuple[str, str, str]:
+    """Classify pre-payload NPU runtime failures without exposing host details."""
+    texts = [combined_smoke_text]
+    for pattern in ("*-npu-smi-info-m.log", "*-npu-topo-check.log"):
+        for path in sorted(run_dir.glob(pattern)):
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+    rank_dir = run_dir / "hccl-rank-logs"
+    if rank_dir.is_dir():
+        for path in sorted(rank_dir.glob("rank-*.log")):
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+    joined = "\n".join(texts)
+
+    driver_patterns = (
+        r"dcmi module initialize failed",
+        r"DrvMngGetConsoleLogLevel failed",
+        r"get platform info failed",
+        r"DestroyRuntimeImpl: soHandle or rt is nullptr",
+    )
+    if any(re.search(pattern, joined, re.IGNORECASE)
+           for pattern in driver_patterns):
+        return (
+            "driver-runtime-unavailable",
+            "`dcmi module initialize failed` or driver platform-info failure",
+            "fix NPU driver/runtime visibility before rerunning strict-positive",
+        )
+    if re.search(r"root-info.*(missing|not produced|timeout)",
+                 joined, re.IGNORECASE):
+        return (
+            "root-info-bringup-failed",
+            "`root-info` bring-up did not complete",
+            "inspect HCCL root-info bring-up before payload kernel evidence",
+        )
+    if rank_dir.is_dir() and (rank_dir / "rank-0.log").exists() and not (
+            rank_dir / "rank-1.log").exists():
+        return (
+            "rank-launch-incomplete",
+            "rank0 log exists but rank1 log is missing",
+            "inspect multiprocess rank launch and device visibility",
+        )
+    if "hcomm payload smoke passed" in combined_smoke_text:
+        return (
+            "payload-smoke-ran",
+            "`hcomm payload smoke passed` marker",
+            "inspect strict payload markers",
+        )
+    if "hcomm payload smoke unsupported" in combined_smoke_text:
+        return (
+            "payload-smoke-unsupported",
+            "`hcomm payload smoke unsupported` marker",
+            "inspect payload package and launcher capability",
+        )
+    return ("unknown", "no NPU runtime preflight signal", "continue strict-positive")
+
+
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                              strict_log: Optional[Path],
                              package_log: Optional[Path]) -> Path:
@@ -1465,6 +1520,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict = read(strict_log)
     package = read(package_log)
     combined = smoke + "\n" + strict
+    npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
+        AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
     lines = [
         "# Flume Ascend Full Matrix Decision Tree",
         "",
@@ -1573,6 +1630,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCOMM custom-op package reason | {package_reason} | "
         "`reason=` from preflight log |")
     lines.append(
+        f"| NPU runtime ready for strict payload? | {npu_runtime_status} | "
+        f"{npu_runtime_evidence} |")
+    lines.append(
         f"| HCOMM payload scheduler candidate built? | "
         f"{'yes' if scheduler_candidate else 'no'} | "
         "`hcomm_payload_scheduler_candidate` in caps |")
@@ -1620,6 +1680,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         next_action = (
             "Stage 3B.3E strict payload copy passed; inspect checksum and "
             "start Stage 3B.4 storage rewiring")
+    elif npu_runtime_status in (
+            "driver-runtime-unavailable", "root-info-bringup-failed",
+            "rank-launch-incomplete"):
+        next_action = npu_runtime_next_action
     elif package and not package_payload_ready:
         next_action = PackageTextNextAction(package)
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and

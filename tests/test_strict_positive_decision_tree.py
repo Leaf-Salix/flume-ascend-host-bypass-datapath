@@ -361,6 +361,38 @@ def main() -> int:
         assert "| payload build mode | not-internal |" in text
         assert "installed package is canary/stub-only" in text
 
+        driver_runtime_dir = tmp / "driver-runtime-unavailable"
+        driver_runtime_dir.mkdir()
+        write(driver_runtime_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(driver_runtime_dir / "01-npu-smi-info-m.log",
+              "returncode: 187\n"
+              "DrvMngGetConsoleLogLevel failed. (ret=4)\n"
+              "dcmi module initialize failed.\n")
+        write(driver_runtime_dir / "hccl-rank-logs" / "rank-0.log",
+              "get platform info failed, drvErr=4.\n")
+        tree = flume_tool.WriteMatrixDecisionTree(
+            driver_runtime_dir, smoke, None,
+            driver_runtime_dir / "00-hcomm-custom-op-package-preflight.log")
+        text = tree.read_text(encoding="utf-8")
+        assert ("| NPU runtime ready for strict payload? | "
+                "driver-runtime-unavailable |") in text
+        assert "fix NPU driver/runtime visibility before rerunning strict-positive" in text
+
+        incomplete_rank_dir = tmp / "rank-launch-incomplete"
+        incomplete_rank_dir.mkdir()
+        write(incomplete_rank_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(incomplete_rank_dir / "hccl-rank-logs" / "rank-0.log",
+              "rank 0 started but no peer root-info arrived\n")
+        tree = flume_tool.WriteMatrixDecisionTree(
+            incomplete_rank_dir, smoke, None,
+            incomplete_rank_dir / "00-hcomm-custom-op-package-preflight.log")
+        text = tree.read_text(encoding="utf-8")
+        assert ("| NPU runtime ready for strict payload? | "
+                "rank-launch-incomplete |") in text
+        assert "inspect multiprocess rank launch and device visibility" in text
+
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()
         write(log_dir / "00-hcomm-custom-op-package-preflight.log",
