@@ -44,7 +44,7 @@ int main() {
   constexpr size_t kBytes = static_cast<size_t>(kCount) * sizeof(float);
 
   fs::path root = fs::temp_directory_path() / "flume-test-sim-hcomm-payload-copy";
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   fs::create_directories(root);
 
   flume::StorageAgent agent("127.0.0.1", 0, root.string());
@@ -151,6 +151,6 @@ int main() {
     flume_client_close(client);
   }
   agent.Stop();
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   return 0;
 }

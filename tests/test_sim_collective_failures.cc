@@ -56,7 +56,7 @@ int main() {
   namespace fs = std::filesystem;
 
   fs::path root = fs::temp_directory_path() / "flume-test-sim-collective-failures";
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   fs::create_directories(root);
 
   flume::StorageAgent agent("127.0.0.1", 0, root.string());
@@ -198,6 +198,6 @@ int main() {
   }
 
   agent.Stop();
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   return 0;
 }

@@ -1247,6 +1247,35 @@ def main() -> int:
         assert payload_passed
         assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
 
+        channel_handle_fence_fallback_dir = (
+            tmp / "flume-check-channel-handle-fence-fallback")
+        channel_handle_fence_fallback_dir.mkdir()
+        write(channel_handle_fence_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(channel_handle_fence_fallback_dir /
+              "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        write(
+            channel_handle_fence_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_log(False).replace(
+                "payload_comm_acquire=default payload_comm_binding=comm-name",
+                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"))
+        write(
+            channel_handle_fence_fallback_dir /
+            "03-hcomm-payload-channel-handle-channel-fence-candidate.log",
+            strict_channel_handle.replace("payload_desc_completion_mode=0",
+                                          "payload_desc_completion_mode=1"))
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                channel_handle_fence_fallback_dir))
+        assert payload_strict_log is not None
+        assert payload_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-channel-fence-candidate.log")
+        assert payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+
         channel_skip_failed_candidates_dir = (
             tmp / "flume-check-channel-skip-failed-candidates")
         channel_skip_failed_candidates_dir.mkdir()
@@ -1374,6 +1403,38 @@ def main() -> int:
         assert storage_strict_log is not None
         assert storage_strict_log.name.endswith(
             "hcomm-payload-channel-fence-diagnostic.log")
+        assert storage_passed
+        assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+
+        storage_channel_handle_fence_fallback_dir = (
+            tmp / "flume-check-storage-channel-handle-fence-fallback")
+        storage_channel_handle_fence_fallback_dir.mkdir()
+        write(storage_channel_handle_fence_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(storage_channel_handle_fence_fallback_dir /
+              "01-hcomm-storage-strict-positive.log",
+              strict_log(False))
+        write(
+            storage_channel_handle_fence_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_log(False).replace(
+                "payload_comm_acquire=default payload_comm_binding=comm-name",
+                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"
+            ) + smoke_with_hcomm_storage_path())
+        write(
+            storage_channel_handle_fence_fallback_dir /
+            "03-hcomm-payload-channel-handle-channel-fence-candidate.log",
+            strict_channel_handle.replace(
+                "payload_desc_completion_mode=0",
+                "payload_desc_completion_mode=1") +
+            smoke_with_hcomm_storage_path())
+        analyzed_tree, storage_passed, _, storage_strict_log, _ = (
+            flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
+                storage_channel_handle_fence_fallback_dir))
+        assert storage_strict_log is not None
+        assert storage_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-channel-fence-candidate.log")
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
 

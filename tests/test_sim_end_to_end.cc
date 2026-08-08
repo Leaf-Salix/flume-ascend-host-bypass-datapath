@@ -25,7 +25,7 @@ int main() {
   namespace fs = std::filesystem;
 
   fs::path dir = fs::temp_directory_path() / "flume-test-sim-e2e";
-  fs::remove_all(dir);
+  FlumeTestRemoveAll(dir);
   fs::create_directories(dir);
   WriteFixture(dir / "data.bin");
 
@@ -81,6 +81,6 @@ int main() {
   flume_close(file);
   flume_client_close(client);
   agent.Stop();
-  fs::remove_all(dir);
+  FlumeTestRemoveAll(dir);
   return 0;
 }

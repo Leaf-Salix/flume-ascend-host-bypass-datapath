@@ -25,7 +25,7 @@ int main() {
   constexpr size_t kBytes = 32;
 
   fs::path root = fs::temp_directory_path() / "flume-test-sim-hcomm-payload-failures";
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   fs::create_directories(root);
   WriteFixture(root / "data.bin");
 
@@ -121,6 +121,6 @@ int main() {
   flume_client_close(rank1);
   flume_client_close(rank0);
   agent.Stop();
-  fs::remove_all(root);
+  FlumeTestRemoveAll(root);
   return 0;
 }

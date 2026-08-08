@@ -2247,6 +2247,34 @@ def RunHcommPayloadChannelHandleDirectOutputCandidate(
     return result
 
 
+def RunHcommPayloadChannelHandleChannelFenceCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = PayloadCommandWithoutCommBinding(base_command)
+    if "--hcomm-payload-channel-fence" not in command:
+        command.append("--hcomm-payload-channel-fence")
+    command.append("--hcomm-payload-comm-binding=channel-handle")
+    result = runner.run(
+        "hcomm-payload-channel-handle-channel-fence-candidate",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadChannelHandleCandidate(
+        runner.run_dir,
+        default_log,
+        result.log_path,
+        note_name="HCOMM_PAYLOAD_CHANNEL_HANDLE_CHANNEL_FENCE_CANDIDATE.md",
+        title="HCOMM Payload Channel-Handle Channel-Fence Candidate")
+    return result
+
+
 def RunHcommPayloadChannelHandleNoBatchCandidate(
         runner: Runner,
         base_command: list[str],
@@ -3283,6 +3311,7 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-channel-fence-diagnostic",
     "hcomm-payload-tagged-diagnostic",
     "hcomm-payload-channel-handle-candidate",
+    "hcomm-payload-channel-handle-channel-fence-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
     "hcomm-payload-channel-handle-direct-output-candidate",
     "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
@@ -3599,8 +3628,21 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                 if StrictPayloadLogPassed(channel_result.log_path):
                     strict_tree_log = channel_result.log_path
                 else:
+                    channel_fence_passed = False
+                    if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                            not CommandUsesChannelFence(strict_command)):
+                        channel_fence_result = (
+                            RunHcommPayloadChannelHandleChannelFenceCandidate(
+                                runner, strict_command, smoke_spec.env_updates,
+                                args.hccl_smoke_timeout_sec,
+                                strict_result.log_path))
+                        channel_fence_passed = StrictPayloadLogPassed(
+                            channel_fence_result.log_path)
+                        if channel_fence_passed:
+                            strict_tree_log = channel_fence_result.log_path
                     channel_nobatch_passed = False
-                    if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                    if (not channel_fence_passed and
+                            args.auto_run_hcomm_payload_nobatch_diagnostic and
                             "--hcomm-payload-disable-batch" not in strict_command):
                         channel_nobatch_result = (
                             RunHcommPayloadChannelHandleNoBatchCandidate(
@@ -3611,7 +3653,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                             channel_nobatch_result.log_path)
                         if channel_nobatch_passed:
                             strict_tree_log = channel_nobatch_result.log_path
-                    if (not channel_nobatch_passed and
+                    if (not channel_fence_passed and
+                            not channel_nobatch_passed and
                             args.auto_run_hcomm_payload_direct_output_diagnostic and
                             not CommandUsesDirectOutputRecv(strict_command)):
                         channel_direct_result = (
@@ -3820,8 +3863,20 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
                     else:
+                        channel_fence_passed = False
+                        if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                                not CommandUsesChannelFence(spec.command)):
+                            channel_fence_result = (
+                                RunHcommPayloadChannelHandleChannelFenceCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            channel_fence_passed = StrictPayloadLogPassed(
+                                channel_fence_result.log_path)
+                            if channel_fence_passed:
+                                strict_tree_log = channel_fence_result.log_path
                         channel_nobatch_passed = False
-                        if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                        if (not channel_fence_passed and
+                                args.auto_run_hcomm_payload_nobatch_diagnostic and
                                 not args.hcomm_payload_disable_batch and
                                 "--hcomm-payload-disable-batch" not in spec.command):
                             channel_nobatch_result = (
@@ -3832,7 +3887,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                                 channel_nobatch_result.log_path)
                             if channel_nobatch_passed:
                                 strict_tree_log = channel_nobatch_result.log_path
-                        if (not channel_nobatch_passed and
+                        if (not channel_fence_passed and
+                                not channel_nobatch_passed and
                                 args.auto_run_hcomm_payload_direct_output_diagnostic and
                                 not CommandUsesDirectOutputRecv(spec.command)):
                             channel_direct_result = (
@@ -4043,8 +4099,20 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
                     else:
+                        channel_fence_passed = False
+                        if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+                                not CommandUsesChannelFence(spec.command)):
+                            channel_fence_result = (
+                                RunHcommPayloadChannelHandleChannelFenceCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            channel_fence_passed = StrictPayloadLogPassed(
+                                channel_fence_result.log_path)
+                            if channel_fence_passed:
+                                strict_tree_log = channel_fence_result.log_path
                         channel_nobatch_passed = False
-                        if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                        if (not channel_fence_passed and
+                                args.auto_run_hcomm_payload_nobatch_diagnostic and
                                 not args.hcomm_payload_disable_batch and
                                 "--hcomm-payload-disable-batch" not in spec.command):
                             channel_nobatch_result = (
@@ -4055,7 +4123,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                                 channel_nobatch_result.log_path)
                             if channel_nobatch_passed:
                                 strict_tree_log = channel_nobatch_result.log_path
-                        if (not channel_nobatch_passed and
+                        if (not channel_fence_passed and
+                                not channel_nobatch_passed and
                                 args.auto_run_hcomm_payload_direct_output_diagnostic and
                                 not CommandUsesDirectOutputRecv(spec.command)):
                             channel_direct_result = (
@@ -5450,6 +5519,9 @@ def parse_args() -> argparse.Namespace:
                               "and write HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md. "
                               "Unlike diagnostic-skip, a complete channel-handle "
                               "run can satisfy the strict-positive evidence gate. "
+                              "When channel-fence auto diagnostics are also "
+                              "enabled, a failing channel-handle run is followed "
+                              "by a channel-handle + channel-fence candidate. "
                               "When direct-output auto diagnostics are also "
                               "enabled, a failing channel-handle run is followed "
                               "by a channel-handle + direct-output candidate."))
