@@ -465,6 +465,10 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
+  --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-nobatch-diagnostic \
+  --auto-run-hcomm-payload-tagged-diagnostic \
+  --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
 ```
 

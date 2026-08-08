@@ -1768,6 +1768,112 @@ def RunHcommPayloadNoBatchDiagnostic(
     return result
 
 
+def RunHcommPayloadTaggedDiagnostic(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path],
+        batch_tag: str) -> Optional[StepResult]:
+    if not batch_tag:
+        return None
+    command = [
+        item for item in base_command
+        if not item.startswith("--hcomm-payload-batch-tag=") and
+        item != "--hcomm-payload-disable-batch"
+    ]
+    command.append(f"--hcomm-payload-batch-tag={batch_tag}")
+    result = runner.run(
+        "hcomm-payload-tagged-diagnostic",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadTaggedDiagnostic(
+        runner.run_dir, default_log, result.log_path, batch_tag)
+    return result
+
+
+def WriteHcommPayloadTaggedDiagnostic(
+        run_dir: Path,
+        default_log: Optional[Path],
+        tagged_log: Optional[Path],
+        batch_tag: str) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_TAGGED_DIAGNOSTIC.md"
+    try:
+        default_text = (default_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if default_log is not None else "")
+    except OSError as exc:
+        default_text = f"failed to read default log: {exc}"
+    try:
+        tagged_text = (tagged_log.read_text(encoding="utf-8",
+                                            errors="replace")
+                       if tagged_log is not None else "")
+    except OSError as exc:
+        tagged_text = f"failed to read tagged log: {exc}"
+
+    tagged_ok, tagged_rank0_ok, tagged_rank1_ok = (
+        StrictPayloadRankEvidencePassed(tagged_text))
+    default_failure_step = MarkerValue(default_text, "payload_failure_step")
+    tagged_failure_step = MarkerValue(tagged_text, "payload_failure_step")
+    tagged_batch_mode = MarkerValue(tagged_text, "payload_batch_mode")
+    tagged_batch_tag = MarkerValue(tagged_text, "payload_desc_batch_tag")
+    tagged_hcomm_ret = MarkerValue(tagged_text, "payload_kernel_hcomm_ret")
+    tagged_rank_lines = ExtractStrictPayloadRankLines(tagged_text)
+
+    if tagged_ok:
+        decision = (
+            "tagged batch HCOMM payload copy and checksum verification passed; "
+            "the default empty-tag batch path is the likely compatibility "
+            "problem")
+        next_action = (
+            "rerun strict-positive with the same --hcomm-payload-batch-tag and "
+            "then wire Stage 3B.4 storage once the strict gate is green")
+    elif tagged_failure_step != "missing":
+        decision = (
+            "tagged batch diagnostic reached the payload kernel but failed "
+            f"inside `{tagged_failure_step}`")
+        next_action = StrictPayloadFailureAction(1, tagged_failure_step)
+    else:
+        decision = "tagged batch diagnostic did not reach complete payload evidence"
+        next_action = "inspect tagged direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload Tagged Batch Diagnostic",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- tagged_log: `{tagged_log}`",
+        f"- requested_batch_tag: `{batch_tag}`",
+        f"- default_failure_step: `{default_failure_step}`",
+        f"- tagged_batch_mode: `{tagged_batch_mode}`",
+        f"- tagged_descriptor_batch_tag: `{tagged_batch_tag}`",
+        f"- tagged_failure_step: `{tagged_failure_step}`",
+        f"- tagged_hcomm_ret: `{tagged_hcomm_ret}`",
+        f"- tagged_rank0_evidence: `{'passed' if tagged_rank0_ok else 'missing'}`",
+        f"- tagged_rank1_evidence: `{'passed' if tagged_rank1_ok else 'missing'}`",
+        f"- tagged_payload_copy_and_verify: `{'passed' if tagged_ok else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "The tagged batch path is diagnostic unless the user explicitly reruns "
+        "the strict-positive gate with the same tag. It does not make a "
+        "failed default strict run pass retroactively.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- tagged_rank0: `{tagged_rank_lines[0]}`",
+        f"- tagged_rank1: `{tagged_rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload tagged diagnostic -> {note}")
+    return note
+
+
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
@@ -1996,6 +2102,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     package = read(package_log)
     no_batch_log = FindStepLog(run_dir, ["hcomm-payload-nobatch-diagnostic"])
     no_batch = read(no_batch_log)
+    tagged_log = FindStepLog(run_dir, ["hcomm-payload-tagged-diagnostic"])
+    tagged = read(tagged_log)
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
@@ -2120,6 +2228,15 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 "not-run" if not no_batch else "not-passed")))
     no_batch_failure_step = marker_value(no_batch, "payload_failure_step")
     no_batch_hcomm_ret = marker_value(no_batch, "payload_kernel_hcomm_ret")
+    tagged_ok, tagged_rank0_ok, tagged_rank1_ok = (
+        StrictPayloadRankEvidencePassed(tagged))
+    tagged_result = (
+        "passed" if tagged_ok else (
+            "partial" if tagged_rank0_ok or tagged_rank1_ok else (
+                "not-run" if not tagged else "not-passed")))
+    tagged_failure_step = marker_value(tagged, "payload_failure_step")
+    tagged_batch_tag = marker_value(tagged, "payload_desc_batch_tag")
+    tagged_hcomm_ret = marker_value(tagged, "payload_kernel_hcomm_ret")
     rank_status = {}
     for rank in (0, 1):
         rank_line = strict_rank_lines[rank]
@@ -2204,6 +2321,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCOMM payload no-batch diagnostic | {no_batch_result} | "
         f"batch={strict_batch_mode}, no-batch failure `{no_batch_failure_step}`, "
         f"hcomm ret `{no_batch_hcomm_ret}` |")
+    lines.append(
+        f"| HCOMM payload tagged-batch diagnostic | {tagged_result} | "
+        f"tag={tagged_batch_tag}, tagged failure `{tagged_failure_step}`, "
+        f"hcomm ret `{tagged_hcomm_ret}` |")
     if strict_log is not None:
         lines.extend([
             "",
@@ -2274,6 +2395,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect direct ACL payload descriptor handoff"
         elif strict_launch != "passed":
             next_action = "inspect direct ACL payload launch"
+        elif tagged_ok and strict_batch_mode in ("on", "missing"):
+            next_action = (
+                "tagged HCOMM payload copy passed; rerun strict-positive with "
+                "the same --hcomm-payload-batch-tag and then wire Stage 3B.4 "
+                "storage")
         elif no_batch_ok and strict_batch_mode in ("on", "missing"):
             next_action = (
                 "no-batch HCOMM payload copy passed; inspect "
@@ -2592,6 +2718,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                 RunHcommPayloadNoBatchDiagnostic(
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
+            if (args.auto_run_hcomm_payload_tagged_diagnostic and
+                    package_payload_ready):
+                RunHcommPayloadTaggedDiagnostic(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path,
+                    args.hcomm_payload_diagnostic_batch_tag)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -2731,6 +2863,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                     RunHcommPayloadNoBatchDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
+                if args.auto_run_hcomm_payload_tagged_diagnostic:
+                    RunHcommPayloadTaggedDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path,
+                        args.hcomm_payload_diagnostic_batch_tag)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -2859,6 +2996,11 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             strict_result = result
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                if args.auto_run_hcomm_payload_tagged_diagnostic:
+                    RunHcommPayloadTaggedDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path,
+                        args.hcomm_payload_diagnostic_batch_tag)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -3942,6 +4084,18 @@ def parse_args() -> argparse.Namespace:
                               "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. This "
                               "collects A/B evidence only and does not turn "
                               "the strict-positive gate green."))
+    parser.add_argument("--auto-run-hcomm-payload-tagged-diagnostic",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the default batch-enabled strict payload gate "
+                              "fails, automatically rerun the same smoke with "
+                              "--hcomm-payload-batch-tag set. This collects "
+                              "empty-tag vs tagged-batch evidence only and "
+                              "does not turn the strict-positive gate green."))
+    parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
+                        default="flume-payload-v1",
+                        help=("Batch tag used by "
+                              "--auto-run-hcomm-payload-tagged-diagnostic"))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",
