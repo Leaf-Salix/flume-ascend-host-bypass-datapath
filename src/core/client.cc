@@ -1869,6 +1869,8 @@ std::string MakeHcommNotifyOnlyDetail(
 }
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+const char kFlumeHcommPayloadBatchTag[] = "flume_hcomm_payload";
+
 void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
                              const CommState& state,
                              uint32_t peer_rank,
@@ -1920,6 +1922,11 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       reinterpret_cast<uint64_t>(resource_info.remote_buffer);
   desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
   desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
+  static_assert(sizeof(kFlumeHcommPayloadBatchTag) <=
+                    FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES,
+                "Flume HCOMM payload batch tag exceeds descriptor field");
+  memcpy(desc->batch_tag, kFlumeHcommPayloadBatchTag,
+         sizeof(kFlumeHcommPayloadBatchTag));
 }
 
 bool IsUnsupportedHcclLaunchResult(HcclResult result) {
@@ -2405,7 +2412,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed payload_kernel_status=") +
+                       "stage3b3e_payload_sync=passed "
+                       "payload_batch_mode=on payload_kernel_status=") +
            PayloadKernelStatusName(kernel_status) + " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
   }
@@ -2415,7 +2423,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_payload_descriptor_handoff=passed "
                      "stage3b3e_direct_aclrt_payload_launch=passed "
                      "stage3b3e_payload_sync=passed "
-                     "payload_kernel_status=success kernel_func=") +
+                     "payload_batch_mode=on payload_kernel_status=success "
+                     "kernel_func=") +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
 }
 

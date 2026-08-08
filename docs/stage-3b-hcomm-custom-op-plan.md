@@ -273,6 +273,7 @@ stage3b3e_direct_aclrt_payload_loader=passed
 stage3b3e_payload_descriptor_handoff=passed
 stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
+payload_batch_mode=on
 payload_kernel_status=success
 fallback=none
 ```

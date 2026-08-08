@@ -21,6 +21,7 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_COPY_VERSION 1U
 #define FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommPayloadCopyDirectAclrtKernel"
+#define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 
 typedef enum {
   FLUME_HCOMM_NOTIFY_ROLE_SEND = 0,
@@ -81,7 +82,8 @@ typedef struct {
   uint64_t local_hccl_buffer_bytes;
   uint64_t remote_hccl_buffer_bytes;
   uint64_t status_word;
-  uint64_t reserved1[7];
+  char batch_tag[FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES];
+  uint64_t reserved1;
 } flume_hcomm_payload_copy_desc_v1;
 
 static inline void flume_hcomm_notify_only_desc_init(

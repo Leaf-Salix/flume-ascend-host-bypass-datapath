@@ -12,9 +12,15 @@ constexpr unsigned int kFlumePayloadSuccess = 0;
 constexpr unsigned int kFlumePayloadInvalidArgument = 1;
 constexpr unsigned int kFlumePayloadHcommError = 2;
 
+bool HasPayloadDescHeader(const flume_hcomm_payload_copy_desc_v1& desc) {
+  return desc.magic == FLUME_HCOMM_PAYLOAD_COPY_MAGIC &&
+         desc.version == FLUME_HCOMM_PAYLOAD_COPY_VERSION &&
+         desc.size == sizeof(flume_hcomm_payload_copy_desc_v1);
+}
+
 void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
                         unsigned int status) {
-  if (desc.status_word == 0) {
+  if (!HasPayloadDescHeader(desc) || desc.status_word == 0) {
     return;
   }
   auto* status_word = reinterpret_cast<unsigned int*>(desc.status_word);
@@ -22,10 +28,8 @@ void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
 }
 
 bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
-  return desc.magic == FLUME_HCOMM_PAYLOAD_COPY_MAGIC &&
-         desc.version == FLUME_HCOMM_PAYLOAD_COPY_VERSION &&
-         desc.size == sizeof(flume_hcomm_payload_copy_desc_v1) &&
-         desc.rank_size == 2 && desc.local_rank < desc.rank_size &&
+  return HasPayloadDescHeader(desc) && desc.rank_size == 2 &&
+         desc.local_rank < desc.rank_size &&
          desc.peer_rank < desc.rank_size && desc.local_rank != desc.peer_rank &&
          desc.ready_notify_idx != desc.done_notify_idx && desc.bytes != 0 &&
          desc.aicpu_thread != 0 && desc.channel_handle != 0 &&
@@ -35,13 +39,7 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          desc.bytes <= desc.remote_hccl_buffer_bytes;
 }
 
-unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
-  if (!ValidatePayloadDesc(desc)) {
-    StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
-    return kFlumePayloadInvalidArgument;
-  }
-  StorePayloadStatus(desc, kFlumePayloadHcommError);
-
+unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
   ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
   ChannelHandle channel = static_cast<ChannelHandle>(desc.channel_handle);
   void* user_buffer = reinterpret_cast<void*>(desc.user_buffer);
@@ -61,7 +59,6 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
             thread, channel, desc.done_notify_idx, desc.timeout_sec) != 0) {
       return kFlumePayloadHcommError;
     }
-    StorePayloadStatus(desc, kFlumePayloadSuccess);
     return kFlumePayloadSuccess;
   }
 
@@ -78,12 +75,41 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
             thread, channel, desc.done_notify_idx) != 0) {
       return kFlumePayloadHcommError;
     }
-    StorePayloadStatus(desc, kFlumePayloadSuccess);
     return kFlumePayloadSuccess;
   }
 
-  StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
   return kFlumePayloadInvalidArgument;
+}
+
+unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (!ValidatePayloadDesc(desc)) {
+    StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
+    return kFlumePayloadInvalidArgument;
+  }
+  StorePayloadStatus(desc, kFlumePayloadHcommError);
+
+  bool batch_started = false;
+  const bool use_batch_mode = desc.batch_tag[0] != '\0';
+  if (use_batch_mode) {
+    if (HcommBatchModeStart(desc.batch_tag) != 0) {
+      return kFlumePayloadHcommError;
+    }
+    batch_started = true;
+  }
+
+  unsigned int result = RunPayloadCopyBody(desc);
+  if (batch_started && HcommBatchModeEnd(desc.batch_tag) != 0 &&
+      result == kFlumePayloadSuccess) {
+    result = kFlumePayloadHcommError;
+  }
+  if (result == kFlumePayloadSuccess) {
+    StorePayloadStatus(desc, kFlumePayloadSuccess);
+  } else if (result == kFlumePayloadInvalidArgument) {
+    StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
+  } else {
+    StorePayloadStatus(desc, kFlumePayloadHcommError);
+  }
+  return result;
 }
 
 }  // namespace

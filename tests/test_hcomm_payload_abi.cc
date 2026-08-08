@@ -24,6 +24,10 @@ int main() {
                 "payload user buffer offset changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, status_word) == 112,
                 "payload status word offset changed");
+  static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, batch_tag) == 120,
+                "payload batch tag offset changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES == 48,
+                "payload batch tag capacity changed");
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);
@@ -32,6 +36,7 @@ int main() {
   FLUME_TEST_CHECK(payload.size == sizeof(flume_hcomm_payload_copy_desc_v1));
   FLUME_TEST_CHECK(payload.timeout_sec == 1800);
   FLUME_TEST_CHECK(payload.status_word == 0);
+  FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');
 
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);

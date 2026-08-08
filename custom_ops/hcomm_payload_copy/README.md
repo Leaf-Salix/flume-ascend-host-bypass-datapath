@@ -141,7 +141,7 @@ Expected markers:
 - no-internal canary:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - payload copy:
-  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_kernel_status=success`
+  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on payload_kernel_status=success`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL
