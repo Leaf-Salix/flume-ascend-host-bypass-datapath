@@ -45,6 +45,13 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3 | stabilize HCOMM pair-copy scheduler as default payload backend | `hcomm_payload_scheduler=custom-op-aicpu` | environment-specific fallback remains required |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
+Current implementation note: 3B.3E has a candidate kernel and strict-positive
+runtime gate in the repository. It is not considered complete until an installed
+payload-ready custom-op package passes `hcomm-payload-strict-positive` on
+Ascend hardware with `fallback=none`. Build-output JSON/tar pairs are useful for
+preflight, but strict-positive runtime launch requires the installed
+`aicpu/config` JSON and its matching `aicpu/kernel` tar.
+
 ## Stage 3B.1: Custom-Op Launch Readiness
 
 3B.1 deliberately does not move payload. It proves the launcher boundary:

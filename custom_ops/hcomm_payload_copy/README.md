@@ -227,3 +227,27 @@ as a real payload package.
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints
 `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`.
+
+For the real Stage 3B.3E payload-copy gate, use the installed package layout,
+not loose build outputs. Flume launches the kernel with
+`aclrtBinaryLoadFromFile(JSON)`, so an explicit `--custom-op-json` must point at
+the installed `aicpu/config/libflume_hcomm_payload_aicpu_kernel.json` and the
+matching `aicpu/kernel/aicpu_flume_hcomm_payload.tar.gz` must exist beside it.
+The `--custom-op-aicpu-tar` option is only package preflight evidence; it is not
+the runtime binary source for strict-positive launch.
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
+  --build-hcomm-custom-op \
+  --custom-op-json <installed-opp-root>/vendors/flume/aicpu/config/libflume_hcomm_payload_aicpu_kernel.json \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  hcomm-payload-strict-positive
+```
+
+Strict-positive success must include
+`stage3b3e_payload_copy=passed`, `stage3b3e_direct_aclrt_payload_launch=passed`,
+`stage3b3e_payload_sync=passed`, `payload_kernel_status=success`,
+`payload_status_word=0`, `payload_verify=passed`, and `fallback=none` on both
+ranks.

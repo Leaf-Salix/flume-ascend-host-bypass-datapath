@@ -57,12 +57,14 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Optional Stage 3B.2-complete / 3B.3-prep HCOMM notify-only smoke. It fixes the send/recv ready-done Channel Notify plan and reports expected unsupported until the custom-op/AICPU kernel can consume the descriptor.
 - Stage 3B.3B HCOMM launcher capability router. It reports whether Flume can use public `HcclAicpuKernelLaunch`, direct ACL runtime custom-op launch APIs, HCOMM thread export, HCOMM primitives, and an installed Flume custom-op package; unsupported results include precise missing reasons.
 - Stage 3B.3C direct ACL custom-op readiness. It probes installed package loading, direct function lookup, descriptor ABI handoff, and `aclrtLaunchKernelWithConfig` separately.
+- Stage 3B.3D no-internal-header direct ACL canary path. It verifies that a Flume custom-op package can be launched through the public ACL runtime route without relying on unpublished `hccl_launch.h` headers.
+- Stage 3B.3E HCOMM payload-copy candidate. The custom-op package exports the V2 payload ABI and contains a kernel that consumes the Flume descriptor, calls `HcommLocalCopyOnThread`, `HcommReadOnThread`, and HCOMM Channel Notify primitives, then reports device-visible status words. This is implemented as a strict-positive candidate, but still requires an installed payload-ready custom-op package and remote NPU evidence before it is considered complete.
 - One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM custom-op launch readiness, HCOMM resource descriptor readiness, HCOMM notify-only readiness, HCOMM payload readiness, Stage 3A storage-HBM fallback, and strict expected-negative logs in one run. Verified on Host B (CANN 9.0) with HCCS_SW device pairs; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler launch is not implemented.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
-Not implemented yet:
+Not complete yet:
 
-- HCOMM primitive / custom-op payload backend for direct HBM-to-HBM copy.
+- Strict-positive validation of the HCOMM primitive / custom-op payload backend for direct HBM-to-HBM copy. The code path and package ABI exist; completion requires `hcomm-payload-strict-positive` to pass with `stage3b3e_payload_copy=passed`, `payload_verify=passed`, and `fallback=none` on Ascend hardware.
 - Storage proxy rank backed by HCCL/HCOMM communication memory.
 - Full RDMA / NVMe-oF / SPDK to NPU HBM data path.
 - Transparent framework integration.
@@ -189,7 +191,7 @@ recv rank:
   HcommChannelNotifyRecordOnThread(done)
 ```
 
-The current code now has a library-level plan model for this pair-copy scheduler and a reserved `custom_ops/hcomm_payload_copy/` implementation surface. Stage 3B.1 adds `--run-hcomm-custom-op-launch-smoke` for the no-op custom-op launch readiness boundary. Stage 3B.2 adds `--run-hcomm-resource-descriptor-smoke` to package the HCOMM resource descriptor on the host side and clearly mark the custom-op/AICPU descriptor handoff as missing. Stage 3B.2-complete / 3B.3-prep adds `--run-hcomm-notify-only-smoke` for the descriptor-consume plus Channel Notify record/wait plan. Stage 3B.3B adds a launcher router so unsupported results identify whether the missing piece is public HCCL launch, direct ACL runtime launch, thread export, HCOMM primitives, or custom-op package installation. Stage 3B.3C starts the direct ACL route by probing package load, direct function lookup, descriptor ABI handoff, and launch separately. It still reports unsupported until one launcher route can actually execute the AICPU kernel. The full sub-stage plan is in [docs/stage-3b-hcomm-custom-op-plan.md](docs/stage-3b-hcomm-custom-op-plan.md).
+The current code now has a library-level plan model for this pair-copy scheduler and a reserved `custom_ops/hcomm_payload_copy/` implementation surface. Stage 3B.1 adds `--run-hcomm-custom-op-launch-smoke` for the no-op custom-op launch readiness boundary. Stage 3B.2 adds `--run-hcomm-resource-descriptor-smoke` to package the HCOMM resource descriptor on the host side and clearly mark the custom-op/AICPU descriptor handoff as missing. Stage 3B.2-complete / 3B.3-prep adds `--run-hcomm-notify-only-smoke` for the descriptor-consume plus Channel Notify record/wait plan. Stage 3B.3B adds a launcher router so unsupported results identify whether the missing piece is public HCCL launch, direct ACL runtime launch, thread export, HCOMM primitives, or custom-op package installation. Stage 3B.3C starts the direct ACL route by probing package load, direct function lookup, descriptor ABI handoff, and launch separately. Stage 3B.3D proves the direct ACL canary route without unpublished HCCL launch headers. Stage 3B.3E adds the real payload-copy candidate: rank0 copies source HBM into the HCCL Buffer, rank1 reads from the remote HCCL Buffer into destination HBM, and both ranks synchronize with HCOMM Channel Notify. This path is only accepted as complete when the strict-positive smoke passes with no fallback. The full sub-stage plan is in [docs/stage-3b-hcomm-custom-op-plan.md](docs/stage-3b-hcomm-custom-op-plan.md).
 
 Full two-rank Ascend matrix:
 
@@ -206,8 +208,9 @@ python3 tools/flume_tool.py \
 This builds once, runs local regression tests, then runs HCCL collective,
 HCCL P2P baseline, HCOMM Channel probe, HCOMM payload readiness, and Stage 3A
 storage proxy HBM fallback in one two-rank smoke. It also runs a strict
-payload-copy check as an optional expected negative until the custom-op/AICPU
-scheduler exists. The log directory includes
+payload-copy check as an optional expected negative until an installed
+payload-ready custom-op package is present and the strict-positive gate passes.
+The log directory includes
 `ASCEND_FULL_MATRIX_DECISION_TREE.md`.
 
 Atlas A3 HCCS symmetric-memory smoke:
