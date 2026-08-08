@@ -498,7 +498,10 @@ by itself block the direct ACL payload candidate.
 
 ## Stage 3B.4: Storage HBM Integration
 
-Once the HCOMM pair-copy scheduler works, Stage 3A can be rewired:
+Stage 3A now has two storage-HBM smoke paths. The default remains the proven
+`storage_hbm=hccl-p2p-staging` fallback. When the strict HCOMM payload-copy
+gate is explicitly required, the same storage smoke uses the HCOMM payload
+scheduler and reports `storage_hbm=hcomm-payload-staging`:
 
 ```text
 file/storage block
@@ -510,6 +513,8 @@ file/storage block
 
 This is still a staging path unless storage/RDMA can DMA directly into
 NPU-visible memory. Full host-bypass requires Stage 4 storage registration work.
+The `hcomm-payload-staging` marker should only be considered valid after
+Stage 3B.3E itself passes with `fallback=none` and checksum verification.
 
 ## Remote Validation Commands
 

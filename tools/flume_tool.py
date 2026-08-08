@@ -762,6 +762,7 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
             "Storage HBM Smoke",
             re.compile(
                 r"(storage HBM smoke|storage_hbm=hccl-p2p-staging|"
+                r"storage_hbm=hcomm-payload-staging|"
                 r"storage-smoke-input)",
                 re.IGNORECASE,
             ),
@@ -827,6 +828,13 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
             "fallback path file->host->proxy HBM->HCCL P2P->compute HBM. "
             "This validates storage integration plumbing, not full direct "
             "storage DMA into HBM."
+        )
+    if re.search(r"storage_hbm=hcomm-payload-staging", joined, re.IGNORECASE):
+        hints.append(
+            "Storage smoke transferred a file slice through the HCOMM payload "
+            "scheduler path file->host->proxy HBM->HCOMM payload->compute HBM. "
+            "This validates Stage 3B integration with the storage proxy; it is "
+            "still not full storage DMA into HBM."
         )
 
     with diag.open("w", encoding="utf-8") as f:
@@ -1579,6 +1587,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hcomm_payload_ok = "hcomm payload smoke passed" in combined
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in combined
     storage_hbm_ok = "storage HBM smoke passed" in combined
+    storage_hbm_path = "hcomm-payload-staging" if (
+        "storage_hbm=hcomm-payload-staging" in combined) else (
+            "hccl-p2p-staging" if
+            "storage_hbm=hccl-p2p-staging" in combined else "missing")
     strict_positive_ok, strict_rank0_ok, strict_rank1_ok = (
         StrictPayloadRankEvidencePassed(strict))
     strict_rank_lines = ExtractStrictPayloadRankLines(strict)
@@ -1671,8 +1683,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"{'yes' if scheduler_candidate else 'no'} | "
         "`hcomm_payload_scheduler_candidate` in caps |")
     lines.append(
-        f"| Storage to HBM fallback path ok? | {'yes' if storage_hbm_ok else 'no'} | "
-        "`storage HBM smoke passed` marker |")
+        f"| Storage to HBM path ok? | {'yes' if storage_hbm_ok else 'no'} | "
+        f"`storage_hbm={storage_hbm_path}` marker |")
     lines.append(
         f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
     lines.append(

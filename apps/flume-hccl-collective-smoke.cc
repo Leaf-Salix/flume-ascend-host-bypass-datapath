@@ -1585,6 +1585,7 @@ void RankMain(RankContext* ctx) {
   }
 
   if (ctx->storage_hbm_smoke) {
+    const bool use_hcomm_storage_path = ctx->hcomm_require_payload_copy;
     if (ctx->rank == 0) {
       if (!ReadFileSlice(ctx->storage_smoke_file, ctx->storage_smoke_offset,
                          ctx->storage_smoke_bytes, host_buf, &error)) {
@@ -1603,23 +1604,52 @@ void RankMain(RankContext* ctx) {
                     "aclrtMemcpy storage proxy H2D", &error)) {
         goto cleanup;
       }
-      if (!CheckFlume(flume_p2p_send_async(
-                          client, reduce_send_buf,
-                          ctx->a3_symmetric ? layout.reduce_send_offset : 0,
-                          ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 1,
-                          stream, &storage_hbm_io),
-                      "flume_p2p_send_async storage HBM", &error) ||
-          !CheckFlume(flume_wait(storage_hbm_io, -1),
-                      "flume_wait storage HBM send", &error)) {
+      if (use_hcomm_storage_path) {
+        flume_hcomm_channel_probe_options_t options = {};
+        options.size = sizeof(options);
+        options.notify_num = ctx->hcomm_notify_num;
+        options.engine = ctx->hcomm_engine;
+        options.protocol = ctx->hcomm_protocol;
+        options.require_thread_export =
+            ctx->hcomm_require_thread_export ? 1U : 0U;
+        options.timeout_sec = ctx->hcomm_timeout_sec;
+        if (!CheckFlume(flume_hcomm_payload_send_ex(
+                            client, reduce_send_buf,
+                            ctx->a3_symmetric ? layout.reduce_send_offset : 0,
+                            ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 1,
+                            &options, stream, &storage_hbm_io),
+                        "flume_hcomm_payload_send_ex storage HBM", &error) ||
+            !CheckFlume(flume_wait(storage_hbm_io, -1),
+                        "flume_wait storage HBM hcomm send", &error)) {
+          goto cleanup;
+        }
+      } else if (!CheckFlume(flume_p2p_send_async(
+                                 client, reduce_send_buf,
+                                 ctx->a3_symmetric ?
+                                     layout.reduce_send_offset : 0,
+                                 ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8,
+                                 1, stream, &storage_hbm_io),
+                             "flume_p2p_send_async storage HBM", &error) ||
+                 !CheckFlume(flume_wait(storage_hbm_io, -1),
+                             "flume_wait storage HBM send", &error)) {
         goto cleanup;
       }
       std::ostringstream line;
-      line << "rank 0 storage HBM smoke sent: storage_hbm=hccl-p2p-staging"
-           << " path=file->host->proxy_hbm->HcclSend"
+      line << "rank 0 storage HBM smoke sent: storage_hbm="
+           << (use_hcomm_storage_path ? "hcomm-payload-staging" :
+                                        "hccl-p2p-staging")
+           << " path="
+           << (use_hcomm_storage_path ?
+                   "file->host->proxy_hbm->HCOMM payload send" :
+                   "file->host->proxy_hbm->HcclSend")
            << " file=" << ctx->storage_smoke_file
            << " offset=" << ctx->storage_smoke_offset
            << " bytes=" << ctx->storage_smoke_bytes
            << " checksum=" << checksum;
+      const char* detail = flume_io_error_message(storage_hbm_io);
+      if (detail != nullptr && detail[0] != '\0') {
+        line << " detail=\"" << detail << "\"";
+      }
       LogLine(line.str());
     } else if (ctx->rank == 1) {
       memset(host_buf, 0, ctx->storage_smoke_bytes);
@@ -1629,14 +1659,34 @@ void RankMain(RankContext* ctx) {
                     "aclrtMemcpy storage recv clear H2D", &error)) {
         goto cleanup;
       }
-      if (!CheckFlume(flume_p2p_recv_async(
-                          client, reduce_recv_buf,
-                          ctx->a3_symmetric ? layout.reduce_recv_offset : 0,
-                          ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 0,
-                          stream, &storage_hbm_io),
-                      "flume_p2p_recv_async storage HBM", &error) ||
-          !CheckFlume(flume_wait(storage_hbm_io, -1),
-                      "flume_wait storage HBM recv", &error)) {
+      if (use_hcomm_storage_path) {
+        flume_hcomm_channel_probe_options_t options = {};
+        options.size = sizeof(options);
+        options.notify_num = ctx->hcomm_notify_num;
+        options.engine = ctx->hcomm_engine;
+        options.protocol = ctx->hcomm_protocol;
+        options.require_thread_export =
+            ctx->hcomm_require_thread_export ? 1U : 0U;
+        options.timeout_sec = ctx->hcomm_timeout_sec;
+        if (!CheckFlume(flume_hcomm_payload_recv_ex(
+                            client, reduce_recv_buf,
+                            ctx->a3_symmetric ? layout.reduce_recv_offset : 0,
+                            ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8, 0,
+                            &options, stream, &storage_hbm_io),
+                        "flume_hcomm_payload_recv_ex storage HBM", &error) ||
+            !CheckFlume(flume_wait(storage_hbm_io, -1),
+                        "flume_wait storage HBM hcomm recv", &error)) {
+          goto cleanup;
+        }
+      } else if (!CheckFlume(flume_p2p_recv_async(
+                                 client, reduce_recv_buf,
+                                 ctx->a3_symmetric ?
+                                     layout.reduce_recv_offset : 0,
+                                 ctx->storage_smoke_bytes, FLUME_DTYPE_UINT8,
+                                 0, stream, &storage_hbm_io),
+                             "flume_p2p_recv_async storage HBM", &error) ||
+                 !CheckFlume(flume_wait(storage_hbm_io, -1),
+                             "flume_wait storage HBM recv", &error)) {
         goto cleanup;
       }
       if (!CheckAcl(aclrtMemcpy(host_buf, ctx->storage_smoke_bytes, reduce_recv,
@@ -1666,10 +1716,19 @@ void RankMain(RankContext* ctx) {
         }
       }
       std::ostringstream line;
-      line << "rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging"
-           << " path=HcclRecv->compute_hbm"
+      line << "rank 1 storage HBM smoke passed: storage_hbm="
+           << (use_hcomm_storage_path ? "hcomm-payload-staging" :
+                                        "hccl-p2p-staging")
+           << " path="
+           << (use_hcomm_storage_path ?
+                   "HCOMM payload recv->compute_hbm" :
+                   "HcclRecv->compute_hbm")
            << " bytes=" << ctx->storage_smoke_bytes
            << " checksum=" << checksum;
+      const char* detail = flume_io_error_message(storage_hbm_io);
+      if (detail != nullptr && detail[0] != '\0') {
+        line << " detail=\"" << detail << "\"";
+      }
       LogLine(line.str());
     }
   }

@@ -146,6 +146,18 @@ def payload_ready_package_log() -> str:
             "status=PASS\n")
 
 
+def smoke_with_hcomm_storage_path() -> str:
+    return "\n".join([
+        "FLUME_BACKEND_CAPS hcomm_primitives=on "
+        "hcomm_payload_scheduler_candidate=on",
+        "hccl collective smoke passed p2p_copy=on",
+        "hcomm channel probe passed",
+        "rank 1 storage HBM smoke passed: "
+        "storage_hbm=hcomm-payload-staging bytes=4096 checksum=7",
+        "",
+    ])
+
+
 def stale_status_schema_package_log() -> str:
     return "\n".join([
         "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
@@ -388,6 +400,15 @@ def main() -> int:
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "| HCOMM custom-op package reason | custom-op AICPU tar missing |" in text
         assert "matching AICPU tar are both present" in text
+
+        hcomm_storage_smoke = write(tmp / "smoke-hcomm-storage.log",
+                                    smoke_with_hcomm_storage_path())
+        hcomm_storage_dir = tmp / "hcomm-storage-path"
+        hcomm_storage_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            hcomm_storage_dir, hcomm_storage_smoke, None, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |" in text
 
         stale_status_schema_package = write(
             tmp / "package-stale-status-schema.log",
