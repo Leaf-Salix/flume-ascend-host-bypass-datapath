@@ -156,7 +156,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     }
     if (desc.completion_mode ==
         FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
-      ret = HcommChannelDrainOnThread(thread, channel);
+      ret = HcommChannelFenceOnThread(thread, channel);
       if (ret != 0) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED;

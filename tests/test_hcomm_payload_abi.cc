@@ -67,7 +67,7 @@ int main() {
   static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY == 0,
                 "ordered-notify payload completion mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN == 1,
-                "channel-drain payload completion mode changed");
+                "channel-fence payload completion mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC == 60,
                 "payload default timeout changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,
@@ -97,7 +97,7 @@ int main() {
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED == 12,
                 "payload thread-notify record status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED == 13,
-                "payload channel-drain status changed");
+                "payload channel-fence status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED == 14,
                 "payload comm acquire status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED == 15,

@@ -149,6 +149,7 @@ ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 ")
   set(_FLUME_OLD_CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES}")
   set(_FLUME_OLD_CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
+  set(_FLUME_OLD_CMAKE_REQUIRED_LINK_OPTIONS "${CMAKE_REQUIRED_LINK_OPTIONS}")
   set(_FLUME_OLD_TRY_COMPILE_TARGET_TYPE "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
   set(CMAKE_REQUIRED_INCLUDES
     ${HCCL_INCLUDE_DIR}
@@ -162,6 +163,13 @@ ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
     ${ASCENDCL_LIBRARY}
     ${SECUREC_LIBRARY}
   )
+  if(UNIX AND NOT APPLE)
+    set(CMAKE_REQUIRED_LINK_OPTIONS
+      ${CMAKE_REQUIRED_LINK_OPTIONS}
+      -Wl,--allow-shlib-undefined
+    )
+    target_link_options(flume PUBLIC -Wl,--allow-shlib-undefined)
+  endif()
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
 
   check_cxx_source_compiles("
@@ -332,7 +340,7 @@ int main() {
   auto read = &HcommReadOnThread;
   auto notify_record = &HcommChannelNotifyRecordOnThread;
   auto notify_wait = &HcommChannelNotifyWaitOnThread;
-  auto drain = &HcommChannelDrainOnThread;
+  auto fence = &HcommChannelFenceOnThread;
   auto batch_start = &HcommBatchModeStart;
   auto batch_end = &HcommBatchModeEnd;
   auto thread_notify_wait = &HcommThreadNotifyWaitOnThread;
@@ -344,7 +352,7 @@ int main() {
   (void)read;
   (void)notify_record;
   (void)notify_wait;
-  (void)drain;
+  (void)fence;
   (void)batch_start;
   (void)batch_end;
   (void)thread_notify_wait;
@@ -460,6 +468,7 @@ int main() {
 
   set(CMAKE_REQUIRED_INCLUDES "${_FLUME_OLD_CMAKE_REQUIRED_INCLUDES}")
   set(CMAKE_REQUIRED_LIBRARIES "${_FLUME_OLD_CMAKE_REQUIRED_LIBRARIES}")
+  set(CMAKE_REQUIRED_LINK_OPTIONS "${_FLUME_OLD_CMAKE_REQUIRED_LINK_OPTIONS}")
   set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_FLUME_OLD_TRY_COMPILE_TARGET_TYPE}")
 
   foreach(_FLUME_FEATURE

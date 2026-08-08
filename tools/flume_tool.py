@@ -459,6 +459,25 @@ def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
     return None
 
 
+def CannRuntimeEnvUpdates(args: argparse.Namespace) -> dict[str, str]:
+    cann_root = ResolveCannBinaryRoot(getattr(args, "cann_package_root", ""))
+    if cann_root is None:
+        return {}
+    updates = {"ASCEND_HOME_PATH": str(cann_root)}
+    lib_paths = []
+    for path in (
+            cann_root / "lib64",
+            Path("/usr/local/Ascend/driver/lib64"),
+            Path("/usr/local/Ascend/driver/lib64/common")):
+        if path.exists():
+            lib_paths.append(str(path))
+    if lib_paths:
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        updates["LD_LIBRARY_PATH"] = (
+            ":".join(lib_paths + ([existing] if existing else [])))
+    return updates
+
+
 @dataclass
 class StepResult:
     name: str
@@ -1070,6 +1089,7 @@ def WriteHcclRankTableV1(run_dir: Path, physical_devices: list[str],
 def build_commands(args: argparse.Namespace, enable_hccl: bool,
                    run_dir: Optional[Path] = None) -> list[CommandSpec]:
     build_dir = args.build_dir
+    cmake_env_updates = CannRuntimeEnvUpdates(args) if enable_hccl else {}
     configure = [
         "cmake",
         "-S",
@@ -1081,20 +1101,21 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         f"-DFLUME_BUILD_HCOMM_CUSTOM_OP={'ON' if args.build_hcomm_custom_op else 'OFF'}",
     ]
     commands: list[CommandSpec] = [
-        CommandSpec("cmake-configure", configure, True, {}),
+        CommandSpec("cmake-configure", configure, True, cmake_env_updates),
         CommandSpec("cmake-build",
                     ["cmake", "--build", build_dir, "-j", str(args.jobs)],
-                    True, {}),
+                    True, cmake_env_updates),
     ]
     if not args.skip_tests:
         commands.append(CommandSpec(
             "ctest", ["ctest", "--test-dir", build_dir, "--output-on-failure"],
-            True, {}))
+            True, cmake_env_updates))
     sim_demo = str(Path(build_dir) / "flume-sim-demo")
-    commands.append(CommandSpec("sim-demo", [sim_demo], True, {}))
+    commands.append(CommandSpec("sim-demo", [sim_demo], True,
+                                cmake_env_updates))
     sim_collective_demo = str(Path(build_dir) / "flume-sim-collective-demo")
     commands.append(CommandSpec("sim-collective-demo", [sim_collective_demo],
-                                True, {}))
+                                True, cmake_env_updates))
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
                         args.run_hcomm_channel_probe or
@@ -1120,7 +1141,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 )
             storage_smoke_input, storage_smoke_checksum = ResolveStorageSmokeInput(
                 args, run_dir)
-        env_updates: dict[str, str] = {}
+        env_updates: dict[str, str] = CannRuntimeEnvUpdates(args)
         if args.hccl_host_ifname:
             env_updates["HCCL_SOCKET_IFNAME"] = args.hccl_host_ifname
         if args.hccl_host_ip:
@@ -1266,7 +1287,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
     runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
-               required=True, timeout_seconds=args.step_timeout_sec)
+               required=True, timeout_seconds=args.step_timeout_sec,
+               env_updates=CannRuntimeEnvUpdates(args))
     requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                             args.run_hccl_p2p_smoke or
                             args.run_hcomm_channel_probe or
@@ -1735,7 +1757,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
     runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
-               required=True, timeout_seconds=args.step_timeout_sec)
+               required=True, timeout_seconds=args.step_timeout_sec,
+               env_updates=CannRuntimeEnvUpdates(args))
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if len(hccl_devices) != 2:
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
@@ -1883,7 +1906,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         print(f"[failed] command setup -> {setup_log}")
         return 1
     runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
-               required=True, timeout_seconds=args.step_timeout_sec)
+               required=True, timeout_seconds=args.step_timeout_sec,
+               env_updates=CannRuntimeEnvUpdates(args))
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
                    required=False, timeout_seconds=args.step_timeout_sec)

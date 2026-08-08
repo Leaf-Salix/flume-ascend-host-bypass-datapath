@@ -231,7 +231,7 @@ int32_t HcommLocalCopyOnThread(ThreadHandle, void*, const void*, uint64_t);
 int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, uint32_t);
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, uint32_t, uint32_t);
-int32_t HcommChannelDrainOnThread(ThreadHandle, ChannelHandle);
+int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);
 int32_t HcommAcquireComm(const char*);
 int32_t HcommReleaseComm(const char*);
 int32_t HcommBatchModeStart(const char*);
@@ -255,7 +255,7 @@ int32_t HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, uint64_t 
 int32_t HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, uint32_t c, uint32_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
-int32_t HcommChannelDrainOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
+int32_t HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
 int32_t HcommAcquireComm(const char* a) { (void)a; return 0; }
 int32_t HcommReleaseComm(const char* a) { (void)a; return 0; }
 int32_t HcommBatchModeStart(const char* a) { (void)a; return 0; }

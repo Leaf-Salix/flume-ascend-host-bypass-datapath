@@ -18,7 +18,7 @@ enum Call {
   kNotifyRecord = 6,
   kNotifyWait = 7,
   kBatchEnd = 8,
-  kChannelDrain = 9,
+  kChannelFence = 9,
   kAcquireComm = 10,
   kReleaseComm = 11,
 };
@@ -113,9 +113,9 @@ inline int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle,
   return notify_wait_ret;
 }
 
-inline int32_t HcommChannelDrainOnThread(ThreadHandle, ChannelHandle) {
+inline int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle) {
   using namespace flume_hcomm_payload_kernel_mock;
-  RecordCall(kChannelDrain);
+  RecordCall(kChannelFence);
   return channel_drain_ret;
 }
 

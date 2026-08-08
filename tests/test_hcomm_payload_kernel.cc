@@ -176,7 +176,7 @@ int main() {
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
   const int recv_drain_calls[] = {
-      kAcquireComm, kBatchStart, kNotifyWait, kRead, kChannelDrain,
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kChannelFence,
       kNotifyRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 8));
 

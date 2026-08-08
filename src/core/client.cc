@@ -2336,7 +2336,7 @@ std::string PayloadKernelStatusName(uint32_t status) {
     case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED:
       return "thread-notify-record-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED:
-      return "channel-drain-failed";
+      return "channel-fence-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED:
       return "comm-acquire-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
@@ -2377,7 +2377,7 @@ std::string PayloadFailureStepName(uint32_t status) {
     case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED:
       return "host-aicpu-thread-notify-record";
     case FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED:
-      return "channel-drain";
+      return "channel-fence";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED:
       return "comm-acquire";
     case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
@@ -2483,7 +2483,7 @@ std::string HcommPayloadCompletionDetail(
   detail += " payload_sync_timeout_sec=" +
       std::to_string(resource_info.timeout_sec);
   detail += resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
-      " payload_completion_mode=channel-drain" :
+      " payload_completion_mode=channel-fence" :
       " payload_completion_mode=ordered-notify";
   detail += resource_info.host_thread_notify_ready ?
       " payload_completion=thread-notify+stream-sync+status-word" :
