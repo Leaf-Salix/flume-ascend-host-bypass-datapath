@@ -15,8 +15,8 @@ from pathlib import Path
 KERNEL_SO = "libflume_hcomm_payload_aicpu_kernel.so"
 
 
-def compile_kernel(tmp: Path, include_abi_v2: bool) -> Path:
-    source = tmp / ("kernel_v2.c" if include_abi_v2 else "kernel_legacy.c")
+def compile_kernel(tmp: Path, mode: str) -> Path:
+    source = tmp / f"kernel_{mode}.c"
     lines = [
         "unsigned int FlumeHcommCanaryDirectAclrtKernel(void *p) "
         "{ (void)p; return 0; }",
@@ -24,16 +24,24 @@ def compile_kernel(tmp: Path, include_abi_v2: bool) -> Path:
         "{ (void)p; return 0; }",
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void *p) "
         "{ (void)p; return FlumeHcommPayloadCopyDirectAclrtKernelV2(p); }",
-        "unsigned int FlumeHcommPayloadBuildModeInternalPayload(void) "
-        "{ return 1; }",
         "unsigned int FlumeHcommPayloadCopyAbiVersion(void) { return 2; }",
     ]
-    if include_abi_v2:
+    if mode == "canary":
+        lines.append(
+            "unsigned int FlumeHcommPayloadBuildModeCanaryOnly(void) "
+            "{ return 1; }"
+        )
+    else:
+        lines.append(
+            "unsigned int FlumeHcommPayloadBuildModeInternalPayload(void) "
+            "{ return 1; }"
+        )
+    if mode != "legacy":
         lines.append(
             "unsigned int FlumeHcommPayloadCopyAbiVersion2(void) { return 1; }"
         )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    output = tmp / ("kernel_v2.so" if include_abi_v2 else "kernel_legacy.so")
+    output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
         command = ["cc", "-dynamiclib", "-o", str(output), str(source)]
     else:
@@ -42,9 +50,9 @@ def compile_kernel(tmp: Path, include_abi_v2: bool) -> Path:
     return output
 
 
-def write_package(tmp: Path, include_abi_v2: bool) -> tuple[Path, Path]:
-    so_path = compile_kernel(tmp, include_abi_v2)
-    tar_path = tmp / ("pkg_v2.tar.gz" if include_abi_v2 else "pkg_legacy.tar.gz")
+def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
+    so_path = compile_kernel(tmp, mode)
+    tar_path = tmp / f"pkg_{mode}.tar.gz"
     with tarfile.open(tar_path, "w:gz") as tar:
         tar.add(so_path, arcname=f"aicpu_kernels_device/{KERNEL_SO}")
 
@@ -64,7 +72,7 @@ def write_package(tmp: Path, include_abi_v2: bool) -> tuple[Path, Path]:
             }
         },
     }
-    if include_abi_v2:
+    if mode != "legacy":
         payload["FlumeHcommPayloadCopyAbiVersion2"] = {
             "opInfo": {
                 "opKernelLib": "AICPUKernel",
@@ -72,7 +80,7 @@ def write_package(tmp: Path, include_abi_v2: bool) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopyAbiVersion2",
             }
         }
-    json_path = tmp / ("pkg_v2.json" if include_abi_v2 else "pkg_legacy.json")
+    json_path = tmp / f"pkg_{mode}.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
     return json_path, tar_path
 
@@ -102,7 +110,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
 
-        legacy_json, legacy_tar = write_package(tmp, include_abi_v2=False)
+        legacy_json, legacy_tar = write_package(tmp, mode="legacy")
         legacy = run_preflight(repo, legacy_json, legacy_tar)
         if legacy.returncode == 0:
             print(legacy.stdout)
@@ -112,7 +120,19 @@ def main() -> int:
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=missing" in legacy.stdout
         assert "reason=payload kernel package is missing the payload ABI version marker" in legacy.stdout
 
-        v2_json, v2_tar = write_package(tmp, include_abi_v2=True)
+        canary_json, canary_tar = write_package(tmp, mode="canary")
+        canary = run_preflight(repo, canary_json, canary_tar)
+        if canary.returncode == 0:
+            print(canary.stdout)
+            print(canary.stderr, file=sys.stderr)
+            raise AssertionError("canary-only package passed as payload-ready")
+        assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
+        assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
+        assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
+        assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
+        assert "reason=payload kernel package is canary-only" in canary.stdout
+
+        v2_json, v2_tar = write_package(tmp, mode="v2")
         v2 = run_preflight(repo, v2_json, v2_tar)
         if v2.returncode != 0:
             print(v2.stdout)
