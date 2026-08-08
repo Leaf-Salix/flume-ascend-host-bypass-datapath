@@ -44,6 +44,8 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
+    "payload_trace_schema": "FlumeHcommPayloadTraceSchemaVersion",
+    "payload_trace_word_count": "FlumeHcommPayloadTraceWordCount",
     "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
@@ -61,6 +63,8 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8 = "FlumeHcommPayloadCopySemanticVersion8"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
+HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION = "FlumeHcommPayloadTraceSchemaVersion"
+HCOMM_PAYLOAD_TRACE_WORD_COUNT = "FlumeHcommPayloadTraceWordCount"
 HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
     "HcommAcquireComm",
     "HcommReleaseComm",
@@ -394,6 +398,8 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
+        "payload_trace_schema",
+        "payload_trace_word_count",
         "payload_primitive_deps",
         "build_mode_internal",
     }
@@ -4527,6 +4533,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
+        required_functions.append("payload_trace_schema")
+        required_functions.append("payload_trace_word_count")
         required_functions.append("payload_primitive_deps")
         required_functions.append("build_mode_internal")
 
@@ -4546,6 +4554,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_requires_comm_acquire_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
+    found_payload_trace_schema_marker = False
+    found_payload_trace_word_count_marker = False
     found_payload_primitive_deps_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
@@ -4594,6 +4604,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
+            HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION,
+            HCOMM_PAYLOAD_TRACE_WORD_COUNT,
         ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
@@ -4650,6 +4662,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_status_word_count_marker = (
                 found_payload_status_word_count_marker or
                 functions_present.get("payload_status_word_count", False))
+            found_payload_trace_schema_marker = (
+                found_payload_trace_schema_marker or
+                functions_present.get("payload_trace_schema", False))
+            found_payload_trace_word_count_marker = (
+                found_payload_trace_word_count_marker or
+                functions_present.get("payload_trace_word_count", False))
             legacy_payload_present = JsonDeclaresFunction(
                 payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
                 HCOMM_CUSTOM_OP_KERNEL_SO)
@@ -4708,6 +4726,14 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_status_word_count_marker or
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT,
                                         False))
+                found_payload_trace_schema_marker = (
+                    found_payload_trace_schema_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION,
+                                        False))
+                found_payload_trace_word_count_marker = (
+                    found_payload_trace_word_count_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT,
+                                        False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
@@ -4753,6 +4779,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_status_word_count."
                       f"{HCOMM_PAYLOAD_STATUS_WORD_COUNT}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) else 'missing'}")
+                print("function_so.payload_trace_schema."
+                      f"{HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, False) else 'missing'}")
+                print("function_so.payload_trace_word_count."
+                      f"{HCOMM_PAYLOAD_TRACE_WORD_COUNT}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT, False) else 'missing'}")
                 primitive_deps_present = all(
                     symbols_present.get(name, False)
                     for name in HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
@@ -4806,6 +4838,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT, False) and
                     primitive_deps_present)
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
@@ -4828,6 +4862,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION}")
             print("required_payload_status_word_count_symbol="
                   f"{HCOMM_PAYLOAD_STATUS_WORD_COUNT}")
+            print("required_payload_trace_schema_symbol="
+                  f"{HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION}")
+            print("required_payload_trace_word_count_symbol="
+                  f"{HCOMM_PAYLOAD_TRACE_WORD_COUNT}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok
@@ -4947,6 +4985,24 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
+                  (not found_payload_trace_schema_marker or
+                   not found_payload_trace_word_count_marker)):
+                print("reason=payload kernel package is missing the payload "
+                      "trace schema marker")
+                print("action=rebuild package with current Flume payload "
+                      "kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  found_payload_status_schema_marker and
+                  found_payload_status_word_count_marker and
+                  found_payload_trace_schema_marker and
+                  found_payload_trace_word_count_marker and
                   not found_payload_primitive_deps_marker):
                 print("reason=payload kernel package is missing HCOMM "
                       "primitive dependencies")

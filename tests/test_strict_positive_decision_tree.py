@@ -377,7 +377,8 @@ def payload_ready_package_log() -> str:
             "payload_abi_v4,payload_semantic,payload_semantic_v5,"
             "payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,"
             "payload_requires_comm_acquire,payload_status_schema,"
-            "payload_status_word_count,payload_primitive_deps,"
+            "payload_status_word_count,payload_trace_schema,"
+            "payload_trace_word_count,payload_primitive_deps,"
             "build_mode_internal\n"
             "status=PASS\n")
 
@@ -473,7 +474,7 @@ def abi_missing_package_log() -> str:
 
 def missing_aicpu_tar_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
         "json=present",
         "aicpu_tar=missing",
         "aicpu_tar_readable=missing",
@@ -493,7 +494,7 @@ def multi_candidate_payload_package_log() -> str:
         "",
         "root=/tmp/current-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
         "status=PASS",
         "",
         "status=PASS",

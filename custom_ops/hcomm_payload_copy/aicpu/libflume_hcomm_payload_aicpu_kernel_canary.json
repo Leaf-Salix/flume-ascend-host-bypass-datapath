@@ -117,5 +117,19 @@
       "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
       "functionName": "FlumeHcommPayloadStatusWordCount"
     }
+  },
+  "FlumeHcommPayloadTraceSchemaVersion": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadTraceSchemaVersion"
+    }
+  },
+  "FlumeHcommPayloadTraceWordCount": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadTraceWordCount"
+    }
   }
 }

@@ -117,6 +117,14 @@ extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {
 extern "C" unsigned int FlumeHcommPayloadStatusWordCount() {
   return FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
 }
+
+extern "C" unsigned int FlumeHcommPayloadTraceSchemaVersion() {
+  return FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION;
+}
+
+extern "C" unsigned int FlumeHcommPayloadTraceWordCount() {
+  return FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
+}
 #endif
 
 #ifndef FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH

@@ -60,6 +60,10 @@ extern "C" {
   "FlumeHcommPayloadStatusSchemaVersion"
 #define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC \
   "FlumeHcommPayloadStatusWordCount"
+#define FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC \
+  "FlumeHcommPayloadTraceSchemaVersion"
+#define FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC \
+  "FlumeHcommPayloadTraceWordCount"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG "flume_hcomm_payload"
 #define FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES 128U

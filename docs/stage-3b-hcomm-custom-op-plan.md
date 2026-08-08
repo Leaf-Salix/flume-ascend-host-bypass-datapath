@@ -506,7 +506,10 @@ communicator acquire/release handoff cannot be misclassified as payload-ready.
 It also requires `FlumeHcommPayloadStatusSchemaVersion` and
 `FlumeHcommPayloadStatusWordCount`, in both JSON and the tar-contained SO, so
 the host can reject packages that predate the current device-visible status
-schema before attempting a strict payload launch.
+schema before attempting a strict payload launch. The same gate requires
+`FlumeHcommPayloadTraceSchemaVersion` and
+`FlumeHcommPayloadTraceWordCount` so a package that cannot emit the ordered
+device-side primitive trace is not misclassified as payload-ready.
 When the package JSON declares only
 the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
@@ -522,6 +525,10 @@ When `FlumeHcommPayloadStatusSchemaVersion` or
 `FlumeHcommPayloadStatusWordCount` is missing, rebuild from the current tree;
 that package predates the current success-status schema and cannot prove
 `payload_kernel_hcomm_ret=0` with the expected status word layout.
+When `FlumeHcommPayloadTraceSchemaVersion` or
+`FlumeHcommPayloadTraceWordCount` is missing, rebuild from the current tree;
+that package predates the ordered device-side primitive trace required by the
+strict-positive evidence gate.
 
 `ascend-probe` records the same check as
 `hcomm-custom-op-package-preflight` when payload or notify-only smoke is

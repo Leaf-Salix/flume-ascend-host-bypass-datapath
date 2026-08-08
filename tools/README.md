@@ -310,10 +310,13 @@ canary-only 包或 payload 包不完整；如果同时出现
 `FlumeHcommPayloadCopyDirectAclrtKernelV4`、`FlumeHcommPayloadCopyAbiVersion4`
 、`FlumeHcommPayloadCopySemanticVersion`、
 `FlumeHcommPayloadCopySemanticVersion6`、
-`FlumeHcommPayloadCopySemanticVersion7` 和
+`FlumeHcommPayloadCopySemanticVersion7`、
+`FlumeHcommPayloadCopySemanticVersion8` 和
 `FlumeHcommPayloadCopyRequiresCommAcquire`，以及当前 device-visible status ABI
 marker `FlumeHcommPayloadStatusSchemaVersion` 和
-`FlumeHcommPayloadStatusWordCount`。旧包只声明
+`FlumeHcommPayloadStatusWordCount`、device-side trace ABI marker
+`FlumeHcommPayloadTraceSchemaVersion` 和
+`FlumeHcommPayloadTraceWordCount`。旧包只声明
 `FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v8 marker 时会被明确判为
 stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
@@ -325,9 +328,11 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopyAbiVersion4` 和
 `FlumeHcommPayloadCopySemanticVersion`、
 `FlumeHcommPayloadCopySemanticVersion6`、
-`FlumeHcommPayloadCopySemanticVersion7` 以及
+`FlumeHcommPayloadCopySemanticVersion7`、
+`FlumeHcommPayloadCopySemanticVersion8` 以及
 `FlumeHcommPayloadCopyRequiresCommAcquire`、`FlumeHcommPayloadStatusSchemaVersion`
-和 `FlumeHcommPayloadStatusWordCount` 同时出现在 JSON 和 SO 里。此外，
+、`FlumeHcommPayloadStatusWordCount`、`FlumeHcommPayloadTraceSchemaVersion`
+和 `FlumeHcommPayloadTraceWordCount` 同时出现在 JSON 和 SO 里。此外，
 payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
 `HcommReadOnThread`、HCOMM Channel Notify、Batch、Comm Acquire/Release
 等 primitive 依赖；只导出 Flume marker 但没有引用 HCOMM primitive 的

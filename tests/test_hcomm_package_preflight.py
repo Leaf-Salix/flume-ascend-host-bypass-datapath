@@ -151,6 +151,16 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "unsigned int FlumeHcommPayloadStatusWordCount(void) "
             "{ return 8; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v8_no_trace_schema"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadTraceSchemaVersion(void) "
+            "{ return 2; }"
+        )
+        lines.append(
+            "unsigned int FlumeHcommPayloadTraceWordCount(void) "
+            "{ return 80; }"
+        )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
@@ -296,6 +306,22 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadStatusWordCount",
             }
         }
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v8_no_trace_schema"):
+        payload["FlumeHcommPayloadTraceSchemaVersion"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadTraceSchemaVersion",
+            }
+        }
+        payload["FlumeHcommPayloadTraceWordCount"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadTraceWordCount",
+            }
+        }
     if mode != "canary":
         payload["FlumeHcommPayloadBuildModeInternalPayload"] = {
             "opInfo": {
@@ -432,7 +458,9 @@ def main() -> int:
                       "payload_semantic_v6", "payload_semantic_v7",
                       "payload_semantic_v8",
                       "payload_status_schema",
-                      "payload_status_word_count"):
+                      "payload_status_word_count",
+                      "payload_trace_schema",
+                      "payload_trace_word_count"):
             assert flume_tool.JsonDeclaresFunction(
                 static_canary, flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS[label],
                 KERNEL_SO), label
@@ -474,6 +502,8 @@ def main() -> int:
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in canary.stdout
         assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in canary.stdout
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in canary.stdout
+        assert "function.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in canary.stdout
+        assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in canary.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
@@ -601,6 +631,18 @@ def main() -> int:
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing" in stale_schema.stdout
         assert "reason=payload kernel package is missing the payload status schema marker" in stale_schema.stdout
 
+        stale_trace_json, stale_trace_tar = write_package(
+            tmp, mode="stale_v8_no_trace_schema")
+        stale_trace = run_preflight(repo, stale_trace_json, stale_trace_tar)
+        if stale_trace.returncode == 0:
+            print(stale_trace.stdout)
+            print(stale_trace.stderr, file=sys.stderr)
+            raise AssertionError(
+                "stale V8 package without trace schema marker passed")
+        assert "function.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=missing" in stale_trace.stdout
+        assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=missing" in stale_trace.stdout
+        assert "reason=payload kernel package is missing the payload trace schema marker" in stale_trace.stdout
+
         marker_only_json, marker_only_tar = write_package(
             tmp, mode="v4_marker_only")
         marker_only = run_preflight(repo, marker_only_json, marker_only_tar)
@@ -646,6 +688,10 @@ def main() -> int:
         assert "function_so.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
         assert "function_so.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
+        assert "function.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
+        assert "function_so.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
+        assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
+        assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout

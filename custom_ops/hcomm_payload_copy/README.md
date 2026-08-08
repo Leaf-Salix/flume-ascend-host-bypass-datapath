@@ -273,11 +273,14 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion5`,
 `FlumeHcommPayloadCopySemanticVersion6`,
 `FlumeHcommPayloadCopySemanticVersion7`,
+`FlumeHcommPayloadCopySemanticVersion8`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
-`FlumeHcommPayloadStatusWordCount`. These mark the descriptor ABI with HCCL
-comm-name handoff, descriptor echo words, device-side primitive trace, and the
-success-status schema where the
+`FlumeHcommPayloadStatusWordCount`,
+`FlumeHcommPayloadTraceSchemaVersion`, and
+`FlumeHcommPayloadTraceWordCount`. These mark the descriptor ABI with HCCL
+comm-name handoff, descriptor echo words, device-side primitive trace layout,
+and the success-status schema where the
 second status word is written as `payload_kernel_hcomm_ret=0`, the expected
 status word count, and the requirement that the kernel acquires/releases the
 HCOMM communicator by name. Payload-ready preflight also requires the AICPU SO
