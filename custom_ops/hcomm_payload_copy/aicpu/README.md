@@ -68,6 +68,9 @@ concrete status such as
 `ready-notify-wait-failed` before returning so host-side strict smoke can
 distinguish a package/launch problem from a specific HCOMM primitive execution
 problem.
+When host/AICPU thread notify handles are available, the kernel records the
+host completion notify only after `HcommBatchModeEnd` returns, so host wakeup
+does not precede HCOMM batch execution.
 
 The legacy public-HCCL-launch notify-only kernel consumes `HcclP2pKernelParam`, decodes
 `flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:

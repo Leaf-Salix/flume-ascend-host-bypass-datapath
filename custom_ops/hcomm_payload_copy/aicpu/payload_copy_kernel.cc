@@ -253,6 +253,16 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   StorePayloadStatus(desc, result == kFlumePayloadSuccess ?
                                kFlumePayloadSuccess :
                                result);
+  if (batch_started) {
+    if (result == kFlumePayloadSuccess) {
+      BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);
+    }
+    ret = HcommBatchModeEnd(desc.batch_tag);
+    if (ret != 0 && result == kFlumePayloadSuccess) {
+      StorePayloadPrimitiveRet(desc, ret);
+      result = FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED;
+    }
+  }
   if (use_thread_notify) {
     if (result == kFlumePayloadSuccess) {
       BeginPayloadPrimitive(
@@ -265,16 +275,6 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       StorePayloadStatus(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
       result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED;
-    }
-  }
-  if (batch_started) {
-    if (result == kFlumePayloadSuccess) {
-      BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);
-    }
-    ret = HcommBatchModeEnd(desc.batch_tag);
-    if (ret != 0 && result == kFlumePayloadSuccess) {
-      StorePayloadPrimitiveRet(desc, ret);
-      result = FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED;
     }
   }
   if (result == kFlumePayloadSuccess) {

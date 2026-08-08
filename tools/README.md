@@ -111,6 +111,8 @@ payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路�
 避免 AICPU+TS 非空 tag 缓存语义影响 pair-copy smoke。如果 CANN 暴露 host/AICPU thread-export，
 日志还会包含
 `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`；
+kernel 会在 `HcommBatchModeEnd` 返回之后才 record host completion notify，
+避免 host wakeup 早于 HCOMM batch 执行。
 否则会保留 direct ACL 路线并标记
 `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`。
 如果 direct ACL launch
