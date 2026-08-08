@@ -260,7 +260,11 @@ as a real payload package. Current payload-ready packages also export
 comm-name handoff, descriptor echo words, the success-status schema where the
 second status word is written as `payload_kernel_hcomm_ret=0`, the expected
 status word count, and the requirement that the kernel acquires/releases the
-HCOMM communicator by name.
+HCOMM communicator by name. Payload-ready preflight also requires the AICPU SO
+to reference the HCOMM primitive symbols used by the payload path, including
+`HcommLocalCopyOnThread`, `HcommReadOnThread`, HCOMM Channel Notify, Batch, and
+Comm Acquire/Release APIs. A marker-only SO is therefore not accepted as a real
+payload package.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and

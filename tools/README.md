@@ -266,13 +266,18 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopyAbiVersion4` 和
 `FlumeHcommPayloadCopySemanticVersion` 以及
 `FlumeHcommPayloadCopyRequiresCommAcquire`、`FlumeHcommPayloadStatusSchemaVersion`
-和 `FlumeHcommPayloadStatusWordCount` 同时出现在 JSON 和 SO 里，作为当前
-descriptor ABI、payload success-status schema/word-count 与 HCOMM comm
-acquire/release 语义 marker。默认 canary-only
+和 `FlumeHcommPayloadStatusWordCount` 同时出现在 JSON 和 SO 里。此外，
+payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
+`HcommReadOnThread`、HCOMM Channel Notify、Batch、Comm Acquire/Release
+等 primitive 依赖；只导出 Flume marker 但没有引用 HCOMM primitive 的
+marker-only 包会被拒绝。上述条件共同作为当前 descriptor ABI、payload
+success-status schema/word-count 与 HCOMM comm acquire/release 语义 marker。
+默认 canary-only
 包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
-ABI v4 marker、semantic v5 marker、comm-acquire marker 或 status schema marker 时不会被判为
-payload-ready，避免把空包、坏包、stub 包、旧 ABI 包、旧语义包、缺 HCOMM
-comm acquire/release、旧 status ABI 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
+ABI v4 marker、semantic v5 marker、comm-acquire marker、status schema marker
+或 HCOMM primitive 依赖时不会被判为 payload-ready，避免把空包、坏包、
+stub 包、旧 ABI 包、旧语义包、缺 HCOMM comm acquire/release、旧 status ABI、
+marker-only 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加

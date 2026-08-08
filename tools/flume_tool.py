@@ -55,6 +55,19 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5 = "FlumeHcommPayloadCopySemanticVersion5"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
+HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
+    "HcommAcquireComm",
+    "HcommReleaseComm",
+    "HcommBatchModeStart",
+    "HcommBatchModeEnd",
+    "HcommLocalCopyOnThread",
+    "HcommReadOnThread",
+    "HcommChannelNotifyRecordOnThread",
+    "HcommChannelNotifyWaitOnThread",
+    "HcommChannelFenceOnThread",
+    "HcommThreadNotifyRecordOnThread",
+    "HcommThreadNotifyWaitOnThread",
+)
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
@@ -351,6 +364,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
+        "payload_primitive_deps",
         "build_mode_internal",
     }
     return any(status == "PASS" and payload_required.issubset(required_set)
@@ -409,6 +423,10 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package predates HCOMM comm "
                 "acquire handoff")
+    if "primitive dependencies" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package does not reference "
+                "the required HCOMM primitive APIs")
     if "status schema marker" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package predates the current "
@@ -2361,7 +2379,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + primitive-payload marker + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + status schema + HCOMM primitive deps + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| rank0 kernel status | {rank_status[0]['kernel']} | `payload_kernel_status` on rank0 line, status word `{rank_status[0]['status_word']}` |",
@@ -3703,6 +3721,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
+        required_functions.append("payload_primitive_deps")
         required_functions.append("build_mode_internal")
 
     found_any_json = False
@@ -3718,6 +3737,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_requires_comm_acquire_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
+    found_payload_primitive_deps_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -3762,7 +3782,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
-        ]
+        ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
         print(f"aicpu_tar_so_symbols={symbol_state}")
@@ -3770,6 +3790,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             print(f"aicpu_tar_so_symbols_error={symbol_error}")
 
         functions_present: dict[str, bool] = {}
+        primitive_deps_present = False
         legacy_payload_present = False
         if json_exists and json_path is not None:
             found_any_json = True
@@ -3890,6 +3911,18 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_status_word_count."
                       f"{HCOMM_PAYLOAD_STATUS_WORD_COUNT}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) else 'missing'}")
+                primitive_deps_present = all(
+                    symbols_present.get(name, False)
+                    for name in HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
+                found_payload_primitive_deps_marker = (
+                    found_payload_primitive_deps_marker or
+                    primitive_deps_present)
+                for primitive_name in HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS:
+                    print("function_so.payload_primitive_dep."
+                          f"{primitive_name}="
+                          f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
+                print("payload_primitive_deps="
+                      f"{'present' if primitive_deps_present else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -3903,17 +3936,21 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
                 functions_present[label] = False
                 print(f"function.{label}.{function_name}=missing")
+            if args.require_hcomm_payload_kernel:
+                print("payload_primitive_deps=missing")
 
         required_ok = (
             tar_state == "present" and tar_so_state == "present" and
             all(functions_present.get(label, False)
-                for label in required_functions))
+                for label in required_functions
+                if label != "payload_primitive_deps"))
         if symbol_state in ("unreadable", "not-checked"):
             required_ok = False
         elif symbol_state == "present":
             required_ok = required_ok and all(
                 symbols_present.get(HCOMM_CUSTOM_OP_FUNCTIONS[label], False)
-                for label in required_functions)
+                for label in required_functions
+                if label != "payload_primitive_deps")
             if args.require_hcomm_payload_kernel:
                 required_ok = (
                     required_ok and
@@ -3923,7 +3960,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
-                    symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False))
+                    symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
+                    primitive_deps_present)
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
@@ -4012,6 +4050,18 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "status schema marker")
                 print("action=rebuild package with current Flume payload "
                       "kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  found_payload_status_schema_marker and
+                  found_payload_status_word_count_marker and
+                  not found_payload_primitive_deps_marker):
+                print("reason=payload kernel package is missing HCOMM "
+                      "primitive dependencies")
+                print("action=rebuild package with the primitive payload "
+                      "kernel, not a marker-only payload stub")
             else:
                 print("reason=payload kernel package is missing or incomplete")
         else:

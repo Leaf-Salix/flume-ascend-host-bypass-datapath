@@ -39,12 +39,50 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "{ (void)p; return 0; }",
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
-        "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) "
-        "{ (void)p; return 0; }",
+    ]
+    if mode == "v4":
+        lines.extend([
+            "typedef unsigned long long ThreadHandle;",
+            "typedef unsigned long long ChannelHandle;",
+            "int HcommAcquireComm(const char*);",
+            "int HcommReleaseComm(const char*);",
+            "int HcommBatchModeStart(const char*);",
+            "int HcommBatchModeEnd(const char*);",
+            "int HcommLocalCopyOnThread(ThreadHandle, void*, const void*, unsigned long long);",
+            "int HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, unsigned long long);",
+            "int HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, unsigned int);",
+            "int HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, unsigned int, unsigned int);",
+            "int HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);",
+            "int HcommThreadNotifyRecordOnThread(ThreadHandle, ThreadHandle, unsigned int);",
+            "int HcommThreadNotifyWaitOnThread(ThreadHandle, unsigned int, unsigned int);",
+            "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {",
+            "  char a[8] = {0};",
+            "  char b[8] = {0};",
+            "  volatile int r = 0;",
+            "  r += HcommAcquireComm(\"flume_unit_comm\");",
+            "  r += HcommBatchModeStart(\"flume_unit_batch\");",
+            "  r += HcommLocalCopyOnThread(1, b, a, 8);",
+            "  r += HcommChannelNotifyRecordOnThread(1, 2, 0);",
+            "  r += HcommChannelNotifyWaitOnThread(1, 2, 1, 60);",
+            "  r += HcommReadOnThread(1, 2, a, b, 8);",
+            "  r += HcommChannelFenceOnThread(1, 2);",
+            "  r += HcommThreadNotifyWaitOnThread(1, 0, 60);",
+            "  r += HcommThreadNotifyRecordOnThread(1, 3, 0);",
+            "  r += HcommBatchModeEnd(\"flume_unit_batch\");",
+            "  r += HcommReleaseComm(\"flume_unit_comm\");",
+            "  (void)p;",
+            "  return (unsigned int)(r & 0);",
+            "}",
+        ])
+    else:
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) "
+            "{ (void)p; return 0; }")
+    lines.extend([
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void *p) "
         "{ (void)p; return FlumeHcommPayloadCopyDirectAclrtKernelV4(p); }",
         "unsigned int FlumeHcommPayloadCopyAbiVersion(void) { return 4; }",
-    ]
+    ])
     if mode == "canary":
         lines.append(
             "unsigned int FlumeHcommPayloadBuildModeCanaryOnly(void) "
@@ -97,7 +135,8 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
-        command = ["cc", "-dynamiclib", "-o", str(output), str(source)]
+        command = ["cc", "-dynamiclib", "-undefined", "dynamic_lookup",
+                   "-o", str(output), str(source)]
     else:
         command = ["cc", "-shared", "-fPIC", "-o", str(output), str(source)]
     subprocess.run(command, check=True)
@@ -465,6 +504,20 @@ def main() -> int:
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing" in stale_schema.stdout
         assert "reason=payload kernel package is missing the payload status schema marker" in stale_schema.stdout
 
+        marker_only_json, marker_only_tar = write_package(
+            tmp, mode="v4_marker_only")
+        marker_only = run_preflight(repo, marker_only_json, marker_only_tar)
+        if marker_only.returncode == 0:
+            print(marker_only.stdout)
+            print(marker_only.stderr, file=sys.stderr)
+            raise AssertionError("marker-only V4 package passed")
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=present" in marker_only.stdout
+        assert "function.payload_semantic_v5.FlumeHcommPayloadCopySemanticVersion5=present" in marker_only.stdout
+        assert "payload_primitive_deps=missing" in marker_only.stdout
+        assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
+        assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
+        assert "reason=payload kernel package is missing HCOMM primitive dependencies" in marker_only.stdout
+
         v4_json, v4_tar = write_package(tmp, mode="v4")
         v4 = run_preflight(repo, v4_json, v4_tar)
         if v4.returncode != 0:
@@ -488,6 +541,11 @@ def main() -> int:
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
         assert "function_so.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
+        assert "payload_primitive_deps=present" in v4.stdout
+        assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
+        assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in v4.stdout
+        assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
+        assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
 
         installed_json = (
