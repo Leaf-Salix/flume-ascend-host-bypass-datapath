@@ -185,3 +185,7 @@ extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
 extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
   return FlumeHcommPayloadCopyDirectAclrtKernelV2(param);
 }
+
+extern "C" unsigned int FlumeHcommPayloadBuildModeInternalPayload() {
+  return 1U;
+}

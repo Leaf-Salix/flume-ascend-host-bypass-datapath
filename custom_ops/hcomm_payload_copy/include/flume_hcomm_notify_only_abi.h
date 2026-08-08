@@ -24,6 +24,10 @@ extern "C" {
   "FlumeHcommPayloadCopyDirectAclrtKernel"
 #define FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommPayloadCopyDirectAclrtKernelV2"
+#define FLUME_HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY_FUNC \
+  "FlumeHcommPayloadBuildModeCanaryOnly"
+#define FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC \
+  "FlumeHcommPayloadBuildModeInternalPayload"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE 0U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU 1U

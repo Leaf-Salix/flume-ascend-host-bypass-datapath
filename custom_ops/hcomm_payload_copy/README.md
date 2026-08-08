@@ -194,6 +194,10 @@ legacy `hccl_launch.h` path. Only enable
 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON` when the target CANN package
 actually exposes `hccl/hccl_launch.h` and you specifically want to test the
 older public-HCCL-launch notify-only entrypoint.
+The package preflight treats the build as payload-ready only when the AICPU SO
+exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
+export the V2 payload function as a compatibility stub, but it is not accepted
+as a real payload package.
 
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints

@@ -159,9 +159,12 @@ canary-only 包或 payload 包不完整；如果同时出现
 payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
 `readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
-`FlumeHcommCanaryDirectAclrtKernel` 和
-`FlumeHcommPayloadCopyDirectAclrtKernelV2`，避免把空包、坏包或 JSON/SO
-不一致的包误判为 payload-ready。
+`FlumeHcommCanaryDirectAclrtKernel`、
+`FlumeHcommPayloadCopyDirectAclrtKernelV2` 和
+`FlumeHcommPayloadBuildModeInternalPayload`。默认 canary-only 包可能为了
+JSON/SO 兼容导出 V2 stub；没有 internal build-mode marker 时不会被判为
+payload-ready，避免把空包、坏包、stub 包或 JSON/SO 不一致的包误判为可跑
+strict payload。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加

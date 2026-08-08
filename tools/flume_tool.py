@@ -33,6 +33,8 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
+HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
+HCOMM_PAYLOAD_BUILD_MODE_INTERNAL = "FlumeHcommPayloadBuildModeInternalPayload"
 
 
 def ResolveHcclInitMode(args: argparse.Namespace) -> str:
@@ -1371,6 +1373,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_any_json = False
     found_required = False
     found_legacy_payload = False
+    found_canary_only_marker = False
+    found_internal_payload_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -1403,7 +1407,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         if tar_error:
             print(f"aicpu_tar_error={tar_error}")
         symbol_names = list(HCOMM_CUSTOM_OP_FUNCTIONS.values()) + [
-            HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT]
+            HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
+            HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY,
+            HCOMM_PAYLOAD_BUILD_MODE_INTERNAL,
+        ]
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
         print(f"aicpu_tar_so_symbols={symbol_state}")
@@ -1432,9 +1439,23 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_legacy_payload = (
                 found_legacy_payload or legacy_payload_present)
             if symbol_state == "present":
+                found_canary_only_marker = (
+                    found_canary_only_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY,
+                                        False))
+                found_internal_payload_marker = (
+                    found_internal_payload_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL,
+                                        False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
+                print("function_so.build_mode.canary_only."
+                      f"{HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY, False) else 'missing'}")
+                print("function_so.build_mode.internal_payload."
+                      f"{HCOMM_PAYLOAD_BUILD_MODE_INTERNAL}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -1459,7 +1480,13 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             required_ok = required_ok and all(
                 symbols_present.get(HCOMM_CUSTOM_OP_FUNCTIONS[label], False)
                 for label in required_functions)
+            if args.require_hcomm_payload_kernel:
+                required_ok = (
+                    required_ok and
+                    symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False))
         print(f"required={','.join(required_functions)}")
+        if args.require_hcomm_payload_kernel:
+            print("required_build_mode=internal_payload")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok
@@ -1476,6 +1503,11 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "entrypoint")
                 print("action=rebuild package with current Flume V2 payload "
                       "entrypoint")
+            elif found_canary_only_marker and not found_internal_payload_marker:
+                print("reason=payload kernel package is canary-only; V2 "
+                      "payload entrypoint is a compatibility stub")
+                print("action=rebuild package with "
+                      "FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON")
             else:
                 print("reason=payload kernel package is missing or incomplete")
         else:
