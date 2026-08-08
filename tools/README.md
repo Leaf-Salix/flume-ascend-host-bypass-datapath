@@ -108,7 +108,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 primitive 调用。该字段会细分为 `local-copy-failed`、
 `ready-notify-record-failed`、`ready-notify-wait-failed`、
 `remote-read-failed`、`done-notify-record-failed`、`batch-start-failed`、
-`batch-end-failed` 或 `thread-notify-*-failed` 等阶段。
+`batch-end-failed` 或 `thread-notify-*-failed` 等阶段；失败时还会打印
+`payload_kernel_hcomm_ret=<ret>`，表示对应 HCOMM primitive 的原始返回码。
 
 构建 Flume custom-op package 时有两种模式：
 

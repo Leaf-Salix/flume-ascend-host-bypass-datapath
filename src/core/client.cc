@@ -2325,8 +2325,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   }
 
   void* kernel_status_dev = nullptr;
-  uint32_t kernel_status = 0xFFFFFFFFU;
-  aclError acl_ret = aclrtMalloc(&kernel_status_dev, sizeof(kernel_status),
+  uint32_t kernel_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+  aclError acl_ret = aclrtMalloc(&kernel_status_dev,
+                                 sizeof(kernel_status_words),
                                  ACL_MEM_MALLOC_HUGE_FIRST);
   if (acl_ret != ACL_SUCCESS) {
     *status = FLUME_ERR_BACKEND;
@@ -2336,8 +2337,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "api=aclrtMalloc(payload_status) error=\"") +
            AclErrorMessage(acl_ret) + "\"";
   }
-  acl_ret = aclrtMemcpy(kernel_status_dev, sizeof(kernel_status),
-                        &kernel_status, sizeof(kernel_status),
+  acl_ret = aclrtMemcpy(kernel_status_dev, sizeof(kernel_status_words),
+                        kernel_status_words, sizeof(kernel_status_words),
                         ACL_MEMCPY_HOST_TO_DEVICE);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtFree(kernel_status_dev);
@@ -2512,8 +2513,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
   }
 
-  acl_ret = aclrtMemcpy(&kernel_status, sizeof(kernel_status),
-                        kernel_status_dev, sizeof(kernel_status),
+  acl_ret = aclrtMemcpy(kernel_status_words, sizeof(kernel_status_words),
+                        kernel_status_dev, sizeof(kernel_status_words),
                         ACL_MEMCPY_DEVICE_TO_HOST);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
@@ -2531,6 +2532,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   (void)aclrtBinaryUnLoad(bin_handle);
   (void)aclrtFree(kernel_status_dev);
+  const uint32_t kernel_status = kernel_status_words[0];
+  const uint32_t kernel_hcomm_ret = kernel_status_words[1];
   if (kernel_status != 0) {
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
@@ -2539,7 +2542,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=passed "
                        "payload_batch_mode=on payload_kernel_status=") +
-           PayloadKernelStatusName(kernel_status) + " kernel_func=" +
+           PayloadKernelStatusName(kernel_status) +
+           " payload_kernel_hcomm_ret=" +
+           std::to_string(kernel_hcomm_ret) + " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadCompletionDetail(resource_info);
   }

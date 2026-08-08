@@ -71,6 +71,7 @@ int main() {
   FLUME_TEST_CHECK(payload.thread_notify_mode ==
                    FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE);
   FLUME_TEST_CHECK(payload.status_word == 0);
+  FLUME_TEST_CHECK(sizeof(uint32_t[2]) == 8);
   FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');
   FLUME_TEST_CHECK(payload.cpu_thread_on_aicpu == 0);
 

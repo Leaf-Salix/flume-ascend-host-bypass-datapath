@@ -275,6 +275,7 @@ stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
 payload_batch_mode=on
 payload_kernel_status=success
+payload_kernel_hcomm_ret=<primitive-ret-on-failure>
 payload_verify=passed
 payload_checksum=<fnv32>
 payload_thread_notify=host-aicpu|unavailable
@@ -291,7 +292,8 @@ kernel. The kernel reports per-step failures such as
 `local-copy-failed`, `ready-notify-record-failed`,
 `ready-notify-wait-failed`, `remote-read-failed`,
 `done-notify-record-failed`, `batch-start-failed`, `batch-end-failed`, and
-`thread-notify-*-failed`.
+`thread-notify-*-failed`. On those failures, `payload_kernel_hcomm_ret`
+contains the raw return code from the failed HCOMM primitive.
 
 The official HCOMM custom-op example also uses host CPU thread to AICPU thread
 notifications around kernel launch. Flume now models that boundary explicitly:
