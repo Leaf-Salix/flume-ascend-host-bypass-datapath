@@ -3425,7 +3425,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "HCOMM channel resource probe, and HCOMM payload readiness. It then "
         "runs --hcomm-require-payload-copy as a required positive check when "
         "the Stage 3B.3E payload package is installed, or as an optional "
-        "expected negative while the package is not ready. Before "
+        "expected negative while the package is not ready. When "
+        "--auto-run-hcomm-payload-channel-handle-candidate is enabled, a "
+        "failed default comm-name strict run triggers an explicit "
+        "channel-handle backend candidate; that candidate can satisfy the "
+        "strict evidence gate only with complete payload copy, checksum, "
+        "trace, and fallback=none markers. Before "
         "the smoke, it runs hcomm-custom-op-package-preflight to record "
         "whether the installed package is canary-ready or payload-ready. The "
         "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
@@ -3603,7 +3608,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_desc_batch_tag=default|custom, payload_semantic_v7=present, "
         "payload_semantic_v8=present, payload_thread_notify_order=..., "
         "source/received/expected checksum match, payload_verify=passed, and "
-        "fallback=none.\n",
+        "fallback=none. If --auto-run-hcomm-payload-channel-handle-candidate "
+        "is enabled, a failed default comm-name run may be followed by an "
+        "explicit channel-handle candidate; only complete strict-positive "
+        "evidence from that candidate can make the required evidence gate "
+        "pass.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
@@ -3768,7 +3777,11 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "Stage 3B.3E strict HCOMM payload copy, then runs storage HBM smoke "
         "through the HCOMM payload scheduler. Success requires the strict "
         "payload evidence to pass and rank1 storage verification to report "
-        "storage_hbm=hcomm-payload-staging. This still reads the storage file "
+        "storage_hbm=hcomm-payload-staging. With "
+        "--auto-run-hcomm-payload-channel-handle-candidate, a failed default "
+        "comm-name run may be followed by an explicit channel-handle storage "
+        "candidate; both strict payload evidence and storage verification "
+        "must pass for the storage gate to pass. This still reads the storage file "
         "through the host into proxy HBM; it validates storage-proxy wiring "
         "onto HCOMM payload copy, not full storage-direct DMA.\n",
         encoding="utf-8",
