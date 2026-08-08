@@ -112,7 +112,11 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-channel \
   ascend-probe
 ```
 
-这和 `--hcomm-payload-skip-comm-acquire` 不同：`channel-handle` 是候选 backend，只有完整 payload copy、checksum、trace 和 `fallback=none` 都通过时才算真实 HCOMM payload copy；`diagnostic-skip` 只用于隔离问题。
+这和 `--hcomm-payload-skip-comm-acquire` 不同：`channel-handle` 是候选 backend，
+host 侧不再要求 `HcclGetCommName`，kernel 侧也不要求非空 comm name，而是使用
+已获取的 ThreadHandle/ChannelHandle resource 直接调度。只有完整 payload copy、
+checksum、trace 和 `fallback=none` 都通过时才算真实 HCOMM payload copy；
+`diagnostic-skip` 只用于隔离问题。
 
 也可以让 focused gate 自动跑这个候选分支：
 `--auto-run-hcomm-payload-channel-handle-candidate`。当默认 `comm-name`

@@ -207,7 +207,7 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          desc.status_word_count >= FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT &&
          desc.status_schema_version ==
              FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION &&
-         HasCommName(desc) &&
+         (PayloadSkipCommAcquire(desc) || HasCommName(desc)) &&
          (!PayloadBatchModeEnabled(desc) || HasPayloadBatchTag(desc)) &&
          (desc.thread_notify_mode !=
               FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU ||

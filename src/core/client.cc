@@ -3228,31 +3228,38 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   }
 
   char comm_name[FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES] = {};
+  const bool require_comm_name =
+      payload_comm_binding == FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
+  if (!require_comm_name) {
+    strncpy(comm_name, "flume_channel_handle", sizeof(comm_name) - 1);
+  }
+  if (require_comm_name) {
 #if FLUME_HAVE_HCCL_COMM_NAME
-  HcclResult comm_name_ret =
-      HcclGetCommName(static_cast<HcclComm>(state.hccl_comm), comm_name);
-  if (comm_name_ret != HCCL_SUCCESS) {
-    *status = FLUME_ERR_BACKEND;
-    return std::string("stage3b3e_payload_copy=failed "
-                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
-                       "stage3b3e_payload_descriptor_handoff=blocked "
-                       "api=HcclGetCommName error=\"") +
-           HcclErrorMessage(comm_name_ret) +
-           "\" stage3b3e_direct_aclrt_payload_launch=not-attempted";
-  }
-  if (comm_name[0] == '\0') {
-    *status = FLUME_ERR_BACKEND;
-    return std::string("stage3b3e_payload_copy=failed "
-                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
-                       "stage3b3e_payload_descriptor_handoff=blocked "
-                       "api=HcclGetCommName error=\"empty comm name\" "
-                       "stage3b3e_direct_aclrt_payload_launch=not-attempted");
-  }
+    HcclResult comm_name_ret =
+        HcclGetCommName(static_cast<HcclComm>(state.hccl_comm), comm_name);
+    if (comm_name_ret != HCCL_SUCCESS) {
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3e_payload_copy=failed "
+                         "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                         "stage3b3e_payload_descriptor_handoff=blocked "
+                         "api=HcclGetCommName error=\"") +
+             HcclErrorMessage(comm_name_ret) +
+             "\" stage3b3e_direct_aclrt_payload_launch=not-attempted";
+    }
+    if (comm_name[0] == '\0') {
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3e_payload_copy=failed "
+                         "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                         "stage3b3e_payload_descriptor_handoff=blocked "
+                         "api=HcclGetCommName error=\"empty comm name\" "
+                         "stage3b3e_direct_aclrt_payload_launch=not-attempted");
+    }
 #else
-  *status = FLUME_ERR_UNSUPPORTED;
-  return MakeDirectAclrtPayloadBlockedDetail(
-      decision, "HcclGetCommName is unavailable in this CANN build");
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "HcclGetCommName is unavailable in this CANN build");
 #endif
+  }
 
   void* kernel_status_dev = nullptr;
   uint32_t kernel_status_words[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT];
