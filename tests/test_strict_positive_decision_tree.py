@@ -67,9 +67,39 @@ def strict_log_with_cross_line_false_positive() -> str:
     ])
 
 
+def strict_log_with_nonzero_hcomm_ret() -> str:
+    return strict_log(True).replace(
+        "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
+
+
+def strict_log_with_missing_semantic() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=unsupported "
+        "stage3b3e_direct_aclrt_payload_loader=unsupported "
+        "payload_semantic=missing "
+        "stage3b3e_payload_descriptor_handoff=blocked "
+        "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+        "fallback=none\"",
+        "",
+    ])
+
+
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v2,payload_semantic\nstatus=PASS\n")
+
+
+def stale_semantic_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v2,payload_semantic",
+        "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
+        "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
+        "status=FAIL",
+        "reason=payload kernel package is missing the payload semantic marker",
+        "",
+    ])
 
 
 def main() -> int:
@@ -125,6 +155,30 @@ def main() -> int:
         assert "| rank1 strict evidence | missing |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_cross_line_false_positive())[0]
+
+        strict_nonzero_hcomm = write(tmp / "strict-nonzero-hcomm.log",
+                                     strict_log_with_nonzero_hcomm_ret())
+        nonzero_hcomm_dir = tmp / "nonzero-hcomm"
+        nonzero_hcomm_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            nonzero_hcomm_dir, smoke, strict_nonzero_hcomm, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| kernel HCOMM ret | 42 |" in text
+        assert "inspect in-kernel HCOMM primitive return code: 42" in text
+
+        stale_package = write(tmp / "package-stale-semantic.log",
+                              stale_semantic_package_log())
+        strict_missing_semantic = write(tmp / "strict-missing-semantic.log",
+                                        strict_log_with_missing_semantic())
+        stale_semantic_dir = tmp / "stale-semantic"
+        stale_semantic_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            stale_semantic_dir, smoke, strict_missing_semantic, stale_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "| payload semantic marker | missing |" in text
+        assert "installed package has stale semantics" in text
 
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()

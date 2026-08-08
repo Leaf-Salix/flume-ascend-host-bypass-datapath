@@ -1342,6 +1342,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_sync = marker_state(strict, "stage3b3e_payload_sync")
     strict_kernel = marker_value(strict, "payload_kernel_status")
     strict_status_word = marker_value(strict, "payload_status_word")
+    strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
+    strict_semantic = marker_value(strict, "payload_semantic")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
 
@@ -1401,6 +1403,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
             f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
+            f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
+            f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
             f"| fallback | {strict_fallback} | expected `none` for real HCOMM payload copy |",
         ])
@@ -1411,7 +1415,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
           (storage_hbm_ok or strict_log is not None)):
         if strict_loader != "passed":
-            next_action = "inspect payload custom-op package loading"
+            if strict_semantic == "missing":
+                next_action = (
+                    "rebuild/reinstall payload custom-op package; semantic "
+                    "marker is missing")
+            else:
+                next_action = "inspect payload custom-op package loading"
         elif strict_handoff != "passed":
             next_action = "inspect direct ACL payload descriptor handoff"
         elif strict_launch != "passed":
@@ -1420,6 +1429,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect payload stream sync or kernel hang"
         elif strict_kernel not in ("success", "missing"):
             next_action = f"inspect in-kernel HCOMM primitive failure: {strict_kernel}"
+        elif strict_hcomm_ret not in ("0", "missing"):
+            next_action = (
+                "inspect in-kernel HCOMM primitive return code: "
+                f"{strict_hcomm_ret}")
         elif strict_verify not in ("passed", "missing"):
             next_action = "inspect rank1 payload verification mismatch"
         elif strict_fallback not in ("none", "missing"):
@@ -1428,8 +1441,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect hcomm-payload-strict-positive failure"
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
           hcomm_payload_unsupported and not package_payload_ready):
-        next_action = (
-            "build/install the Stage 3B.3E internal payload custom-op package")
+        if "reason=payload kernel package is missing the payload semantic marker" in package:
+            next_action = (
+                "rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package has stale semantics")
+        else:
+            next_action = (
+                "build/install the Stage 3B.3E internal payload custom-op package")
     else:
         next_action = "inspect first failed required matrix step"
     lines.extend(["", f"next action: {next_action}", ""])
