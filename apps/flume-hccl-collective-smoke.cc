@@ -339,6 +339,27 @@ bool WaitFlumeIo(flume_io_t* io, const char* label, std::string* error) {
   return false;
 }
 
+bool DetailContainsMarkers(const char* detail,
+                           const std::vector<std::string>& markers,
+                           std::string* missing) {
+  if (missing == nullptr) {
+    return false;
+  }
+  if (detail == nullptr) {
+    *missing = markers.empty() ? "" : markers.front();
+    return markers.empty();
+  }
+  std::string text(detail);
+  for (const std::string& marker : markers) {
+    if (text.find(marker) == std::string::npos) {
+      *missing = marker;
+      return false;
+    }
+  }
+  missing->clear();
+  return true;
+}
+
 bool WriteRootInfoFile(const std::string& path,
                        const HcclRootInfo& root_info,
                        std::string* error) {
@@ -1422,6 +1443,30 @@ void RankMain(RankContext* ctx) {
           error += detail;
         }
         goto cleanup;
+      }
+      if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy) {
+        const char* detail = flume_io_error_message(hcomm_payload_io);
+        std::string missing_marker;
+        const std::vector<std::string> required_markers = {
+            "stage3b3e_payload_copy=passed",
+            "stage3b3e_direct_aclrt_payload_loader=passed",
+            "stage3b3e_payload_descriptor_handoff=passed",
+            "stage3b3e_direct_aclrt_payload_launch=passed",
+            "stage3b3e_payload_sync=passed",
+            "payload_kernel_status=success",
+            "payload_status_word=0",
+            "fallback=none",
+        };
+        if (!DetailContainsMarkers(detail, required_markers,
+                                   &missing_marker)) {
+          error = "HCOMM payload copy required but success detail is missing "
+                  "marker: " + missing_marker;
+          if (detail != nullptr && detail[0] != '\0') {
+            error += ": ";
+            error += detail;
+          }
+          goto cleanup;
+        }
       }
       if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy &&
           ctx->rank == 1) {
