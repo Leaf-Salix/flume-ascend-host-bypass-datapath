@@ -2188,16 +2188,36 @@ std::string AclErrorMessage(aclError ret) {
 }
 
 std::string PayloadKernelStatusName(uint32_t status) {
-  if (status == 0) {
-    return "success";
+  switch (status) {
+    case FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS:
+      return "success";
+    case FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT:
+      return "invalid-argument";
+    case FLUME_HCOMM_PAYLOAD_STATUS_HCOMM_ERROR:
+      return "hcomm-error";
+    case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED:
+      return "thread-notify-wait-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED:
+      return "batch-start-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED:
+      return "local-copy-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED:
+      return "ready-notify-record-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED:
+      return "done-notify-wait-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED:
+      return "ready-notify-wait-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED:
+      return "remote-read-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED:
+      return "done-notify-record-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED:
+      return "batch-end-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED:
+      return "thread-notify-record-failed";
+    default:
+      return std::string("unknown-") + std::to_string(status);
   }
-  if (status == 1) {
-    return "invalid-argument";
-  }
-  if (status == 2) {
-    return "hcomm-error";
-  }
-  return std::string("unknown-") + std::to_string(status);
 }
 
 std::string HcommPackageDetail(const HcommLauncherDecision& decision) {

@@ -35,6 +35,32 @@ int main() {
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
                 "host/AICPU payload thread notify mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,
+                "payload success status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT == 1,
+                "payload invalid-argument status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_HCOMM_ERROR == 2,
+                "payload generic HCOMM status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED == 3,
+                "payload thread-notify wait status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED == 4,
+                "payload batch-start status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED == 5,
+                "payload local-copy status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED == 6,
+                "payload ready-notify record status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED == 7,
+                "payload done-notify wait status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED == 8,
+                "payload ready-notify wait status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED == 9,
+                "payload remote-read status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED == 10,
+                "payload done-notify record status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED == 11,
+                "payload batch-end status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED == 12,
+                "payload thread-notify record status changed");
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);

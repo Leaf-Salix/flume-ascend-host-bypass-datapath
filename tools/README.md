@@ -103,9 +103,12 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 否则会保留 direct ACL 路线并标记
 `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`。
 如果 direct ACL launch
-和 stream sync 都通过但该字段是 `invalid-argument` 或 `hcomm-error`，说明
-包加载/launch 已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel
-里的 HCOMM primitive 调用。
+和 stream sync 都通过但该字段不是 `success`，说明包加载/launch
+已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel 里的 HCOMM
+primitive 调用。该字段会细分为 `local-copy-failed`、
+`ready-notify-record-failed`、`ready-notify-wait-failed`、
+`remote-read-failed`、`done-notify-record-failed`、`batch-start-failed`、
+`batch-end-failed` 或 `thread-notify-*-failed` 等阶段。
 
 构建 Flume custom-op package 时有两种模式：
 

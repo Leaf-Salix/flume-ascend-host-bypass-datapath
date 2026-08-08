@@ -285,9 +285,13 @@ fallback=none
 This is the first marker that should be treated as a real HCOMM payload-copy
 attempt. `stage3b3d_direct_aclrt_canary=passed` remains only a launcher canary.
 If launch and stream sync pass but `payload_kernel_status` is
-`invalid-argument` or `hcomm-error`, the direct ACL package route is working
-and the next debugging target is the descriptor fields or HCOMM primitive
-execution inside the AICPU kernel.
+not `success`, the direct ACL package route is working and the next debugging
+target is the descriptor fields or HCOMM primitive execution inside the AICPU
+kernel. The kernel reports per-step failures such as
+`local-copy-failed`, `ready-notify-record-failed`,
+`ready-notify-wait-failed`, `remote-read-failed`,
+`done-notify-record-failed`, `batch-start-failed`, `batch-end-failed`, and
+`thread-notify-*-failed`.
 
 The official HCOMM custom-op example also uses host CPU thread to AICPU thread
 notifications around kernel launch. Flume now models that boundary explicitly:
