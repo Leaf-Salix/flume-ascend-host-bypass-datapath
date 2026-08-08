@@ -186,6 +186,14 @@ through the Flume helper or through the environment before invoking HCCL
 
 ```bash
 cd <flume-repo>
+# Preferred when the target host has CANN toolkit headers/libs but no HCCL
+# source packaging tree: build JSON/tar directly and export an isolated
+# runtime layout.
+python3 tools/flume_tool.py \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-direct-build
+
 python3 tools/flume_tool.py \
   --hccl-source-root <hccl-source-root> \
   --custom-op-build-mode payload \

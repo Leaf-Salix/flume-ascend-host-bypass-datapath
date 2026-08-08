@@ -125,10 +125,17 @@ primitive 调用。该字段会细分为 `local-copy-failed`、
 status word，应优先检查 descriptor handoff、status pointer 和 kernel
 是否实际执行，而不是先定位 HCOMM primitive。
 
-构建 Flume custom-op package 时有两种模式：
+构建 Flume custom-op package 有三条路径。Host B 这类有 CANN toolkit、但没有
+HCCL source packaging flow 的环境，优先试 direct-build：
 
 ```bash
-# 推荐：由 Flume 工具调用 HCCL custom-op packaging flow，并自动做产物 preflight
+# 推荐优先：直接用已安装 CANN toolkit 编出 JSON/tar，并导出隔离 runtime layout
+python3 tools/flume_tool.py \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-direct-build
+
+# 可选：由 Flume 工具调用 HCCL source custom-op packaging flow，并自动做产物 preflight
 python3 tools/flume_tool.py \
   --hccl-source-root <path-to-cann-hccl-source> \
   --custom-op-build-mode payload \
@@ -163,6 +170,15 @@ FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
 bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 ```
+
+`hcomm-custom-op-direct-build` 会查找 `ASCEND_HOME_PATH` 或标准 CANN layout
+下的 `hcomm_primitives.h` 和 `libhcomm.so`，直接编
+`libflume_hcomm_payload_aicpu_kernel.so`，打包
+`aicpu_flume_hcomm_payload.tar.gz`，复制匹配的 JSON，执行 package
+preflight；如果传了 `--custom-op-export-root`，还会把通过 preflight 的产物
+导出到 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`。
+这条路径不需要 `hccl/hccl_launch.h`，也不需要 HCCL source `build.sh`，但
+payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符号。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`，生成 Stage 3B.3E 所需的

@@ -333,7 +333,22 @@ device-visible `status_word`.
 Therefore, thread-export is an optional completion enhancement for the direct
 ACL payload route, not a hard scheduler-candidate requirement.
 
-Before running strict smoke, inspect the installed custom-op package:
+Before running strict smoke, either build/export a runtime package or inspect
+an already installed custom-op package. The direct build route is the preferred
+first attempt on hosts that expose `hcomm_primitives.h` and `libhcomm.so` but
+do not have the HCCL source `build.sh` packaging flow:
+
+```bash
+python3 tools/flume_tool.py \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-direct-build
+```
+
+Then pass `--custom-op-root <temporary-custom-op-root>` to
+`hcomm-payload-strict-positive` or `ascend-full-matrix`.
+
+Before running strict smoke against an existing package, inspect it:
 
 ```bash
 python3 tools/flume_tool.py hcomm-custom-op-package

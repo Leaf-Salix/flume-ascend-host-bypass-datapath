@@ -434,6 +434,31 @@ def CannToolkitCustomOpTemplateBuildScripts(
     return unique[:16]
 
 
+def _LibraryExists(lib_dir: Path, name: str) -> bool:
+    return any((lib_dir / f"lib{name}{suffix}").exists()
+               for suffix in (".so", ".a", ".dylib"))
+
+
+def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
+    roots = AscendHomeCandidates([extra_root])
+    roots.extend(sorted(Path("/usr/local/Ascend").glob("cann-*")))
+    roots.extend(sorted(Path("/usr/local/Ascend").glob("ascend-toolkit*")))
+    seen: set[str] = set()
+    for root in roots:
+        candidates = [root / "aarch64-linux", root]
+        for candidate in candidates:
+            text = str(candidate)
+            if text in seen:
+                continue
+            seen.add(text)
+            include = candidate / "include"
+            lib64 = candidate / "lib64"
+            if ((include / "hccl" / "hcomm_primitives.h").exists() and
+                    _LibraryExists(lib64, "hcomm")):
+                return candidate
+    return None
+
+
 @dataclass
 class StepResult:
     name: str
@@ -2229,6 +2254,163 @@ def run_hcomm_custom_op_export_runtime(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def _DirectBuildSharedLibraryCommand(
+        args: argparse.Namespace,
+        cann_root: Path,
+        output_so: Path,
+) -> list[str]:
+    cxx = os.environ.get("CXX", "c++")
+    include = cann_root / "include"
+    lib64 = cann_root / "lib64"
+    sources = [
+        HCOMM_CUSTOM_OP_PATH / "aicpu" / "direct_acl_canary_kernel.cc",
+    ]
+    defines: list[str] = []
+    if args.custom_op_build_mode == "payload":
+        sources.extend([
+            HCOMM_CUSTOM_OP_PATH / "aicpu" / "notify_only_direct_acl_kernel.cc",
+            HCOMM_CUSTOM_OP_PATH / "aicpu" / "payload_copy_kernel.cc",
+        ])
+        defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
+    command = [cxx, "-std=c++14"]
+    if platform.system() == "Darwin":
+        command.append("-dynamiclib")
+    else:
+        command.append("-shared")
+    command.extend(["-fPIC", "-O2"])
+    command.extend(f"-D{item}" for item in defines)
+    command.extend([
+        f"-I{HCOMM_CUSTOM_OP_PATH / 'include'}",
+        f"-I{include}",
+        f"-I{include / 'hccl'}",
+        f"-I{include / 'hcomm'}",
+        "-o",
+        str(output_so),
+    ])
+    command.extend(str(source) for source in sources)
+    if args.custom_op_build_mode == "payload":
+        command.append(f"-L{lib64}")
+        command.append("-lhcomm")
+        for optional_lib in ("c_sec", "ascendcl"):
+            if _LibraryExists(lib64, optional_lib):
+                command.append(f"-l{optional_lib}")
+        command.append(f"-Wl,-rpath,{lib64}")
+    return command
+
+
+def _WriteAicpuTar(so_path: Path, tar_path: Path) -> None:
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(so_path,
+                arcname=f"aicpu_kernels_device/{HCOMM_CUSTOM_OP_KERNEL_SO}")
+
+
+def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    cann_root = ResolveCannBinaryRoot(args.cann_package_root)
+    if cann_root is None:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "missing CANN binary root for direct custom-op build\n"
+            "The direct build path needs a CANN toolkit root containing "
+            "aarch64-linux/include/hccl/hcomm_primitives.h and "
+            "aarch64-linux/lib64/libhcomm.so. Set ASCEND_HOME_PATH or pass "
+            "--cann-package-root=<cann-root>.\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+    if args.custom_op_build_mode == "payload" and not _LibraryExists(
+            cann_root / "lib64", "hcomm"):
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "missing libhcomm for payload direct custom-op build\n"
+            f"checked: {cann_root / 'lib64'}\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    build_root = Path(args.build_dir) / "hcomm-custom-op-direct-build"
+    build_root.mkdir(parents=True, exist_ok=True)
+    output_so = build_root / HCOMM_CUSTOM_OP_KERNEL_SO
+    output_tar = build_root / HCOMM_CUSTOM_OP_TAR
+    output_json = build_root / HCOMM_CUSTOM_OP_JSON
+    command = _DirectBuildSharedLibraryCommand(args, cann_root, output_so)
+    build_result = runner.run(
+        "hcomm-custom-op-direct-build",
+        command,
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+    )
+    if build_result.returncode == 0:
+        _WriteAicpuTar(output_so, output_tar)
+        json_source = (
+            HCOMM_CUSTOM_OP_PATH / "aicpu" /
+            ("libflume_hcomm_payload_aicpu_kernel_payload.json"
+             if args.custom_op_build_mode == "payload"
+             else "libflume_hcomm_payload_aicpu_kernel_canary.json")
+        )
+        shutil.copy2(json_source, output_json)
+        artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"
+        artifact_note.write_text(
+            "Flume HCOMM direct custom-op build artifacts\n"
+            f"cann_binary_root: {cann_root}\n"
+            f"mode: {args.custom_op_build_mode}\n"
+            f"json: {output_json}\n"
+            f"aicpu_tar: {output_tar}\n",
+            encoding="utf-8",
+        )
+        print(f"[ok] direct custom-op artifacts -> {artifact_note}")
+
+        preflight_args = copy.copy(args)
+        preflight_args.custom_op_json = str(output_json)
+        preflight_args.custom_op_aicpu_tar = str(output_tar)
+        preflight_args.custom_op_root = ""
+        preflight_result = runner.run(
+            "hcomm-custom-op-direct-build-preflight",
+            HcommCustomOpPackageCommand(
+                preflight_args,
+                require_payload=args.custom_op_build_mode == "payload"),
+            required=True,
+            timeout_seconds=args.step_timeout_sec,
+        )
+        if (preflight_result.returncode == 0 and
+                args.custom_op_export_root):
+            vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
+            export_root = Path(args.custom_op_export_root).expanduser().resolve()
+            dest_json, dest_tar = RuntimeCustomOpArtifactPaths(
+                export_root, vendor)
+            dest_json.parent.mkdir(parents=True, exist_ok=True)
+            dest_tar.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(output_json, dest_json)
+            shutil.copy2(output_tar, dest_tar)
+            export_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_EXPORT.txt"
+            export_note.write_text(
+                "Flume HCOMM direct custom-op artifacts exported\n"
+                f"vendor: {vendor}\n"
+                f"mode: {args.custom_op_build_mode}\n"
+                f"export_root: {export_root}\n"
+                f"json: {dest_json}\n"
+                f"aicpu_tar: {dest_tar}\n",
+                encoding="utf-8",
+            )
+            print(f"[ok] direct custom-op export -> {export_note}")
+            installed_args = copy.copy(args)
+            installed_args.custom_op_json = ""
+            installed_args.custom_op_aicpu_tar = ""
+            installed_args.custom_op_root = str(export_root)
+            runner.run(
+                "hcomm-custom-op-direct-build-exported-preflight",
+                HcommCustomOpPackageCommand(
+                    installed_args,
+                    require_payload=args.custom_op_build_mode == "payload"),
+                required=True,
+                timeout_seconds=args.step_timeout_sec,
+            )
+    return runner.write_summary()
+
+
 def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -2869,6 +3051,11 @@ def parse_args() -> argparse.Namespace:
                               "The command writes an OPP runtime layout under "
                               "<root>/opp/vendors/<vendor> without modifying "
                               "the system CANN installation."))
+    parser.add_argument("--cann-package-root", default="",
+                        help=("CANN toolkit root for hcomm-custom-op-direct-build. "
+                              "Defaults to ASCEND_HOME_PATH or the standard "
+                              "CANN layout; the command expects an "
+                              "aarch64-linux include/lib64 tree."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")
@@ -2895,6 +3082,11 @@ def parse_args() -> argparse.Namespace:
         "hcomm-custom-op-export-runtime",
         help=("Copy a preflight-passing Flume custom-op JSON/AICPU tar into "
               "a runtime-loadable OPP layout under --custom-op-export-root"))
+    subparsers.add_parser(
+        "hcomm-custom-op-direct-build",
+        help=("Build Flume HCOMM custom-op JSON/AICPU tar directly from the "
+              "installed CANN toolkit, then preflight and optionally export "
+              "the runtime layout"))
     subparsers.add_parser("hcomm-custom-op-package",
                           help=("Inspect installed Flume HCOMM custom-op JSON "
                                 "and AICPU package"))
@@ -2970,6 +3162,8 @@ def main() -> int:
         return run_hcomm_custom_op_build(args)
     if args.command == "hcomm-custom-op-export-runtime":
         return run_hcomm_custom_op_export_runtime(args)
+    if args.command == "hcomm-custom-op-direct-build":
+        return run_hcomm_custom_op_direct_build(args)
     if args.command == "hcomm-custom-op-package":
         return run_hcomm_custom_op_package(args)
     raise AssertionError(args.command)

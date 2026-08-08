@@ -210,6 +210,69 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
     return json_path, tar_path
 
 
+def write_fake_cann_root(tmp: Path) -> Path:
+    root = tmp / "fake-cann"
+    include_hccl = root / "aarch64-linux" / "include" / "hccl"
+    include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
+    lib64 = root / "aarch64-linux" / "lib64"
+    include_hccl.mkdir(parents=True)
+    include_hcomm.mkdir(parents=True)
+    lib64.mkdir(parents=True)
+    header = r"""
+#ifndef HCOMM_PRIMITIVES_H_
+#define HCOMM_PRIMITIVES_H_
+#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef uint64_t ChannelHandle;
+typedef uint64_t ThreadHandle;
+int32_t HcommLocalCopyOnThread(ThreadHandle, void*, const void*, uint64_t);
+int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
+int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, uint32_t);
+int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, uint32_t, uint32_t);
+int32_t HcommChannelDrainOnThread(ThreadHandle, ChannelHandle);
+int32_t HcommAcquireComm(const char*);
+int32_t HcommReleaseComm(const char*);
+int32_t HcommBatchModeStart(const char*);
+int32_t HcommBatchModeEnd(const char*);
+int32_t HcommThreadNotifyRecordOnThread(ThreadHandle, ThreadHandle, uint32_t);
+int32_t HcommThreadNotifyWaitOnThread(ThreadHandle, uint32_t, uint32_t);
+#ifdef __cplusplus
+}
+#endif
+#endif
+"""
+    (include_hccl / "hcomm_primitives.h").write_text(header, encoding="utf-8")
+    (include_hcomm / "hcomm_primitives.h").write_text(header, encoding="utf-8")
+    source = tmp / "fake_hcomm.c"
+    source.write_text(
+        """
+#include <stdint.h>
+typedef uint64_t ChannelHandle;
+typedef uint64_t ThreadHandle;
+int32_t HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, uint64_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
+int32_t HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
+int32_t HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
+int32_t HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, uint32_t c, uint32_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
+int32_t HcommChannelDrainOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
+int32_t HcommAcquireComm(const char* a) { (void)a; return 0; }
+int32_t HcommReleaseComm(const char* a) { (void)a; return 0; }
+int32_t HcommBatchModeStart(const char* a) { (void)a; return 0; }
+int32_t HcommBatchModeEnd(const char* a) { (void)a; return 0; }
+int32_t HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
+int32_t HcommThreadNotifyWaitOnThread(ThreadHandle a, uint32_t b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
+""",
+        encoding="utf-8")
+    output = lib64 / ("libhcomm.dylib" if platform.system() == "Darwin"
+                      else "libhcomm.so")
+    command = (["cc", "-dynamiclib", "-o", str(output), str(source)]
+               if platform.system() == "Darwin"
+               else ["cc", "-shared", "-fPIC", "-o", str(output), str(source)])
+    subprocess.run(command, check=True)
+    return root
+
+
 def run_preflight(repo: Path, json_path: Path, tar_path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -493,6 +556,60 @@ def main() -> int:
         assert f"json_path={exported_json}" in exported_preflight.stdout
         assert f"aicpu_tar_path={exported_tar}" in exported_preflight.stdout
         assert "status=PASS" in exported_preflight.stdout
+
+        fake_cann = write_fake_cann_root(tmp)
+        direct_export_root = tmp / "direct-exported-runtime"
+        direct_build = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann}",
+                f"--build-dir={tmp / 'direct-build'}",
+                f"--custom-op-export-root={direct_export_root}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if direct_build.returncode != 0:
+            print(direct_build.stdout)
+            print(direct_build.stderr, file=sys.stderr)
+            raise AssertionError("direct custom-op build did not pass")
+        direct_json = (
+            direct_export_root / "opp" / "vendors" / "flume" / "aicpu" /
+            "config" / KERNEL_JSON
+        )
+        direct_tar = (
+            direct_export_root / "opp" / "vendors" / "flume" / "aicpu" /
+            "kernel" / AICPU_TAR
+        )
+        assert direct_json.exists()
+        assert direct_tar.exists()
+        assert "hcomm-custom-op-direct-build-preflight" in direct_build.stdout
+        assert "hcomm-custom-op-direct-build-exported-preflight" in direct_build.stdout
+        direct_preflight = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--custom-op-root={direct_export_root}",
+                "--require-hcomm-payload-kernel",
+                "hcomm-custom-op-package",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if direct_preflight.returncode != 0:
+            print(direct_preflight.stdout)
+            print(direct_preflight.stderr, file=sys.stderr)
+            raise AssertionError("direct-build runtime package did not pass")
+        assert f"json_path={direct_json}" in direct_preflight.stdout
+        assert f"aicpu_tar_path={direct_tar}" in direct_preflight.stdout
+        assert "status=PASS" in direct_preflight.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v4_json)))
