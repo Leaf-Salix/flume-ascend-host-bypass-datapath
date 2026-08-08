@@ -1535,6 +1535,7 @@ void RankMain(RankContext* ctx) {
             "payload_status_schema=v2",
             "payload_status_word_count=8",
             "payload_echo=passed",
+            "payload_thread_notify_order=",
             "fallback=none",
         };
         if (!DetailContainsMarkers(detail, required_markers,

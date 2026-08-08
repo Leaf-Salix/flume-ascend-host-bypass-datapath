@@ -1469,6 +1469,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_schema=v2",
     "payload_status_word_count=8",
     "payload_echo=passed",
+    "payload_thread_notify_order=",
     "fallback=none",
 )
 
@@ -1745,7 +1746,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_kernel_status=success` + `payload_failure_step=none` + "
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
-        "`payload_echo=passed` + checksum match + `payload_verify=passed` + "
+        "`payload_echo=passed` + `payload_thread_notify_order=...` + "
+        "checksum match + `payload_verify=passed` + "
         "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
@@ -1935,7 +1937,8 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_failure_step=none,payload_status_word=0,"
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v2,payload_status_word_count=8,"
-            "payload_echo=passed,payload_source_checksum=,"
+            "payload_echo=passed,payload_thread_notify_order=,"
+            "payload_source_checksum=,"
             "payload_checksum=,payload_expected_checksum=,"
             "payload_verify=passed,fallback=none")
     return runner.record_static("hcomm-payload-strict-evidence", lines,
@@ -2220,7 +2223,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "to pass with stage3b3e_payload_copy=passed, direct ACL payload launch/"
         "sync passed, payload_kernel_status=success, payload_failure_step=none, "
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
-        "markers, payload_echo=passed, source/received/expected checksum "
+        "markers, payload_echo=passed, payload_thread_notify_order=..., source/received/expected checksum "
         "match, payload_verify=passed, and fallback=none.\n",
         encoding="utf-8",
     )

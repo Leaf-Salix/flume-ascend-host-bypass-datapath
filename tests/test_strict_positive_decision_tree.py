@@ -84,7 +84,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none "
+        "payload_status_word_count=8 payload_echo=passed "
+        "payload_thread_notify_order=not-used fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
         "payload_verify=passed detail=\"fallback=none\"",
@@ -198,6 +199,11 @@ def strict_log_with_stale_status_schema() -> str:
 def strict_log_with_wrong_status_word_count() -> str:
     return strict_log(True).replace(
         "payload_status_word_count=8", "payload_status_word_count=4")
+
+
+def strict_log_with_missing_notify_order() -> str:
+    return strict_log(True).replace(
+        "payload_thread_notify_order=not-used", "payload_thread_notify_order")
 
 
 def strict_log_with_missing_semantic() -> str:
@@ -554,6 +560,19 @@ def main() -> int:
         assert "| payload status schema | v2 / 4 |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_wrong_status_word_count())[0]
+
+        strict_missing_notify_order = write(
+            tmp / "strict-missing-notify-order.log",
+            strict_log_with_missing_notify_order())
+        missing_notify_order_dir = tmp / "missing-notify-order"
+        missing_notify_order_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_notify_order_dir, smoke, strict_missing_notify_order,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_missing_notify_order())[0]
 
         stale_package = write(tmp / "package-stale-semantic.log",
                               stale_semantic_package_log())
