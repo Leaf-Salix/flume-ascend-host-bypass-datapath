@@ -250,9 +250,9 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (result == kFlumePayloadSuccess) {
     result = RunPayloadCopyBody(desc);
   }
-  StorePayloadStatus(desc, result == kFlumePayloadSuccess ?
-                               kFlumePayloadSuccess :
-                               result);
+  if (result != kFlumePayloadSuccess) {
+    StorePayloadStatus(desc, result);
+  }
   if (batch_started) {
     if (result == kFlumePayloadSuccess) {
       BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);

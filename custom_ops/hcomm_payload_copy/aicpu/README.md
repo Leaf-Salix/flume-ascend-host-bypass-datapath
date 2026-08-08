@@ -72,6 +72,9 @@ When host/AICPU thread notify handles are available, the kernel records the
 host completion notify only after `HcommBatchModeEnd` returns, so host wakeup
 does not precede HCOMM batch execution. Host-side strict payload logs report
 this as `payload_thread_notify_order=batch-end-before-host-notify`.
+The kernel also avoids writing final success before batch end, completion
+notify, and communicator release have completed; status word `0` therefore
+means the whole payload primitive sequence has returned successfully.
 
 The legacy public-HCCL-launch notify-only kernel consumes `HcclP2pKernelParam`, decodes
 `flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:

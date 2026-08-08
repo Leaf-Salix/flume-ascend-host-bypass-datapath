@@ -324,6 +324,22 @@ int main() {
   FLUME_TEST_CHECK(CallsEqual(batch_start_fail_calls, 3));
 
   Reset();
+  batch_end_ret = 34;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);
+  FLUME_TEST_CHECK(status[1] == 34U);
+  const int batch_end_fail_calls[] = {
+      kAcquireComm, kBatchStart, kLocalCopy, kNotifyRecord, kNotifyWait,
+      kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(batch_end_fail_calls, 7));
+
+  Reset();
   local_copy_ret = 77;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
