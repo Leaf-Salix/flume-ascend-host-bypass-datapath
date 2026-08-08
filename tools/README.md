@@ -124,7 +124,7 @@ bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 ```
 
-第二种包需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和 device-side `ccl_kernel` 链接能力。
+第二种包需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和 device-side `ccl_kernel` 链接能力，但 direct ACL payload 路线不需要 `hccl/hccl_launch.h`。只有在目标 CANN 明确暴露 `hccl_launch.h` 且需要测试 legacy public-HCCL-launch notify-only 入口时，才额外打开 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 

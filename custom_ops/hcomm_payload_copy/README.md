@@ -19,16 +19,19 @@ Current status:
 - Stage 3B.3D adds a no-internal-header direct ACL canary entrypoint:
   `FlumeHcommCanaryDirectAclrtKernel`. The default device kernel build now
   compiles this canary without `pkg_inc`, `hccl_launch.h`,
-  `hcomm_primitives.h`, or `hccl_res_expt.h`. The older notify-only kernel is
-  preserved behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`.
+  `hcomm_primitives.h`, or `hccl_res_expt.h`.
 - Stage 3B.3E adds the first true HCOMM pair-copy kernel:
-  `FlumeHcommPayloadCopyDirectAclrtKernel`. It is also behind
+  `FlumeHcommPayloadCopyDirectAclrtKernel`. It is behind
   `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` because the kernel itself must
   call `HcommLocalCopyOnThread`, `HcommReadOnThread`, and Channel Notify
-  primitives.
+  primitives. This direct ACL payload package does not require `hccl_launch.h`.
 - Payload copy now has an experimental kernel path, but it is not part of the
   default no-internal-header canary build and still requires remote validation
   with the internal HCOMM kernel package enabled.
+- The legacy public HCCL-launch notify-only entrypoint that consumes
+  `HcclP2pKernelParam` is optional and guarded by
+  `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`; keep it off on CANN
+  packages that do not expose `hccl_launch.h`.
 
 Target data-plane plan:
 
@@ -181,6 +184,11 @@ bash build.sh \
 
 The internal payload package is the one required for
 `stage3b3e_payload_copy=passed`.
+It still uses the direct ACL runtime launcher and intentionally avoids the
+legacy `hccl_launch.h` path. Only enable
+`FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON` when the target CANN package
+actually exposes `hccl/hccl_launch.h` and you specifically want to test the
+older public-HCCL-launch notify-only entrypoint.
 
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints

@@ -18,6 +18,9 @@ endif()
 option(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY
   "Build the experimental HCOMM AICPU kernels that depend on HCCL/HCOMM internal headers."
   ${FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY_DEFAULT})
+option(FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH
+  "Build the legacy public HCCL launch notify-only kernel that requires hccl_launch.h."
+  OFF)
 
 set(FLUME_HCOMM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(FLUME_HCOMM_PAYLOAD_INCLUDE_LIST
@@ -85,7 +88,7 @@ if(KERNEL_MODE)
   )
   if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
     target_sources(flume_hcomm_payload_aicpu_kernel PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_kernel.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_direct_acl_kernel.cc
       ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/payload_copy_kernel.cc
     )
     target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
@@ -110,6 +113,14 @@ if(KERNEL_MODE)
   if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
     target_link_libraries(flume_hcomm_payload_aicpu_kernel PRIVATE
       ccl_kernel
+    )
+  endif()
+  if(FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH)
+    target_sources(flume_hcomm_payload_aicpu_kernel PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_kernel.cc
+    )
+    target_compile_definitions(flume_hcomm_payload_aicpu_kernel PRIVATE
+      FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH=1
     )
   endif()
 

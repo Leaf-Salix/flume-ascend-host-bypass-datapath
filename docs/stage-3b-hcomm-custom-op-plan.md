@@ -210,9 +210,9 @@ direct_aclrt_canary:
 
 The canary kernel includes only `flume_hcomm_notify_only_abi.h`. It deliberately
 does not include `hccl_launch.h`, `hcomm_primitives.h`, `hccl_res_expt.h`, or
-headers from `pkg_inc`. The previous notify-only kernel is kept as an optional
-internal-header experiment behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`
-so earlier versions remain recoverable.
+headers from `pkg_inc`. The direct ACL notify-only kernel is separate from the
+legacy public-HCCL-launch notify-only kernel, so payload-package builds can use
+HCOMM primitives without requiring `hccl/hccl_launch.h`.
 
 Expected no-package diagnostic:
 
@@ -329,7 +329,9 @@ AICPU package tar is readable and contains
 `libflume_hcomm_payload_aicpu_kernel.so`. If the second check fails, the next
 action is to rebuild the package with
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to debug HCOMM payload
-execution yet.
+execution yet. On CANN packages that do not expose `hccl/hccl_launch.h`, keep
+`FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=OFF`; the direct ACL payload
+package does not need that legacy public-HCCL-launch entrypoint.
 
 The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
 as a compatibility wrapper, but Flume's payload-ready preflight requires the V2
