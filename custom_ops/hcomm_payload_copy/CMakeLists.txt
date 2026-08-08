@@ -35,6 +35,7 @@ set(FLUME_HCOMM_PAYLOAD_INCLUDE_LIST
   ${CMAKE_CURRENT_SOURCE_DIR}/aicpu
   ${ASCEND_CANN_PACKAGE_PATH}/include
   ${ASCEND_CANN_PACKAGE_PATH}/include/hccl
+  ${ASCEND_CANN_PACKAGE_PATH}/include/hcomm
   ${ASCEND_CANN_PACKAGE_PATH}/asc/include/aicpu_api
 )
 add_library(flume_hcomm_payload_host SHARED)

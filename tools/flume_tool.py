@@ -439,6 +439,22 @@ def _LibraryExists(lib_dir: Path, name: str) -> bool:
                for suffix in (".so", ".a", ".dylib"))
 
 
+def HcommPrimitivesHeaderCandidates(cann_binary_root: Path) -> list[Path]:
+    include = cann_binary_root / "include"
+    return [
+        include / "hccl" / "hcomm_primitives.h",
+        include / "hcomm" / "hcomm_primitives.h",
+        include / "hcomm_primitives.h",
+    ]
+
+
+def FindHcommPrimitivesHeader(cann_binary_root: Path) -> Optional[Path]:
+    for candidate in HcommPrimitivesHeaderCandidates(cann_binary_root):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
     roots = AscendHomeCandidates([extra_root])
     roots.extend(sorted(Path("/usr/local/Ascend").glob("cann-*")))
@@ -453,8 +469,7 @@ def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
             seen.add(text)
             include = candidate / "include"
             lib64 = candidate / "lib64"
-            if ((include / "hccl" / "hcomm_primitives.h").exists() and
-                    _LibraryExists(lib64, "hcomm")):
+            if include.exists() and lib64.exists():
                 return candidate
     return None
 
@@ -2401,14 +2416,29 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
         setup_log.write_text(
             "missing CANN binary root for direct custom-op build\n"
-            "The direct build path needs a CANN toolkit root containing "
-            "aarch64-linux/include/hccl/hcomm_primitives.h and "
-            "aarch64-linux/lib64/libhcomm.so. Set ASCEND_HOME_PATH or pass "
+            "The direct build path needs a CANN toolkit binary root "
+            "containing include/ and lib64/. Set ASCEND_HOME_PATH or pass "
             "--cann-package-root=<cann-root>.\n",
             encoding="utf-8",
         )
         print(f"[failed] command setup -> {setup_log}")
         return 1
+    if args.custom_op_build_mode == "payload":
+        hcomm_header = FindHcommPrimitivesHeader(cann_root)
+        if hcomm_header is None:
+            setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+            checked = "\n".join(
+                f"- {item}" for item in HcommPrimitivesHeaderCandidates(
+                    cann_root))
+            setup_log.write_text(
+                "missing hcomm_primitives.h for payload direct custom-op build\n"
+                f"cann_binary_root: {cann_root}\n"
+                "checked:\n"
+                f"{checked}\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] command setup -> {setup_log}")
+            return 1
     if args.custom_op_build_mode == "payload" and not _LibraryExists(
             cann_root / "lib64", "hcomm"):
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"

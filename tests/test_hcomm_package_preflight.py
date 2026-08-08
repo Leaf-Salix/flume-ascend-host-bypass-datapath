@@ -210,8 +210,10 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
     return json_path, tar_path
 
 
-def write_fake_cann_root(tmp: Path) -> Path:
-    root = tmp / "fake-cann"
+def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
+                         *, hccl_header: bool = True,
+                         hcomm_header: bool = True) -> Path:
+    root = tmp / name
     include_hccl = root / "aarch64-linux" / "include" / "hccl"
     include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
     lib64 = root / "aarch64-linux" / "lib64"
@@ -243,8 +245,12 @@ int32_t HcommThreadNotifyWaitOnThread(ThreadHandle, uint32_t, uint32_t);
 #endif
 #endif
 """
-    (include_hccl / "hcomm_primitives.h").write_text(header, encoding="utf-8")
-    (include_hcomm / "hcomm_primitives.h").write_text(header, encoding="utf-8")
+    if hccl_header:
+        (include_hccl / "hcomm_primitives.h").write_text(
+            header, encoding="utf-8")
+    if hcomm_header:
+        (include_hcomm / "hcomm_primitives.h").write_text(
+            header, encoding="utf-8")
     source = tmp / "fake_hcomm.c"
     source.write_text(
         """
@@ -610,6 +616,54 @@ def main() -> int:
         assert f"json_path={direct_json}" in direct_preflight.stdout
         assert f"aicpu_tar_path={direct_tar}" in direct_preflight.stdout
         assert "status=PASS" in direct_preflight.stdout
+
+        fake_cann_canary = tmp / "fake-cann-canary"
+        (fake_cann_canary / "aarch64-linux" / "include").mkdir(parents=True)
+        (fake_cann_canary / "aarch64-linux" / "lib64").mkdir(parents=True)
+        direct_canary = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_canary}",
+                f"--build-dir={tmp / 'direct-build-canary'}",
+                "--custom-op-build-mode=canary",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if direct_canary.returncode != 0:
+            print(direct_canary.stdout)
+            print(direct_canary.stderr, file=sys.stderr)
+            raise AssertionError(
+                "canary direct custom-op build without HCOMM did not pass")
+        assert "hcomm-custom-op-direct-build-preflight" in direct_canary.stdout
+
+        fake_cann_hcomm_only = write_fake_cann_root(
+            tmp, "fake-cann-hcomm-only", hccl_header=False,
+            hcomm_header=True)
+        direct_hcomm_only = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_hcomm_only}",
+                f"--build-dir={tmp / 'direct-build-hcomm-only'}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if direct_hcomm_only.returncode != 0:
+            print(direct_hcomm_only.stdout)
+            print(direct_hcomm_only.stderr, file=sys.stderr)
+            raise AssertionError(
+                "direct custom-op build with include/hcomm header did not pass")
+        assert "hcomm-custom-op-direct-build-preflight" in direct_hcomm_only.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v4_json)))
