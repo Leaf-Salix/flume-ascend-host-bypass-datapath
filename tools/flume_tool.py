@@ -473,13 +473,13 @@ def FindHcommPrimitivesHeader(cann_binary_root: Path) -> Optional[Path]:
     return None
 
 
-def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
+def ResolveCannRootPair(extra_root: str = "") -> Optional[tuple[Path, Path]]:
     roots = AscendHomeCandidates([extra_root])
     roots.extend(sorted(Path("/usr/local/Ascend").glob("cann-*")))
     roots.extend(sorted(Path("/usr/local/Ascend").glob("ascend-toolkit*")))
     seen: set[str] = set()
     for root in roots:
-        candidates = [root / "aarch64-linux", root]
+        candidates = [root / "aarch64-linux", root / "x86_64-linux", root]
         for candidate in candidates:
             text = str(candidate)
             if text in seen:
@@ -488,18 +488,28 @@ def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
             include = candidate / "include"
             lib64 = candidate / "lib64"
             if include.exists() and lib64.exists():
-                return candidate
+                package_root = (
+                    candidate.parent
+                    if candidate.name in ("aarch64-linux", "x86_64-linux")
+                    else candidate)
+                return (package_root, candidate)
     return None
 
 
+def ResolveCannBinaryRoot(extra_root: str = "") -> Optional[Path]:
+    roots = ResolveCannRootPair(extra_root)
+    return roots[1] if roots is not None else None
+
+
 def CannRuntimeEnvUpdates(args: argparse.Namespace) -> dict[str, str]:
-    cann_root = ResolveCannBinaryRoot(getattr(args, "cann_package_root", ""))
-    if cann_root is None:
+    roots = ResolveCannRootPair(getattr(args, "cann_package_root", ""))
+    if roots is None:
         return {}
-    updates = {"ASCEND_HOME_PATH": str(cann_root)}
+    cann_package_root, cann_binary_root = roots
+    updates = {"ASCEND_HOME_PATH": str(cann_package_root)}
     lib_paths = []
     for path in (
-            cann_root / "lib64",
+            cann_binary_root / "lib64",
             Path("/usr/local/Ascend/driver/lib64"),
             Path("/usr/local/Ascend/driver/lib64/common")):
         if path.exists():

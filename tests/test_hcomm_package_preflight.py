@@ -564,6 +564,21 @@ def main() -> int:
         assert "status=PASS" in exported_preflight.stdout
 
         fake_cann = write_fake_cann_root(tmp)
+        cann_pair = flume_tool.ResolveCannRootPair(str(fake_cann))
+        assert cann_pair == (fake_cann, fake_cann / "aarch64-linux")
+        assert flume_tool.ResolveCannBinaryRoot(str(fake_cann)) == (
+            fake_cann / "aarch64-linux")
+        runtime_env = flume_tool.CannRuntimeEnvUpdates(
+            SimpleNamespace(cann_package_root=str(fake_cann)))
+        assert runtime_env["ASCEND_HOME_PATH"] == str(fake_cann)
+        assert str(fake_cann / "aarch64-linux" / "lib64") in (
+            runtime_env["LD_LIBRARY_PATH"].split(":"))
+
+        fake_cann_binary = fake_cann / "aarch64-linux"
+        binary_runtime_env = flume_tool.CannRuntimeEnvUpdates(
+            SimpleNamespace(cann_package_root=str(fake_cann_binary)))
+        assert binary_runtime_env["ASCEND_HOME_PATH"] == str(fake_cann)
+
         direct_export_root = tmp / "direct-exported-runtime"
         direct_build = subprocess.run(
             [
