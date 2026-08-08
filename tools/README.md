@@ -143,6 +143,10 @@ canary-only 包或旧包，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=
 payload-required 模式检查包体，并在
 `ASCEND_FULL_MATRIX_DECISION_TREE.md` 里标记 package 是 `not-ready`、
 `canary-ready` 还是 `payload-ready`。
+`--custom-op-root`、`--custom-op-json` 和 `--custom-op-vendor` 也会传给
+真实 HCOMM smoke runtime；`--custom-op-json` 是 authoritative，路径写错时
+runtime 不会悄悄回退到系统安装目录。`--custom-op-aicpu-tar` 只用于
+preflight 校验包体，不参与 direct ACL runtime loader。
 
 未安装 internal payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 

@@ -804,6 +804,12 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         if args.hccl_debug_logs:
             env_updates["ASCEND_GLOBAL_LOG_LEVEL"] = "0"
             env_updates["ASCEND_SLOG_PRINT_TO_STDOUT"] = "1"
+        if args.custom_op_vendor:
+            env_updates["FLUME_HCOMM_CUSTOM_OP_VENDOR"] = args.custom_op_vendor
+        if args.custom_op_root:
+            env_updates["FLUME_HCOMM_CUSTOM_OP_ROOT"] = args.custom_op_root
+        if args.custom_op_json:
+            env_updates["FLUME_HCOMM_CUSTOM_OP_JSON"] = args.custom_op_json
         hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
         manual_device_ips = ParseDeviceIpMap(args.hccl_device_ips)
         if init_mode == "rank-table":

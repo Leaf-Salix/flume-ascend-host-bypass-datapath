@@ -1937,6 +1937,7 @@ struct HcommCustomOpPackageProbe {
   bool installed = false;
   std::string vendor = "none";
   std::string json_path;
+  std::string source = "none";
 };
 
 struct HcommLauncherDecision {
@@ -1960,28 +1961,94 @@ bool FileExists(const std::string& path) {
   return !path.empty() && access(path.c_str(), F_OK) == 0;
 }
 
+std::string NormalizeAscendRoot(std::string root) {
+  const std::string suffix = "/opp";
+  if (root.size() > suffix.size() &&
+      root.compare(root.size() - suffix.size(), suffix.size(), suffix) == 0) {
+    root.resize(root.size() - suffix.size());
+  }
+  return root;
+}
+
+void AppendUnique(std::vector<std::string>* values, const std::string& value) {
+  if (values == nullptr || value.empty()) {
+    return;
+  }
+  if (std::find(values->begin(), values->end(), value) == values->end()) {
+    values->push_back(value);
+  }
+}
+
+std::vector<std::string> SplitCommaList(const char* text) {
+  std::vector<std::string> items;
+  if (text == nullptr || text[0] == '\0') {
+    return items;
+  }
+  std::string value(text);
+  size_t start = 0;
+  while (start <= value.size()) {
+    size_t end = value.find(',', start);
+    std::string item = value.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
+    if (!item.empty()) {
+      items.push_back(item);
+    }
+    if (end == std::string::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  return items;
+}
+
 std::vector<std::string> AscendHomeCandidates() {
   std::vector<std::string> roots;
+  const char* flume_root = std::getenv("FLUME_HCOMM_CUSTOM_OP_ROOT");
+  if (flume_root != nullptr && flume_root[0] != '\0') {
+    AppendUnique(&roots, NormalizeAscendRoot(flume_root));
+  }
   const char* ascend_home = std::getenv("ASCEND_HOME_PATH");
   if (ascend_home != nullptr && ascend_home[0] != '\0') {
-    roots.emplace_back(ascend_home);
+    AppendUnique(&roots, NormalizeAscendRoot(ascend_home));
   }
-  roots.emplace_back("/usr/local/Ascend/cann");
+  const char* custom_opp = std::getenv("ASCEND_CUSTOM_OPP_PATH");
+  if (custom_opp != nullptr && custom_opp[0] != '\0') {
+    AppendUnique(&roots, NormalizeAscendRoot(custom_opp));
+  }
+  const char* opp_path = std::getenv("ASCEND_OPP_PATH");
+  if (opp_path != nullptr && opp_path[0] != '\0') {
+    AppendUnique(&roots, NormalizeAscendRoot(opp_path));
+  }
+  AppendUnique(&roots, "/usr/local/Ascend/cann");
   return roots;
 }
 
 HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
   HcommCustomOpPackageProbe probe;
-  const char* vendors[] = {"flume", "cust"};
+  const char* explicit_json = std::getenv("FLUME_HCOMM_CUSTOM_OP_JSON");
+  if (explicit_json != nullptr && explicit_json[0] != '\0') {
+    probe.installed = FileExists(explicit_json);
+    probe.vendor = "explicit";
+    probe.json_path = explicit_json;
+    probe.source = probe.installed ? "explicit-json" : "explicit-json-missing";
+    return probe;
+  }
+  std::vector<std::string> vendors =
+      SplitCommaList(std::getenv("FLUME_HCOMM_CUSTOM_OP_VENDOR"));
+  if (vendors.empty()) {
+    vendors.push_back("flume");
+    vendors.push_back("cust");
+  }
   const char* json_name = "libflume_hcomm_payload_aicpu_kernel.json";
   for (const std::string& root : AscendHomeCandidates()) {
-    for (const char* vendor : vendors) {
+    for (const std::string& vendor : vendors) {
       std::string json_path = root + "/opp/vendors/" + vendor +
                               "/aicpu/config/" + json_name;
       if (FileExists(json_path)) {
         probe.installed = true;
         probe.vendor = vendor;
         probe.json_path = json_path;
+        probe.source = "root-scan";
         return probe;
       }
     }
@@ -2068,11 +2135,17 @@ std::string DescribeHcommLauncherDecision(
          " custom_op_package=" +
          (decision.package.installed ? "present" : "missing") +
          " package_vendor=" + decision.package.vendor +
+         " package_source=" + decision.package.source +
          " reason=\"" + JoinReasons(decision.missing) + "\"";
 }
 
 std::string AclErrorMessage(aclError ret) {
   return std::string("ACL_ERROR(") + std::to_string(static_cast<int>(ret)) + ")";
+}
+
+std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
+  return std::string(" package_vendor=") + decision.package.vendor +
+         " package_source=" + decision.package.source;
 }
 
 std::string MakeDirectAclrtBlockedDetail(
@@ -2084,7 +2157,7 @@ std::string MakeDirectAclrtBlockedDetail(
                      "reason=\"") +
          reason + "\" custom_op_package=" +
          (decision.package.installed ? "present" : "missing") +
-         " package_vendor=" + decision.package.vendor;
+         HcommPackageDetail(decision);
 }
 
 std::string MakeDirectAclrtCanaryBlockedDetail(
@@ -2097,7 +2170,7 @@ std::string MakeDirectAclrtCanaryBlockedDetail(
                      "reason=\"") +
          reason + "\" custom_op_package=" +
          (decision.package.installed ? "present" : "missing") +
-         " package_vendor=" + decision.package.vendor;
+         HcommPackageDetail(decision);
 }
 
 std::string MakeDirectAclrtPayloadBlockedDetail(
@@ -2110,7 +2183,7 @@ std::string MakeDirectAclrtPayloadBlockedDetail(
                      "reason=\"") +
          reason + "\" custom_op_package=" +
          (decision.package.installed ? "present" : "missing") +
-         " package_vendor=" + decision.package.vendor;
+         HcommPackageDetail(decision);
 }
 
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
@@ -2168,10 +2241,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=failed "
-                       "api=aclrtBinaryLoadFromFile error=\"") +
+           "api=aclrtBinaryLoadFromFile error=\"") +
            AclErrorMessage(acl_ret) +
-           "\" custom_op_package=present package_vendor=" +
-           decision.package.vendor;
+           "\" custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtFuncHandle func_handle = nullptr;
@@ -2188,8 +2260,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "\" stage3b3e_payload_descriptor_handoff=blocked "
            "stage3b3e_direct_aclrt_payload_launch=not-attempted kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           " payload_kernel=missing custom_op_package=present package_vendor=" +
-           decision.package.vendor;
+           " payload_kernel=missing custom_op_package=present" +
+           HcommPackageDetail(decision);
   }
 
   aclrtArgsHandle args_handle = nullptr;
@@ -2314,10 +2386,9 @@ std::string TryLaunchHcommDirectAclrtCanary(
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3d_no_internal_headers=on "
                        "stage3b3d_direct_aclrt_canary_loader=failed "
-                       "api=aclrtBinaryLoadFromFile error=\"") +
+           "api=aclrtBinaryLoadFromFile error=\"") +
            AclErrorMessage(acl_ret) +
-           "\" custom_op_package=present package_vendor=" +
-           decision.package.vendor;
+           "\" custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtFuncHandle func_handle = nullptr;
@@ -2333,8 +2404,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
            "\" stage3b3d_direct_aclrt_canary_handoff=blocked "
            "stage3b3d_direct_aclrt_canary_launch=not-attempted kernel_func=" +
            FLUME_HCOMM_CANARY_DIRECT_ACLRT_KERNEL_FUNC +
-           " custom_op_package=present package_vendor=" +
-           decision.package.vendor;
+           " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtArgsHandle args_handle = nullptr;
@@ -2459,10 +2529,9 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
   if (acl_ret != ACL_SUCCESS) {
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=failed "
-                       "api=aclrtBinaryLoadFromFile error=\"") +
+           "api=aclrtBinaryLoadFromFile error=\"") +
            AclErrorMessage(acl_ret) +
-           "\" custom_op_package=present package_vendor=" +
-           decision.package.vendor;
+           "\" custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtFuncHandle func_handle = nullptr;
@@ -2477,7 +2546,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
            "\" stage3b3c_descriptor_handoff=blocked "
            "stage3b3c_direct_aclrt_launch=not-attempted kernel_func=" +
            FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC +
-           " custom_op_package=present package_vendor=" + decision.package.vendor;
+           " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtArgsHandle args_handle = nullptr;
