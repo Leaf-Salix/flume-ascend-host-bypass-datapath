@@ -2061,6 +2061,14 @@ def WriteCustomOpInstallNextSteps(
     return note
 
 
+def RuntimeCustomOpArtifactPaths(root: Path, vendor: str) -> tuple[Path, Path]:
+    base = root / "opp" / "vendors" / vendor
+    return (
+        base / "aicpu" / "config" / HCOMM_CUSTOM_OP_JSON,
+        base / "aicpu" / "kernel" / HCOMM_CUSTOM_OP_TAR,
+    )
+
+
 def WritePayloadPackageBuildNextSteps(run_dir: Path,
                                       args: argparse.Namespace) -> Path:
     note = run_dir / "HCOMM_PAYLOAD_PACKAGE_NEXT_STEPS.txt"
@@ -2081,9 +2089,144 @@ def WritePayloadPackageBuildNextSteps(run_dir: Path,
         "HCOMM_CUSTOM_OP_INSTALL_NEXT_STEPS.txt file. The install step is "
         "explicit because it changes the target CANN/OPP custom-op "
         "installation.",
+        "",
+        "If changing the system CANN/OPP installation is not desired, export "
+        "the preflight-passing build artifacts into an isolated runtime root:",
+        "",
+        "python3 tools/flume_tool.py \\",
+        "  --custom-op-json <build-json> \\",
+        "  --custom-op-aicpu-tar <build-aicpu-tar> \\",
+        "  --custom-op-build-mode payload \\",
+        "  --custom-op-export-root <temporary-custom-op-root> \\",
+        "  hcomm-custom-op-export-runtime",
+        "",
+        "Then rerun hcomm-payload-strict-positive with "
+        "--custom-op-root <temporary-custom-op-root>.",
     ]
     note.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return note
+
+
+def run_hcomm_custom_op_export_runtime(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
+    if not args.custom_op_export_root:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "missing --custom-op-export-root for runtime package export\n"
+            "Export writes a self-contained OPP runtime layout under:\n"
+            "  <export-root>/opp/vendors/<vendor>/aicpu/config\n"
+            "  <export-root>/opp/vendors/<vendor>/aicpu/kernel\n"
+            "Pass that directory back to runtime smokes with "
+            "--custom-op-root=<export-root>.\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    json_path: Optional[Path] = None
+    tar_path: Optional[Path] = None
+    if args.custom_op_json:
+        json_path = Path(args.custom_op_json).expanduser().resolve()
+    if args.custom_op_aicpu_tar:
+        tar_path = Path(args.custom_op_aicpu_tar).expanduser().resolve()
+    if json_path is None or tar_path is None:
+        found_json, found_tar, _run_files = FindBuiltCustomOpArtifacts(
+            ResolveHcclSourceRoot(args), vendor)
+        json_path = json_path or found_json
+        tar_path = tar_path or found_tar
+
+    if json_path is None or tar_path is None:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "missing Flume custom-op JSON or AICPU tar for runtime export\n"
+            "Provide --custom-op-json and --custom-op-aicpu-tar, or point "
+            "--hccl-source-root at a tree that already contains custom-op "
+            "build artifacts.\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+    if not json_path.exists() or not tar_path.exists():
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "Flume custom-op export source artifact is missing\n"
+            f"json: {json_path} ({'present' if json_path.exists() else 'missing'})\n"
+            f"aicpu_tar: {tar_path} ({'present' if tar_path.exists() else 'missing'})\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    preflight_args = copy.copy(args)
+    preflight_args.custom_op_json = str(json_path)
+    preflight_args.custom_op_aicpu_tar = str(tar_path)
+    preflight_args.custom_op_root = ""
+    require_payload = args.custom_op_build_mode == "payload"
+    preflight_result = runner.run(
+        "hcomm-custom-op-export-preflight",
+        HcommCustomOpPackageCommand(preflight_args, require_payload),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if preflight_result.returncode != 0:
+        setup_log = runner.run_dir / "CUSTOM_OP_EXPORT_ERROR.txt"
+        setup_log.write_text(
+            "refusing to export Flume HCOMM custom-op runtime package because "
+            "hcomm-custom-op-export-preflight did not pass\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] custom-op export setup -> {setup_log}")
+        runner.results.append(StepResult(
+            "hcomm-custom-op-export-runtime", ["<preflight-failed>"], 1,
+            0.0, setup_log, True))
+        return runner.write_summary()
+
+    export_root = Path(args.custom_op_export_root).expanduser().resolve()
+    dest_json, dest_tar = RuntimeCustomOpArtifactPaths(export_root, vendor)
+    dest_json.parent.mkdir(parents=True, exist_ok=True)
+    dest_tar.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(json_path, dest_json)
+    shutil.copy2(tar_path, dest_tar)
+
+    export_note = runner.run_dir / "HCOMM_CUSTOM_OP_EXPORT_RUNTIME.txt"
+    export_note.write_text(
+        "Flume HCOMM custom-op runtime package exported\n"
+        f"vendor: {vendor}\n"
+        f"mode: {args.custom_op_build_mode}\n"
+        f"export_root: {export_root}\n"
+        f"json: {dest_json}\n"
+        f"aicpu_tar: {dest_tar}\n"
+        "\n"
+        "Use this exported runtime layout without changing the system CANN "
+        "installation by passing:\n"
+        f"  --custom-op-root {export_root}\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] custom-op runtime export -> {export_note}")
+    runner.results.append(StepResult(
+        "hcomm-custom-op-export-runtime",
+        ["copy", str(json_path), str(tar_path), str(export_root)],
+        0, 0.0, export_note, True))
+
+    installed_args = copy.copy(args)
+    installed_args.custom_op_json = ""
+    installed_args.custom_op_aicpu_tar = ""
+    installed_args.custom_op_root = str(export_root)
+    installed_preflight = runner.run(
+        "hcomm-custom-op-exported-preflight",
+        HcommCustomOpPackageCommand(installed_args, require_payload),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if installed_preflight.returncode == 0:
+        installed_json, installed_tar = FindInstalledCustomOpRuntimeArtifacts(
+            vendor, [str(export_root)])
+        next_steps = WriteCustomOpInstallNextSteps(
+            runner.run_dir, vendor, installed_json, installed_tar)
+        print(f"[ok] custom-op export next steps -> {next_steps}")
+    return runner.write_summary()
 
 
 def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
@@ -2721,6 +2864,11 @@ def parse_args() -> argparse.Namespace:
                               "installed package is visible to Flume. This is "
                               "explicit opt-in because it changes the target "
                               "CANN/OPP installation."))
+    parser.add_argument("--custom-op-export-root", default="",
+                        help=("Destination root for hcomm-custom-op-export-runtime. "
+                              "The command writes an OPP runtime layout under "
+                              "<root>/opp/vendors/<vendor> without modifying "
+                              "the system CANN installation."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")
@@ -2743,6 +2891,10 @@ def parse_args() -> argparse.Namespace:
         "hcomm-custom-op-build",
         help=("Build the Flume HCOMM custom-op package through a HCCL source "
               "tree custom-op packaging flow"))
+    subparsers.add_parser(
+        "hcomm-custom-op-export-runtime",
+        help=("Copy a preflight-passing Flume custom-op JSON/AICPU tar into "
+              "a runtime-loadable OPP layout under --custom-op-export-root"))
     subparsers.add_parser("hcomm-custom-op-package",
                           help=("Inspect installed Flume HCOMM custom-op JSON "
                                 "and AICPU package"))
@@ -2816,6 +2968,8 @@ def main() -> int:
         return run_hcomm_payload_verify_logs(args)
     if args.command == "hcomm-custom-op-build":
         return run_hcomm_custom_op_build(args)
+    if args.command == "hcomm-custom-op-export-runtime":
+        return run_hcomm_custom_op_export_runtime(args)
     if args.command == "hcomm-custom-op-package":
         return run_hcomm_custom_op_package(args)
     raise AssertionError(args.command)

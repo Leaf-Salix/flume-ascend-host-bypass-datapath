@@ -353,7 +353,25 @@ The first command verifies the canary package; the second verifies that the
 installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV4` and that the
 AICPU package tar is readable and contains
 `libflume_hcomm_payload_aicpu_kernel.so`. When `readelf` or `nm` is available,
-the preflight also verifies that the SO inside the tar exports the required
+the preflight also checks exported SO symbols.
+
+If installing into the system CANN/OPP tree is not desirable, export a
+preflight-passing artifact pair into an isolated runtime root:
+
+```bash
+python3 tools/flume_tool.py \
+  --custom-op-json <path-to-libflume_hcomm_payload_aicpu_kernel.json> \
+  --custom-op-aicpu-tar <path-to-aicpu_flume_hcomm_payload.tar.gz> \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-export-runtime
+```
+
+Then pass `--custom-op-root <temporary-custom-op-root>` to
+`hcomm-payload-strict-positive` or `ascend-full-matrix`. This does not build
+the kernel by itself; it makes already-built JSON/tar artifacts visible through
+the same runtime layout that direct ACL loading uses.
+The preflight also verifies that the SO inside the tar exports the required
 entrypoints, so a JSON/SO mismatch fails before strict payload smoke. If the
 second check fails, the next action is to rebuild the package with
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to debug HCOMM payload

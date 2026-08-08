@@ -198,6 +198,15 @@ python3 tools/flume_tool.py \
   --install-custom-op-package \
   hcomm-custom-op-build
 
+# Optional: export preflight-passing build artifacts into an isolated runtime
+# layout instead of installing into the system CANN/OPP tree.
+python3 tools/flume_tool.py \
+  --custom-op-json <path-to-libflume_hcomm_payload_aicpu_kernel.json> \
+  --custom-op-aicpu-tar <path-to-aicpu_flume_hcomm_payload.tar.gz> \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-export-runtime
+
 cd <hccl-source-root>
 FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
 bash build.sh \
@@ -207,6 +216,11 @@ bash build.sh \
 
 ./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
 ```
+
+The export command writes the runtime-loadable layout expected by Flume under
+`<temporary-custom-op-root>/opp/vendors/flume/aicpu/{config,kernel}` and then
+runs package preflight against that root. It is useful when the target machine
+should not be modified by a `.run --install` step.
 
 `--install-custom-op-package` only installs after the build artifact preflight
 passes. If the JSON, AICPU tar, V4 payload entrypoint, or internal-payload build

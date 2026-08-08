@@ -421,6 +421,8 @@ def main() -> int:
         assert "--custom-op-build-mode payload" in build_steps_text
         assert "--install-custom-op-package" in build_steps_text
         assert "hcomm-custom-op-build" in build_steps_text
+        assert "--custom-op-export-root <temporary-custom-op-root>" in build_steps_text
+        assert "hcomm-custom-op-export-runtime" in build_steps_text
         inferred_tar_preflight = subprocess.run(
             [
                 sys.executable,
@@ -440,6 +442,57 @@ def main() -> int:
             raise AssertionError("installed JSON did not infer matching AICPU tar")
         assert f"aicpu_tar_path={installed_tar}" in inferred_tar_preflight.stdout
         assert "status=PASS" in inferred_tar_preflight.stdout
+
+        export_root = tmp / "exported-runtime"
+        export_runtime = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--custom-op-json={v4_json}",
+                f"--custom-op-aicpu-tar={v4_tar}",
+                f"--custom-op-export-root={export_root}",
+                "hcomm-custom-op-export-runtime",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if export_runtime.returncode != 0:
+            print(export_runtime.stdout)
+            print(export_runtime.stderr, file=sys.stderr)
+            raise AssertionError("runtime export did not pass")
+        exported_json = (
+            export_root / "opp" / "vendors" / "flume" / "aicpu" /
+            "config" / KERNEL_JSON
+        )
+        exported_tar = (
+            export_root / "opp" / "vendors" / "flume" / "aicpu" /
+            "kernel" / AICPU_TAR
+        )
+        assert exported_json.exists()
+        assert exported_tar.exists()
+        assert "custom-op runtime export" in export_runtime.stdout
+        exported_preflight = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--custom-op-root={export_root}",
+                "--require-hcomm-payload-kernel",
+                "hcomm-custom-op-package",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if exported_preflight.returncode != 0:
+            print(exported_preflight.stdout)
+            print(exported_preflight.stderr, file=sys.stderr)
+            raise AssertionError("exported runtime package did not pass")
+        assert f"json_path={exported_json}" in exported_preflight.stdout
+        assert f"aicpu_tar_path={exported_tar}" in exported_preflight.stdout
+        assert "status=PASS" in exported_preflight.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v4_json)))

@@ -141,6 +141,14 @@ python3 tools/flume_tool.py \
   --install-custom-op-package \
   hcomm-custom-op-build
 
+# 不修改系统 CANN/OPP：把已通过 preflight 的 JSON/tar 导出成 runtime layout
+python3 tools/flume_tool.py \
+  --custom-op-json <path-to-libflume_hcomm_payload_aicpu_kernel.json> \
+  --custom-op-aicpu-tar <path-to-aicpu_flume_hcomm_payload.tar.gz> \
+  --custom-op-build-mode payload \
+  --custom-op-export-root <temporary-custom-op-root> \
+  hcomm-custom-op-export-runtime
+
 # 如只想构建 no-internal-header canary kernel，用于 Stage 3B.3D
 python3 tools/flume_tool.py \
   --hccl-source-root <path-to-cann-hccl-source> \
@@ -163,13 +171,17 @@ device-side `ccl_kernel` 链接能力，但 direct ACL payload 路线不需要
 `hccl/hccl_launch.h`。只有在目标 CANN 明确暴露 `hccl_launch.h` 且需要测试
 legacy public-HCCL-launch notify-only 入口时，才额外传
 `--build-public-hccl-launch` 或打开
-`FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。如果 35 上还没有 HCCL
+`FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。如果 Host B 上还没有 HCCL
 source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`，
 这表示缺 packaging toolchain，不是 Flume runtime 或 HCOMM payload kernel
 逻辑失败。`--install-custom-op-package` 会执行生成的 `.run --install` 并在
 安装后再跑一次 installed-package preflight；它是显式 opt-in，因为会修改目标
 CANN/OPP 安装状态。安装前必须先通过 build artifact preflight；如果 JSON、
 AICPU tar、V4 payload entrypoint 或 internal-payload marker 不完整，工具会拒绝安装。
+`hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
+preflight 的 JSON/tar 复制到
+`<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，
+后续 strict-positive 命令传 `--custom-op-root <temporary-custom-op-root>` 即可。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 
