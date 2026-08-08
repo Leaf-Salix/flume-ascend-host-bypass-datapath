@@ -26,7 +26,7 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 6,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 7,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -60,6 +60,10 @@ int main() {
                 "payload status word count changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION == 2,
                 "payload status schema version changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT == 16,
+                "payload trace word count changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION == 1,
+                "payload trace schema version changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE == 0,
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
@@ -112,6 +116,8 @@ int main() {
                 "payload comm release status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED == 16,
                 "payload output-copy status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT == 30,
+                "payload trace kernel-exit event changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
                 "notify success status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT == 1,
@@ -157,6 +163,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC,
       "FlumeHcommPayloadCopySemanticVersion6") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion7") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);

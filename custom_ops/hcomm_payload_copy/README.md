@@ -272,10 +272,12 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion`,
 `FlumeHcommPayloadCopySemanticVersion5`,
 `FlumeHcommPayloadCopySemanticVersion6`,
+`FlumeHcommPayloadCopySemanticVersion7`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
 `FlumeHcommPayloadStatusWordCount`. These mark the descriptor ABI with HCCL
-comm-name handoff, descriptor echo words, the success-status schema where the
+comm-name handoff, descriptor echo words, device-side primitive trace, and the
+success-status schema where the
 second status word is written as `payload_kernel_hcomm_ret=0`, the expected
 status word count, and the requirement that the kernel acquires/releases the
 HCOMM communicator by name. Payload-ready preflight also requires the AICPU SO
@@ -320,8 +322,11 @@ Strict-positive success must include
 `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
 `payload_status_schema=v2`, `payload_status_word_count=8`,
 `payload_echo=passed`, `payload_primitive_state=completed`,
+`payload_trace=passed`, `payload_trace_event=kernel-exit`,
+`payload_trace_result=success`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
+`payload_semantic_v7=present`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and
 `fallback=none` on both ranks.

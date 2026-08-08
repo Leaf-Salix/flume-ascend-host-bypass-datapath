@@ -87,7 +87,8 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
     uint8_t* user_buffer,
     uint8_t* local_hccl_buffer,
     uint8_t* remote_hccl_buffer,
-    uint32_t* status_words) {
+    uint32_t* status_words,
+    uint32_t* trace_words = nullptr) {
   flume_hcomm_payload_copy_desc_v1 desc = {};
   flume_hcomm_payload_copy_desc_init(&desc);
   desc.role = role;
@@ -105,6 +106,9 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
   desc.local_hccl_buffer_bytes = 64;
   desc.remote_hccl_buffer_bytes = 64;
   desc.status_word = reinterpret_cast<uint64_t>(status_words);
+  if (trace_words != nullptr) {
+    desc.reserved2[2] = reinterpret_cast<uint64_t>(trace_words);
+  }
   std::memcpy(desc.batch_tag, FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG,
               sizeof(FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG));
   std::memcpy(desc.comm_name, "flume_unit_comm", sizeof("flume_unit_comm"));
@@ -125,6 +129,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion5() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion6() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion7() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
@@ -135,8 +140,14 @@ int main() {
   uint8_t local[64] = {};
   uint8_t remote[64] = {};
   uint32_t status[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT];
+  uint32_t trace[FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT];
   auto reset_status = [&status]() {
     for (uint32_t& word : status) {
+      word = 0xFFFFFFFFU;
+    }
+  };
+  auto reset_trace = [&trace]() {
+    for (uint32_t& word : trace) {
       word = 0xFFFFFFFFU;
     }
   };
@@ -146,8 +157,9 @@ int main() {
   }
   Reset();
   reset_status();
+  reset_trace();
   auto send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
-                            status);
+                            status, trace);
   FLUME_TEST_CHECK(std::strcmp(send_desc.batch_tag,
                                FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG) == 0);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
@@ -160,6 +172,16 @@ int main() {
   FLUME_TEST_CHECK(status[5] == 0U);
   FLUME_TEST_CHECK(status[6] == 0U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
+  FLUME_TEST_CHECK(trace[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
+  FLUME_TEST_CHECK(trace[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
+  FLUME_TEST_CHECK(trace[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
+  FLUME_TEST_CHECK(trace[3] == 0U);
+  FLUME_TEST_CHECK(trace[4] > 0U);
+  FLUME_TEST_CHECK(trace[5] == FLUME_HCOMM_NOTIFY_ROLE_SEND);
+  FLUME_TEST_CHECK(trace[6] == 0U);
+  FLUME_TEST_CHECK(trace[7] == 1U);
+  FLUME_TEST_CHECK(trace[8] == 16U);
+  FLUME_TEST_CHECK(trace[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
   const int send_calls[] = {kAcquireComm, kBatchStart, kLocalCopy,
                             kNotifyRecord, kNotifyWait, kBatchEnd,

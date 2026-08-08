@@ -79,6 +79,62 @@ void StorePayloadEcho(const flume_hcomm_payload_copy_desc_v1& desc) {
   status_words[7] = desc.completion_mode;
 }
 
+unsigned int* PayloadTraceWords(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (!HasPayloadDescHeader(desc) || desc.reserved2[2] == 0) {
+    return nullptr;
+  }
+  return reinterpret_cast<unsigned int*>(desc.reserved2[2]);
+}
+
+void InitPayloadTrace(const flume_hcomm_payload_copy_desc_v1& desc) {
+  unsigned int* trace_words = PayloadTraceWords(desc);
+  if (trace_words == nullptr) {
+    return;
+  }
+  trace_words[0] = FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION;
+  trace_words[1] = FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
+  trace_words[2] = FLUME_HCOMM_PAYLOAD_TRACE_EVENT_NONE;
+  trace_words[3] = 0xFFFFFFFFU;
+  trace_words[4] = 0U;
+  trace_words[5] = desc.role;
+  trace_words[6] = desc.local_rank;
+  trace_words[7] = desc.peer_rank;
+  trace_words[8] = static_cast<unsigned int>(desc.bytes & 0xFFFFFFFFU);
+  trace_words[9] = static_cast<unsigned int>(desc.bytes >> 32U);
+  trace_words[10] = static_cast<unsigned int>(desc.reserved2[0]);
+  trace_words[11] = static_cast<unsigned int>(desc.reserved2[1]);
+  trace_words[12] = desc.completion_mode;
+  trace_words[13] = desc.ready_notify_idx;
+  trace_words[14] = desc.done_notify_idx;
+  trace_words[15] = 0xFFFFFFFFU;
+}
+
+void TracePayloadEvent(const flume_hcomm_payload_copy_desc_v1& desc,
+                       unsigned int event,
+                       int32_t ret) {
+  unsigned int* trace_words = PayloadTraceWords(desc);
+  if (trace_words == nullptr) {
+    return;
+  }
+  if (trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    InitPayloadTrace(desc);
+  }
+  trace_words[2] = event;
+  trace_words[3] = static_cast<unsigned int>(ret);
+  trace_words[4] += 1U;
+}
+
+void StorePayloadTraceResult(const flume_hcomm_payload_copy_desc_v1& desc,
+                             unsigned int result) {
+  unsigned int* trace_words = PayloadTraceWords(desc);
+  if (trace_words == nullptr) {
+    return;
+  }
+  trace_words[15] = result;
+}
+
 bool PayloadBatchModeEnabled(const flume_hcomm_payload_copy_desc_v1& desc) {
   return desc.reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
 }
@@ -145,25 +201,43 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
 
   if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
+                      -1);
     int32_t ret =
         HcommLocalCopyOnThread(thread, local_hccl_buffer, user_buffer,
                                desc.bytes);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED;
     }
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER,
+                      -1);
     ret = HcommChannelNotifyRecordOnThread(
         thread, channel, desc.ready_notify_idx);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED;
     }
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
+                      -1);
     ret = HcommChannelNotifyWaitOnThread(
         thread, channel, desc.done_notify_idx, desc.timeout_sec);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED;
@@ -174,8 +248,14 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER,
+                      -1);
     int32_t ret = HcommChannelNotifyWaitOnThread(
         thread, channel, desc.ready_notify_idx, desc.timeout_sec);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED;
@@ -183,8 +263,14 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
     void* read_target =
         PayloadRecvDirectOutputEnabled(desc) ? user_buffer : local_hccl_buffer;
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER,
+                      -1);
     ret = HcommReadOnThread(thread, channel, read_target,
                             remote_hccl_buffer, desc.bytes);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED;
@@ -193,7 +279,11 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
       BeginPayloadPrimitive(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED);
+      TracePayloadEvent(
+          desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER, -1);
       ret = HcommChannelFenceOnThread(thread, channel);
+      TracePayloadEvent(
+          desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE, ret);
       if (ret != 0) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED;
@@ -202,8 +292,12 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     if (!PayloadRecvDirectOutputEnabled(desc)) {
       BeginPayloadPrimitive(desc,
                             FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+      TracePayloadEvent(
+          desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_ENTER, -1);
       ret = HcommLocalCopyOnThread(thread, user_buffer, local_hccl_buffer,
                                    desc.bytes);
+      TracePayloadEvent(
+          desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_DONE, ret);
       if (ret != 0) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED;
@@ -211,8 +305,14 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     }
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_ENTER,
+                      -1);
     ret = HcommChannelNotifyRecordOnThread(
         thread, channel, desc.done_notify_idx);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_DONE,
+                      ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED;
@@ -224,8 +324,11 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
 }
 
 unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
+  InitPayloadTrace(desc);
+  TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER, -1);
   if (!ValidatePayloadDesc(desc)) {
     StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
+    StorePayloadTraceResult(desc, kFlumePayloadInvalidArgument);
     BestEffortPayloadCompletionNotify(desc);
     return kFlumePayloadInvalidArgument;
   }
@@ -237,11 +340,16 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       desc.thread_notify_mode ==
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
   BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+  TracePayloadEvent(desc,
+                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER, -1);
   int32_t ret = HcommAcquireComm(desc.comm_name);
+  TracePayloadEvent(desc,
+                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE, ret);
   if (ret != 0) {
     StorePayloadPrimitiveRet(desc, ret);
     StorePayloadStatus(desc,
                        FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+    StorePayloadTraceResult(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
     BestEffortPayloadCompletionNotify(desc);
     return FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED;
   }
@@ -251,7 +359,11 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
 
   if (result == kFlumePayloadSuccess && PayloadBatchModeEnabled(desc)) {
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER, -1);
     ret = HcommBatchModeStart(desc.batch_tag);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE, ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       result = FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED;
@@ -263,7 +375,11 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (result == kFlumePayloadSuccess && use_thread_notify) {
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED);
+    TracePayloadEvent(
+        desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER, -1);
     ret = HcommThreadNotifyWaitOnThread(thread, 0, desc.timeout_sec);
+    TracePayloadEvent(
+        desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_DONE, ret);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED;
@@ -281,8 +397,12 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       BeginPayloadPrimitive(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
     }
+    TracePayloadEvent(
+        desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_ENTER, -1);
     ret = HcommThreadNotifyRecordOnThread(
         thread, static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
+    TracePayloadEvent(
+        desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_DONE, ret);
     if (ret != 0 && result == kFlumePayloadSuccess) {
       StorePayloadPrimitiveRet(desc, ret);
       StorePayloadStatus(
@@ -294,7 +414,11 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     if (result == kFlumePayloadSuccess) {
       BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED);
     }
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER, -1);
     ret = HcommBatchModeEnd(desc.batch_tag);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE, ret);
     if (ret != 0 && result == kFlumePayloadSuccess) {
       StorePayloadPrimitiveRet(desc, ret);
       result = FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED;
@@ -309,17 +433,24 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     StorePayloadPrimitiveRet(desc, 0);
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
   }
+  TracePayloadEvent(desc,
+                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER, -1);
   ret = HcommReleaseComm(desc.comm_name);
+  TracePayloadEvent(desc,
+                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE, ret);
   if (ret != 0 && result == kFlumePayloadSuccess) {
     StorePayloadPrimitiveRet(desc, ret);
     StorePayloadStatus(desc,
                        FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
+    StorePayloadTraceResult(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
     return FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED;
   }
   if (result == kFlumePayloadSuccess) {
     StorePayloadStatus(desc, kFlumePayloadSuccess);
     StorePayloadPrimitiveRet(desc, 0);
   }
+  StorePayloadTraceResult(desc, result);
+  TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT, 0);
   return result;
 }
 
@@ -374,7 +505,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion5() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion6() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 6U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 6U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion7() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 7U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
