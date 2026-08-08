@@ -2996,6 +2996,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             strict_result = result
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                        not args.hcomm_payload_disable_batch and
+                        "--hcomm-payload-disable-batch" not in spec.command):
+                    RunHcommPayloadNoBatchDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
                 if args.auto_run_hcomm_payload_tagged_diagnostic:
                     RunHcommPayloadTaggedDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,

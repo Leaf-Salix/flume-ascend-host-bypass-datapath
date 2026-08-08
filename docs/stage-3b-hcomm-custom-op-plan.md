@@ -580,12 +580,19 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
+  --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-nobatch-diagnostic \
+  --auto-run-hcomm-payload-tagged-diagnostic \
+  --collect-cann-compat-label host-b-cann \
   hcomm-storage-strict-positive
 ```
 
 The command records both `hcomm-payload-strict-evidence` and
 `hcomm-storage-strict-evidence`; the second gate requires strict-positive
-payload copy plus `storage_hbm=hcomm-payload-staging`.
+payload copy plus `storage_hbm=hcomm-payload-staging`. If the storage-over-HCOMM
+gate fails after package preflight, the optional no-batch and tagged-batch
+reruns collect the same A/B evidence as the focused payload gate, but the final
+storage gate still requires the batch-enabled HCOMM payload path.
 
 ## Remote Validation Commands
 

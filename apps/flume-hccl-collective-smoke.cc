@@ -378,6 +378,55 @@ bool DetailContainsMarkers(const char* detail,
   return true;
 }
 
+std::vector<std::string> RequiredHcommPayloadIoMarkers(
+    bool disable_batch,
+    const char* expected_role) {
+  std::vector<std::string> markers = {
+      "stage3b3e_payload_copy=passed",
+      "stage3b3e_direct_aclrt_payload_loader=passed",
+      "stage3b3e_payload_descriptor_handoff=passed",
+      "stage3b3e_direct_aclrt_payload_launch=passed",
+      "stage3b3e_payload_sync=passed",
+      "payload_sync_api=",
+      "payload_sync_timeout_sec=",
+      "payload_kernel_status=success",
+      "payload_failure_step=none",
+      "payload_status_word=0",
+      "payload_kernel_hcomm_ret=0",
+      "payload_status_schema=v2",
+      "payload_status_word_count=8",
+      "payload_echo=passed",
+      std::string("payload_role=") + expected_role,
+      disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
+      "payload_thread_notify_order=",
+      "fallback=none",
+  };
+  return markers;
+}
+
+bool CheckHcommPayloadIoMarkers(flume_io_t* io,
+                                bool disable_batch,
+                                const char* expected_role,
+                                const char* label,
+                                std::string* error) {
+  std::string missing_marker;
+  const char* detail = flume_io_error_message(io);
+  if (DetailContainsMarkers(detail,
+                            RequiredHcommPayloadIoMarkers(disable_batch,
+                                                          expected_role),
+                            &missing_marker)) {
+    return true;
+  }
+  *error = std::string(label) +
+           " completed but success detail is missing marker: " +
+           missing_marker;
+  if (detail != nullptr && detail[0] != '\0') {
+    *error += ": ";
+    *error += detail;
+  }
+  return false;
+}
+
 bool WriteRootInfoFile(const std::string& path,
                        const HcclRootInfo& root_info,
                        std::string* error) {
@@ -1549,38 +1598,11 @@ void RankMain(RankContext* ctx) {
         goto cleanup;
       }
       if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy) {
-        const char* detail = flume_io_error_message(hcomm_payload_io);
-        std::string missing_marker;
-        const std::vector<std::string> required_markers = {
-            "stage3b3e_payload_copy=passed",
-            "stage3b3e_direct_aclrt_payload_loader=passed",
-            "stage3b3e_payload_descriptor_handoff=passed",
-            "stage3b3e_direct_aclrt_payload_launch=passed",
-            "stage3b3e_payload_sync=passed",
-            "payload_sync_api=",
-            "payload_sync_timeout_sec=",
-            "payload_kernel_status=success",
-            "payload_failure_step=none",
-            "payload_status_word=0",
-            "payload_kernel_hcomm_ret=0",
-            "payload_status_schema=v2",
-            "payload_status_word_count=8",
-            "payload_echo=passed",
-            "payload_role=",
-            ctx->hcomm_payload_disable_batch ? "payload_batch_mode=off" :
-                                               "payload_batch_mode=on",
-            "payload_thread_notify_order=",
-            "fallback=none",
-        };
-        if (!DetailContainsMarkers(detail, required_markers,
-                                   &missing_marker)) {
+        const char* expected_role = ctx->rank == 0 ? "send" : "recv";
+        if (!CheckHcommPayloadIoMarkers(
+                hcomm_payload_io, ctx->hcomm_payload_disable_batch,
+                expected_role, "HCOMM payload copy", &error)) {
           log_hcomm_payload_line();
-          error = "HCOMM payload copy required but success detail is missing "
-                  "marker: " + missing_marker;
-          if (detail != nullptr && detail[0] != '\0') {
-            error += ": ";
-            error += detail;
-          }
           goto cleanup;
         }
       }
@@ -1680,6 +1702,11 @@ void RankMain(RankContext* ctx) {
                         "flume_wait storage HBM hcomm send", &error)) {
           goto cleanup;
         }
+        if (!CheckHcommPayloadIoMarkers(
+                storage_hbm_io, ctx->hcomm_payload_disable_batch, "send",
+                "storage HBM HCOMM send", &error)) {
+          goto cleanup;
+        }
       } else if (!CheckFlume(flume_p2p_send_async(
                                  client, reduce_send_buf,
                                  ctx->a3_symmetric ?
@@ -1737,6 +1764,11 @@ void RankMain(RankContext* ctx) {
                         "flume_hcomm_payload_recv_ex storage HBM", &error) ||
             !CheckFlume(flume_wait(storage_hbm_io, -1),
                         "flume_wait storage HBM hcomm recv", &error)) {
+          goto cleanup;
+        }
+        if (!CheckHcommPayloadIoMarkers(
+                storage_hbm_io, ctx->hcomm_payload_disable_batch, "recv",
+                "storage HBM HCOMM recv", &error)) {
           goto cleanup;
         }
       } else if (!CheckFlume(flume_p2p_recv_async(
