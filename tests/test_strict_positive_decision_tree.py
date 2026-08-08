@@ -1083,6 +1083,46 @@ def main() -> int:
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
 
+        channel_fallback_log_dir = tmp / "flume-check-channel-fallback"
+        channel_fallback_log_dir.mkdir()
+        write(channel_fallback_log_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(channel_fallback_log_dir / "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        write(
+            channel_fallback_log_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_channel_handle)
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                channel_fallback_log_dir))
+        assert payload_strict_log is not None
+        assert payload_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-candidate.log")
+        assert payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+
+        storage_channel_fallback_dir = tmp / "flume-check-storage-channel-fallback"
+        storage_channel_fallback_dir.mkdir()
+        write(storage_channel_fallback_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(storage_channel_fallback_dir /
+              "01-hcomm-storage-strict-positive.log",
+              strict_log(False))
+        write(
+            storage_channel_fallback_dir /
+            "02-hcomm-payload-channel-handle-candidate.log",
+            strict_channel_handle + smoke_with_hcomm_storage_path())
+        analyzed_tree, storage_passed, _, storage_strict_log, _ = (
+            flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
+                storage_channel_fallback_dir))
+        assert storage_strict_log is not None
+        assert storage_strict_log.name.endswith(
+            "hcomm-payload-channel-handle-candidate.log")
+        assert storage_passed
+        assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+
         stale_status_schema_package = write(
             tmp / "package-stale-status-schema.log",
             stale_status_schema_package_log())
