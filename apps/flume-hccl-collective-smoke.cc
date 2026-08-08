@@ -412,6 +412,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_word_count=80",
       "payload_trace_event=kernel-exit",
       "payload_trace_order=passed",
+      "payload_trace_ret_order=passed",
       std::string("payload_trace_primitive_path=") +
           (std::string(expected_role) == "send" ? "send-local-copy" :
                                                    "recv-read"),

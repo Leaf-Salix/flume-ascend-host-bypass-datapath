@@ -362,7 +362,7 @@ def MaybeAutoBuildPayloadPackage(
         "The run is only a true HCOMM payload-copy success when the strict "
         "decision tree reports both ranks passed with fallback=none, "
         "stage3b3e_payload_copy=passed, payload_semantic_v8=present, and "
-        "payload_trace_order=passed.\n",
+        "payload_trace_order=passed plus payload_trace_ret_order=passed.\n",
         encoding="utf-8",
     )
     print(f"[ok] payload auto package -> {note}")
@@ -1627,6 +1627,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_word_count=80",
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
+    "payload_trace_ret_order=passed",
     "payload_trace_primitive_path=",
     "payload_trace_result=success",
     "payload_role=",
@@ -2954,6 +2955,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + `payload_trace=passed` + "
+        "`payload_trace_ret_order=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
@@ -3274,6 +3276,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_primitive_state=completed,payload_trace=passed,"
             "payload_trace_schema=v2,payload_trace_word_count=80,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
+            "payload_trace_ret_order=passed,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*,"
             "payload_trace_result=success,payload_desc_batch_tag=,"
             "payload_recv_path=,payload_semantic_v6=present,"
@@ -3701,7 +3704,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "markers, payload_echo=passed, payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
         "payload_trace_schema=v2, payload_trace_word_count=80, "
-        "payload_trace_order=passed, "
+        "payload_trace_order=passed, payload_trace_ret_order=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-*, "
         "payload_trace_result=success, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "

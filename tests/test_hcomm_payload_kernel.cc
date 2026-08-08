@@ -76,6 +76,29 @@ bool CallsEqual(const int* expected, int count) {
   return true;
 }
 
+bool EventUsesPendingReturn(uint32_t event) {
+  switch (event) {
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace flume_hcomm_payload_kernel_mock
 
 #include "payload_copy_kernel.cc"
@@ -207,8 +230,14 @@ int main() {
       FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT,
   };
   FLUME_TEST_CHECK(trace[4] == sizeof(send_events) / sizeof(send_events[0]));
+  const uint32_t ret_base =
+      FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT +
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
   for (uint32_t i = 0; i < trace[4]; ++i) {
     FLUME_TEST_CHECK(trace[event_base + i] == send_events[i]);
+    FLUME_TEST_CHECK(trace[ret_base + i] ==
+                     (EventUsesPendingReturn(send_events[i]) ? 0xFFFFFFFFU :
+                                                               0U));
   }
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
   const int send_calls[] = {kAcquireComm, kBatchStart, kLocalCopy,
@@ -266,6 +295,10 @@ int main() {
                                    sizeof(send_no_comm_events[0]));
   for (uint32_t i = 0; i < trace[4]; ++i) {
     FLUME_TEST_CHECK(trace[event_base + i] == send_no_comm_events[i]);
+    FLUME_TEST_CHECK(trace[ret_base + i] ==
+                     (EventUsesPendingReturn(send_no_comm_events[i]) ?
+                          0xFFFFFFFFU :
+                          0U));
   }
 
   Reset();

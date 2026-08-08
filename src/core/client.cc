@@ -2883,6 +2883,35 @@ std::vector<uint32_t> PayloadTraceEvents(const uint32_t* trace_words) {
   return events;
 }
 
+std::vector<uint32_t> PayloadTraceReturns(const uint32_t* trace_words) {
+  std::vector<uint32_t> returns;
+  if (trace_words == nullptr ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return returns;
+  }
+  const uint32_t count = trace_words[4];
+  const uint32_t capacity = FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  const uint32_t ret_base =
+      FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT +
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  if (count == 0 || capacity == 0) {
+    return returns;
+  }
+  if (count <= capacity) {
+    returns.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+      returns.push_back(trace_words[ret_base + i]);
+    }
+    return returns;
+  }
+  returns.reserve(capacity);
+  const uint32_t first = count % capacity;
+  for (uint32_t i = 0; i < capacity; ++i) {
+    returns.push_back(trace_words[ret_base + ((first + i) % capacity)]);
+  }
+  return returns;
+}
+
 std::string PayloadTraceEventSequence(const std::vector<uint32_t>& events) {
   if (events.empty()) {
     return "empty";
@@ -2893,6 +2922,20 @@ std::string PayloadTraceEventSequence(const std::vector<uint32_t>& events) {
       sequence += ">";
     }
     sequence += PayloadTraceEventName(events[i]);
+  }
+  return sequence;
+}
+
+std::string PayloadTraceReturnSequence(const std::vector<uint32_t>& returns) {
+  if (returns.empty()) {
+    return "empty";
+  }
+  std::string sequence;
+  for (size_t i = 0; i < returns.size(); ++i) {
+    if (i != 0) {
+      sequence += ">";
+    }
+    sequence += std::to_string(static_cast<int32_t>(returns[i]));
   }
   return sequence;
 }
@@ -2980,6 +3023,57 @@ std::string PayloadTraceOrderState(const uint32_t* trace_words,
   return "observed";
 }
 
+bool PayloadTraceEventIsEnter(uint32_t event) {
+  switch (event) {
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER:
+      return true;
+    default:
+      return false;
+  }
+}
+
+std::string PayloadTraceReturnOrderState(
+    const uint32_t* trace_words,
+    const std::vector<uint32_t>& events,
+    const std::vector<uint32_t>& returns) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return "missing";
+  }
+  if (events.empty() || events.size() != returns.size()) {
+    return "missing";
+  }
+  if (trace_words[4] > FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) {
+    return "truncated";
+  }
+  if (PayloadTraceOrderState(trace_words, events) != "passed") {
+    return "observed";
+  }
+  for (size_t i = 0; i < events.size(); ++i) {
+    const uint32_t expected_ret =
+        PayloadTraceEventIsEnter(events[i]) ? 0xFFFFFFFFU : 0U;
+    if (returns[i] != expected_ret) {
+      return "observed";
+    }
+  }
+  return "passed";
+}
+
 std::string PayloadTracePrimitivePath(const uint32_t* trace_words) {
   if (trace_words == nullptr ||
       trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
@@ -3005,12 +3099,14 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
       trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
       trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
   const std::vector<uint32_t> events = PayloadTraceEvents(trace_words);
+  const std::vector<uint32_t> returns = PayloadTraceReturns(trace_words);
   std::string state = schema_ok ? "observed" : "missing";
   if (schema_ok &&
       trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
       trace_words[3] == 0U &&
       trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
-      PayloadTraceOrderState(trace_words, events) == "passed") {
+      PayloadTraceOrderState(trace_words, events) == "passed" &&
+      PayloadTraceReturnOrderState(trace_words, events, returns) == "passed") {
     state = "passed";
   }
   return std::string(" payload_trace=") + state +
@@ -3046,11 +3142,15 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
          " payload_trace_order=" + PayloadTraceOrderState(trace_words, events) +
+         " payload_trace_ret_order=" +
+         PayloadTraceReturnOrderState(trace_words, events, returns) +
          " payload_trace_primitive_path=" +
          PayloadTracePrimitivePath(trace_words) +
          " payload_trace_capacity=" +
          std::to_string(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) +
-         " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) + "\"";
+         " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) +
+         "\" payload_trace_ret_sequence=\"" +
+         PayloadTraceReturnSequence(returns) + "\"";
 }
 
 std::string NotifyKernelStatusName(uint32_t status) {
