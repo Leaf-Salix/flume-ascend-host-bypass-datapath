@@ -1662,6 +1662,54 @@ def SelectCustomOpRunPackage(run_files: list[Path]) -> Optional[Path]:
     return sorted(preferred or run_files)[0]
 
 
+def FindInstalledCustomOpRuntimeArtifacts(
+        vendor: str, extra_roots: Optional[Iterable[str]] = None
+) -> tuple[Optional[Path], Optional[Path]]:
+    for _root, _vendor, json_path, tar_path in HcommCustomOpPackageCandidates(
+            [vendor], extra_roots, "", ""):
+        if (json_path is not None and tar_path is not None and
+                json_path.exists() and tar_path.exists()):
+            return (json_path, tar_path)
+    return (None, None)
+
+
+def WriteCustomOpInstallNextSteps(
+        run_dir: Path,
+        vendor: str,
+        installed_json: Optional[Path],
+        installed_tar: Optional[Path],
+) -> Path:
+    note = run_dir / "HCOMM_CUSTOM_OP_INSTALL_NEXT_STEPS.txt"
+    json_text = str(installed_json) if installed_json else "<not-found>"
+    tar_text = str(installed_tar) if installed_tar else "<not-found>"
+    lines = [
+        "Flume HCOMM custom-op install next steps",
+        f"vendor: {vendor}",
+        f"installed_json: {json_text}",
+        f"installed_aicpu_tar: {tar_text}",
+        "",
+        "Run the focused Stage 3B.3E gate after choosing the target devices:",
+        "python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \\",
+        "  --hccl-devices <device-a>,<device-b> \\",
+        "  --hccl-host-ifname <host-ifname> \\",
+        "  --hccl-host-ip <host-ip> \\",
+        "  --hccl-debug-logs \\",
+    ]
+    if installed_json is not None:
+        lines.append(f"  --custom-op-json {installed_json} \\")
+    lines.append("  hcomm-payload-strict-positive")
+    lines.extend([
+        "",
+        "The explicit --custom-op-json path is optional when the installed "
+        "vendor package is discoverable through ASCEND_HOME_PATH, "
+        "ASCEND_OPP_PATH, or the default CANN layout. Passing it is useful "
+        "when multiple CANN/OPP roots are present because strict-positive "
+        "runtime launch treats that JSON as authoritative.",
+    ])
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return note
+
+
 def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -1788,7 +1836,7 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
             installed_args = copy.copy(args)
             installed_args.custom_op_json = ""
             installed_args.custom_op_aicpu_tar = ""
-            runner.run(
+            installed_preflight = runner.run(
                 "hcomm-custom-op-installed-preflight",
                 HcommCustomOpPackageCommand(
                     installed_args,
@@ -1796,6 +1844,12 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
                 required=True,
                 timeout_seconds=args.step_timeout_sec,
             )
+            if installed_preflight.returncode == 0:
+                installed_json, installed_tar = FindInstalledCustomOpRuntimeArtifacts(
+                    vendor, [args.custom_op_root])
+                next_steps = WriteCustomOpInstallNextSteps(
+                    runner.run_dir, vendor, installed_json, installed_tar)
+                print(f"[ok] custom-op install next steps -> {next_steps}")
     return runner.write_summary()
 
 

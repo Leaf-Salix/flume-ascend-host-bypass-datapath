@@ -189,6 +189,15 @@ def main() -> int:
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(installed_json)))
         assert ok, message
+        found_json, found_tar = flume_tool.FindInstalledCustomOpRuntimeArtifacts(
+            "flume", [str(tmp / "runtime")])
+        assert found_json == installed_json
+        assert found_tar == installed_tar
+        next_steps = flume_tool.WriteCustomOpInstallNextSteps(
+            tmp, "flume", found_json, found_tar)
+        next_steps_text = next_steps.read_text(encoding="utf-8")
+        assert str(installed_json) in next_steps_text
+        assert "hcomm-payload-strict-positive" in next_steps_text
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v2_json)))
