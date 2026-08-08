@@ -2022,8 +2022,10 @@ enum class HcommLauncherBackend {
 struct HcommCustomOpPackageProbe {
   bool installed = false;
   bool payload_ready = false;
+  bool aicpu_tar_present = false;
   std::string vendor = "none";
   std::string json_path;
+  std::string aicpu_tar_path;
   std::string source = "none";
   std::string payload_reason = "not-checked";
 };
@@ -2094,6 +2096,8 @@ bool JsonLooksPayloadReady(const std::string& json_text,
   return true;
 }
 
+const char kFlumeHcommPayloadAicpuTar[] = "aicpu_flume_hcomm_payload.tar.gz";
+
 std::string NormalizeAscendRoot(std::string root) {
   const std::string suffix = "/opp";
   if (root.size() > suffix.size() &&
@@ -2134,6 +2138,51 @@ std::vector<std::string> SplitCommaList(const char* text) {
   return items;
 }
 
+std::string DirName(const std::string& path) {
+  size_t pos = path.find_last_of('/');
+  if (pos == std::string::npos) {
+    return ".";
+  }
+  if (pos == 0) {
+    return "/";
+  }
+  return path.substr(0, pos);
+}
+
+std::string ReplacePathSegment(std::string path,
+                               const std::string& from,
+                               const std::string& to) {
+  size_t pos = path.find(from);
+  if (pos == std::string::npos) {
+    return "";
+  }
+  path.replace(pos, from.size(), to);
+  return path;
+}
+
+std::vector<std::string> AicpuTarCandidatesForJson(
+    const std::string& json_path) {
+  std::vector<std::string> candidates;
+  AppendUnique(&candidates, DirName(json_path) + "/" +
+                            kFlumeHcommPayloadAicpuTar);
+  std::string opp_candidate = ReplacePathSegment(
+      json_path, "/aicpu/config/", "/aicpu/kernel/");
+  if (!opp_candidate.empty()) {
+    AppendUnique(&candidates, DirName(opp_candidate) + "/" +
+                              kFlumeHcommPayloadAicpuTar);
+  }
+  return candidates;
+}
+
+std::string FindAicpuTarForJson(const std::string& json_path) {
+  for (const std::string& candidate : AicpuTarCandidatesForJson(json_path)) {
+    if (FileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
 std::vector<std::string> AscendHomeCandidates() {
   std::vector<std::string> roots;
   const char* flume_root = std::getenv("FLUME_HCOMM_CUSTOM_OP_ROOT");
@@ -2163,11 +2212,17 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
     probe.installed = FileExists(explicit_json);
     probe.vendor = "explicit";
     probe.json_path = explicit_json;
+    probe.aicpu_tar_path = FindAicpuTarForJson(probe.json_path);
+    probe.aicpu_tar_present = FileExists(probe.aicpu_tar_path);
     probe.source = probe.installed ? "explicit-json" : "explicit-json-missing";
     if (probe.installed) {
       probe.payload_ready =
           JsonLooksPayloadReady(ReadTextFile(probe.json_path),
                                 &probe.payload_reason);
+      if (probe.payload_ready && !probe.aicpu_tar_present) {
+        probe.payload_ready = false;
+        probe.payload_reason = "payload AICPU tar missing beside JSON";
+      }
     } else {
       probe.payload_reason = "custom-op JSON missing";
     }
@@ -2188,10 +2243,18 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
         probe.installed = true;
         probe.vendor = vendor;
         probe.json_path = json_path;
+        probe.aicpu_tar_path = root + "/opp/vendors/" + vendor +
+                               "/aicpu/kernel/" +
+                               kFlumeHcommPayloadAicpuTar;
+        probe.aicpu_tar_present = FileExists(probe.aicpu_tar_path);
         probe.source = "root-scan";
         probe.payload_ready =
             JsonLooksPayloadReady(ReadTextFile(probe.json_path),
                                   &probe.payload_reason);
+        if (probe.payload_ready && !probe.aicpu_tar_present) {
+          probe.payload_ready = false;
+          probe.payload_reason = "payload AICPU tar missing in OPP layout";
+        }
         return probe;
       }
     }
@@ -2275,6 +2338,8 @@ std::string DescribeHcommLauncherDecision(
          (decision.package.installed ? "present" : "missing") +
          " payload_package=" +
          (decision.package.payload_ready ? "ready" : "not-ready") +
+         " package_aicpu_tar=" +
+         (decision.package.aicpu_tar_present ? "present" : "missing") +
          " package_vendor=" + decision.package.vendor +
          " package_source=" + decision.package.source +
          " payload_package_reason=\"" + decision.package.payload_reason + "\"" +
@@ -2433,6 +2498,8 @@ std::string NotifyKernelStatusName(uint32_t status) {
 std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
   return std::string(" package_vendor=") + decision.package.vendor +
          " package_source=" + decision.package.source +
+         " package_aicpu_tar=" +
+         (decision.package.aicpu_tar_present ? "present" : "missing") +
          " payload_package=" +
          (decision.package.payload_ready ? "ready" : "not-ready") +
          " payload_package_reason=\"" + decision.package.payload_reason + "\"";
