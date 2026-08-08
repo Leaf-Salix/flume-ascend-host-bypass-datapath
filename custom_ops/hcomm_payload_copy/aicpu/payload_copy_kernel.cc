@@ -12,6 +12,15 @@ constexpr unsigned int kFlumePayloadSuccess = 0;
 constexpr unsigned int kFlumePayloadInvalidArgument = 1;
 constexpr unsigned int kFlumePayloadHcommError = 2;
 
+void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
+                        unsigned int status) {
+  if (desc.status_word == 0) {
+    return;
+  }
+  auto* status_word = reinterpret_cast<unsigned int*>(desc.status_word);
+  *status_word = status;
+}
+
 bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
   return desc.magic == FLUME_HCOMM_PAYLOAD_COPY_MAGIC &&
          desc.version == FLUME_HCOMM_PAYLOAD_COPY_VERSION &&
@@ -28,8 +37,10 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
 
 unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (!ValidatePayloadDesc(desc)) {
+    StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
     return kFlumePayloadInvalidArgument;
   }
+  StorePayloadStatus(desc, kFlumePayloadHcommError);
 
   ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
   ChannelHandle channel = static_cast<ChannelHandle>(desc.channel_handle);
@@ -50,6 +61,7 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
             thread, channel, desc.done_notify_idx, desc.timeout_sec) != 0) {
       return kFlumePayloadHcommError;
     }
+    StorePayloadStatus(desc, kFlumePayloadSuccess);
     return kFlumePayloadSuccess;
   }
 
@@ -66,9 +78,11 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
             thread, channel, desc.done_notify_idx) != 0) {
       return kFlumePayloadHcommError;
     }
+    StorePayloadStatus(desc, kFlumePayloadSuccess);
     return kFlumePayloadSuccess;
   }
 
+  StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
   return kFlumePayloadInvalidArgument;
 }
 

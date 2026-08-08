@@ -80,7 +80,8 @@ typedef struct {
   uint64_t remote_hccl_buffer;
   uint64_t local_hccl_buffer_bytes;
   uint64_t remote_hccl_buffer_bytes;
-  uint64_t reserved1[8];
+  uint64_t status_word;
+  uint64_t reserved1[7];
 } flume_hcomm_payload_copy_desc_v1;
 
 static inline void flume_hcomm_notify_only_desc_init(

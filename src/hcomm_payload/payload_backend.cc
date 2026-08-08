@@ -8,7 +8,8 @@
 #define FLUME_BUILD_HCOMM_CUSTOM_OP 0
 #endif
 
-namespace flume::hcomm_payload {
+namespace flume {
+namespace hcomm_payload {
 
 SchedulerStatus CurrentSchedulerStatus() {
 #if FLUME_BUILD_HCOMM_CUSTOM_OP
@@ -403,4 +404,5 @@ std::string DescribeNotifyOnlyPlan(const NotifyOnlyPlan& plan) {
   return out.str();
 }
 
-}  // namespace flume::hcomm_payload
+}  // namespace hcomm_payload
+}  // namespace flume

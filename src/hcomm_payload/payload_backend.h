@@ -6,7 +6,8 @@
 #include <string>
 #include <vector>
 
-namespace flume::hcomm_payload {
+namespace flume {
+namespace hcomm_payload {
 
 enum class SchedulerStatus {
   kUnavailable = 0,
@@ -145,6 +146,7 @@ bool BuildNotifyOnlyPlan(PayloadRole role,
 
 std::string DescribeNotifyOnlyPlan(const NotifyOnlyPlan& plan);
 
-}  // namespace flume::hcomm_payload
+}  // namespace hcomm_payload
+}  // namespace flume
 
 #endif  // FLUME_HCOMM_PAYLOAD_PAYLOAD_BACKEND_H_

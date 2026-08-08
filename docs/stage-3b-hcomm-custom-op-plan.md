@@ -273,11 +273,16 @@ stage3b3e_direct_aclrt_payload_loader=passed
 stage3b3e_payload_descriptor_handoff=passed
 stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
+payload_kernel_status=success
 fallback=none
 ```
 
 This is the first marker that should be treated as a real HCOMM payload-copy
 attempt. `stage3b3d_direct_aclrt_canary=passed` remains only a launcher canary.
+If launch and stream sync pass but `payload_kernel_status` is
+`invalid-argument` or `hcomm-error`, the direct ACL package route is working
+and the next debugging target is the descriptor fields or HCOMM primitive
+execution inside the AICPU kernel.
 
 Before running strict smoke, inspect the installed custom-op package:
 

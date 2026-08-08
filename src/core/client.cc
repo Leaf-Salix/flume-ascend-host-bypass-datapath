@@ -2143,6 +2143,19 @@ std::string AclErrorMessage(aclError ret) {
   return std::string("ACL_ERROR(") + std::to_string(static_cast<int>(ret)) + ")";
 }
 
+std::string PayloadKernelStatusName(uint32_t status) {
+  if (status == 0) {
+    return "success";
+  }
+  if (status == 1) {
+    return "invalid-argument";
+  }
+  if (status == 2) {
+    return "hcomm-error";
+  }
+  return std::string("unknown-") + std::to_string(status);
+}
+
 std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
   return std::string(" package_vendor=") + decision.package.vendor +
          " package_source=" + decision.package.source;
@@ -2223,9 +2236,35 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
         decision, "payload bytes exceed usable HCCL buffer size");
   }
 
+  void* kernel_status_dev = nullptr;
+  uint32_t kernel_status = 0xFFFFFFFFU;
+  aclError acl_ret = aclrtMalloc(&kernel_status_dev, sizeof(kernel_status),
+                                 ACL_MEM_MALLOC_HUGE_FIRST);
+  if (acl_ret != ACL_SUCCESS) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "api=aclrtMalloc(payload_status) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+  acl_ret = aclrtMemcpy(kernel_status_dev, sizeof(kernel_status),
+                        &kernel_status, sizeof(kernel_status),
+                        ACL_MEMCPY_HOST_TO_DEVICE);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "api=aclrtMemcpy(payload_status_h2d) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
   flume_hcomm_payload_copy_desc_v1 desc = {};
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
                            bytes, &desc);
+  desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
 
   aclrtBinHandle bin_handle = nullptr;
   aclrtBinaryLoadOption option = {};
@@ -2234,10 +2273,10 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   aclrtBinaryLoadOptions load_options = {};
   load_options.options = &option;
   load_options.numOpt = 1;
-  aclError acl_ret =
-      aclrtBinaryLoadFromFile(decision.package.json_path.c_str(), &load_options,
-                              &bin_handle);
+  acl_ret = aclrtBinaryLoadFromFile(decision.package.json_path.c_str(),
+                                    &load_options, &bin_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=failed "
@@ -2252,6 +2291,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
       &func_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_UNSUPPORTED;
     return std::string("stage3b3e_payload_copy=unsupported "
                        "stage3b3e_direct_aclrt_payload_loader=unsupported "
@@ -2268,6 +2308,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2281,6 +2322,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
       aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2292,6 +2334,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   acl_ret = aclrtKernelArgsFinalize(args_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2311,6 +2354,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
       nullptr);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2324,6 +2368,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2335,13 +2380,42 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
   }
 
+  acl_ret = aclrtMemcpy(&kernel_status, sizeof(kernel_status),
+                        kernel_status_dev, sizeof(kernel_status),
+                        ACL_MEMCPY_DEVICE_TO_HOST);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=failed "
+                       "api=aclrtMemcpy(payload_status_d2h) error=\"") +
+           AclErrorMessage(acl_ret) + "\" kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
+
   (void)aclrtBinaryUnLoad(bin_handle);
+  (void)aclrtFree(kernel_status_dev);
+  if (kernel_status != 0) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=passed payload_kernel_status=") +
+           PayloadKernelStatusName(kernel_status) + " kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
   *status = FLUME_OK;
   return std::string("stage3b3e_payload_copy=passed "
                      "stage3b3e_direct_aclrt_payload_loader=passed "
                      "stage3b3e_payload_descriptor_handoff=passed "
                      "stage3b3e_direct_aclrt_payload_launch=passed "
-                     "stage3b3e_payload_sync=passed kernel_func=") +
+                     "stage3b3e_payload_sync=passed "
+                     "payload_kernel_status=success kernel_func=") +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
 }
 
@@ -4203,9 +4277,10 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
   std::string error;
+  HcommChannelResourceInfo resource_info;
   if (!ProbeHcommChannelResources(state, dest_rank, options, acl_stream,
                                   &usable_buffer_bytes, &probe_status,
-                                  &detail, &error)) {
+                                  &detail, &error, &resource_info)) {
     *out = MakeIo(probe_status, 0, 0, error);
     return FLUME_OK;
   }
@@ -4294,9 +4369,10 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
   std::string error;
+  HcommChannelResourceInfo resource_info;
   if (!ProbeHcommChannelResources(state, src_rank, options, acl_stream,
                                   &usable_buffer_bytes, &probe_status,
-                                  &detail, &error)) {
+                                  &detail, &error, &resource_info)) {
     *out = MakeIo(probe_status, 0, 0, error);
     return FLUME_OK;
   }

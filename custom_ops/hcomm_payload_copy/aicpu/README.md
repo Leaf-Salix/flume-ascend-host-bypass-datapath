@@ -38,6 +38,11 @@ recv rank: HcommChannelNotifyWaitOnThread(ready)
            HcommChannelNotifyRecordOnThread(done)
 ```
 
+The descriptor also carries a device-visible `status_word`. The kernel writes
+`success`, `invalid-argument`, or `hcomm-error` before returning so host-side
+strict smoke can distinguish a package/launch problem from an HCOMM primitive
+execution problem.
+
 The notify-only kernel consumes `HcclP2pKernelParam`, decodes
 `flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:
 
