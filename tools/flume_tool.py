@@ -1353,6 +1353,115 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    if len(hccl_devices) != 2:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "hcomm-payload-strict-positive requires exactly two "
+            "--hccl-devices entries\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+    runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
+               required=True, timeout_seconds=args.step_timeout_sec)
+    if shutil.which("npu-smi"):
+        runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
+                   required=False, timeout_seconds=args.step_timeout_sec)
+        runner.run(
+            "npu-topo-check",
+            [sys.executable, "tools/flume_npu_topo_check.py",
+             f"--devices={','.join(hccl_devices)}"],
+            required=False,
+            timeout_seconds=args.step_timeout_sec,
+        )
+
+    package_result = runner.run(
+        "hcomm-custom-op-package-preflight",
+        HcommCustomOpPackageCommand(args, require_payload=True),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if package_result.returncode != 0:
+        note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
+        note.write_text(
+            "hcomm-payload-strict-positive stopped before launch because the "
+            "installed Flume HCOMM custom-op package is not payload-ready. "
+            "The package must declare and export the V2 direct ACL payload "
+            "kernel and the internal-payload build marker.\n",
+            encoding="utf-8",
+        )
+        print(f"[ok] strict-positive scope -> {note}")
+        return runner.write_summary()
+
+    strict_args = copy.copy(args)
+    strict_args.build_hcomm_custom_op = True
+    strict_args.run_hccl_smoke = False
+    strict_args.run_a3_symmetric_smoke = False
+    strict_args.run_hccl_p2p_smoke = True
+    strict_args.run_hcomm_channel_probe = True
+    strict_args.run_hcomm_custom_op_launch_smoke = False
+    strict_args.run_hcomm_resource_descriptor_smoke = False
+    strict_args.run_hcomm_notify_only_smoke = False
+    strict_args.run_hcomm_payload_smoke = True
+    strict_args.run_storage_hbm_smoke = False
+    strict_args.hcomm_require_payload_copy = True
+    strict_args.hcomm_require_thread_export = False
+
+    try:
+        command_specs = build_commands(strict_args, enable_hccl=True,
+                                       run_dir=runner.run_dir)
+    except RuntimeError as exc:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(str(exc) + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    WriteHcclSmokeSetupNotes(
+        runner.run_dir,
+        CollectHcclSmokeSetupNotes(strict_args,
+                                   ResolveHcclInitMode(strict_args)),
+    )
+
+    strict_result: Optional[StepResult] = None
+    for spec in command_specs:
+        timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
+                   else args.step_timeout_sec)
+        step_name = ("hcomm-payload-strict-positive"
+                     if spec.name == "hccl-collective-smoke"
+                     else spec.name)
+        result = runner.run(step_name, spec.command, required=spec.required,
+                            timeout_seconds=timeout,
+                            env_updates=spec.env_updates)
+        if step_name == "hcomm-payload-strict-positive":
+            strict_result = result
+            if result.returncode != 0:
+                WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+
+    WriteMatrixDecisionTree(
+        runner.run_dir,
+        None,
+        strict_result.log_path if strict_result is not None else None,
+        package_result.log_path,
+    )
+    note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
+    note.write_text(
+        "hcomm-payload-strict-positive is the focused Stage 3B.3E gate. It "
+        "requires a payload-ready Flume custom-op package, configures Flume "
+        "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline, and "
+        "then requires real HCOMM payload copy. Success requires both ranks "
+        "to pass with stage3b3e_payload_copy=passed, payload_kernel_status="
+        "success, payload_status_word=0, payload_verify=passed, and "
+        "fallback=none.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] strict-positive scope -> {note}")
+    return runner.write_summary()
+
+
 def run_env(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -1662,6 +1771,9 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("local", help="Run no-NPU local configure/build/tests/sim demo")
     subparsers.add_parser("ascend-probe", help="Probe CANN/HCCL discovery and compile/link on Ascend host")
     subparsers.add_parser("ascend-full-matrix", help="Run the full two-rank Ascend readiness matrix")
+    subparsers.add_parser(
+        "hcomm-payload-strict-positive",
+        help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
     subparsers.add_parser("hcomm-custom-op-package",
                           help=("Inspect installed Flume HCOMM custom-op JSON "
                                 "and AICPU package"))
@@ -1719,6 +1831,8 @@ def main() -> int:
         return run_ascend_probe(args)
     if args.command == "ascend-full-matrix":
         return run_ascend_full_matrix(args)
+    if args.command == "hcomm-payload-strict-positive":
+        return run_hcomm_payload_strict_positive(args)
     if args.command == "hcomm-custom-op-package":
         return run_hcomm_custom_op_package(args)
     raise AssertionError(args.command)

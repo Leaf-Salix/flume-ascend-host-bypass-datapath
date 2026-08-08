@@ -349,6 +349,28 @@ strict negative 失败但在 summary 中标为 optional；这说明缺的是可�
 Flume custom-op/AICPU payload package，而不是 HCCL collective 或 HCCL P2P
 baseline。
 
+payload package 已经通过 preflight 后，可以用更窄的严格正例入口，只验证
+Stage 3B.3E 真实 HCOMM payload copy：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  hcomm-payload-strict-positive
+```
+
+这个入口会自动启用 `FLUME_BUILD_HCOMM_CUSTOM_OP=ON`，先 required 检查
+custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
+`--hcomm-require-payload-copy`。完整成功必须同时看到 rank0/rank1
+`hcomm payload smoke passed`，以及 `stage3b3e_payload_copy=passed`、
+`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、
+`payload_kernel_status=success`、`payload_status_word=0`、
+`payload_verify=passed` 和 `fallback=none`。如果 preflight 失败，这个入口会
+在 launch 前停止，避免把 canary-only 包或旧 entrypoint 包误判成 payload
+copy 失败。
+
 如果要同时采集 CANN fixture：
 
 ```bash
