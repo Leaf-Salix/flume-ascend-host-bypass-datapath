@@ -268,6 +268,8 @@ now calls `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`
 instead of only running readiness probe. A passing result must include:
 
 ```text
+rank 0 hcomm payload smoke passed
+rank 1 hcomm payload smoke passed
 stage3b3e_payload_copy=passed
 stage3b3e_direct_aclrt_payload_loader=passed
 stage3b3e_payload_descriptor_handoff=passed

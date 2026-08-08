@@ -417,7 +417,7 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b3d_direct_aclrt_canary|"
                 r"stage3b3e_payload_copy|stage3b3e_direct_aclrt_payload|"
                 r"stage3b3e_payload_descriptor_handoff|stage3b3e_payload_sync|"
-                r"payload_kernel|"
+                r"payload_kernel|payload_status_word|"
                 r"aclrt_custom_op_launch|HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),
@@ -1121,10 +1121,16 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hcomm_payload_ok = "hcomm payload smoke passed" in smoke
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
     storage_hbm_ok = "storage HBM smoke passed" in smoke
-    strict_positive_ok = ("hcomm payload smoke passed" in strict and
-                          "stage3b3e_payload_copy=passed" in strict and
-                          "fallback=none" in strict and
-                          "payload_verify=passed" in strict)
+    strict_positive_ok = (
+        "rank 0 hcomm payload smoke passed" in strict and
+        "rank 1 hcomm payload smoke passed" in strict and
+        "stage3b3e_payload_copy=passed" in strict and
+        "stage3b3e_direct_aclrt_payload_launch=passed" in strict and
+        "stage3b3e_payload_sync=passed" in strict and
+        "payload_kernel_status=success" in strict and
+        "payload_status_word=0" in strict and
+        "fallback=none" in strict and
+        "payload_verify=passed" in strict)
     strict_negative_expected = (
         "hcomm-payload-strict-negative" in strict and
         ("HCOMM payload copy required but unavailable" in strict or
@@ -1187,7 +1193,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
     lines.append(
         f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | "
-        "`stage3b3e_payload_copy=passed` + `payload_verify=passed` |")
+        "`rank 0/1 passed` + `stage3b3e_payload_copy=passed` + "
+        "`payload_kernel_status=success` + `payload_status_word=0` + "
+        "`payload_verify=passed` + `fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_positive_ok:
