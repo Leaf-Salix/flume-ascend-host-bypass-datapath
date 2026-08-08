@@ -97,7 +97,12 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 
 严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。成功 marker 是 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 成功日志还会包含 `payload_batch_mode=on` 和
-`payload_kernel_status=success`。如果 direct ACL launch
+`payload_kernel_status=success`。如果 CANN 暴露 host/AICPU thread-export，
+日志还会包含
+`payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`；
+否则会保留 direct ACL 路线并标记
+`payload_thread_notify=unavailable payload_completion=stream-sync+status-word`。
+如果 direct ACL launch
 和 stream sync 都通过但该字段是 `invalid-argument` 或 `hcomm-error`，说明
 包加载/launch 已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel
 里的 HCOMM primitive 调用。

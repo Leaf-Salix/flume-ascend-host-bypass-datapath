@@ -98,6 +98,16 @@
 #endif
 #endif
 
+#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_PRIMITIVES
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error "FLUME_HAVE_HCOMM_PRIMITIVES=1 requires hcomm_primitives.h"
+#endif
+#endif
+
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
 #if __has_include(<hccl/hccl_launch.h>)
 #include <hccl/hccl_launch.h>
@@ -214,11 +224,14 @@ struct HcommChannelResourceInfo {
   uint64_t channel_handle = 0;
   uint64_t cpu_ts_thread = 0;
   uint64_t aicpu_ts_thread = 0;
+  uint64_t cpu_thread_on_aicpu = 0;
+  uint64_t aicpu_thread_on_cpu = 0;
   uint32_t channel_count = 0;
   uint32_t notify_num = 0;
   flume_hcomm_engine_t resolved_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t resolved_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   bool thread_export_required = false;
+  bool host_thread_notify_ready = false;
   std::string channel_desc_source;
 };
 
@@ -1683,25 +1696,41 @@ bool ProbeHcommChannelResources(const CommState& state,
     }
   }
 
+  ThreadHandle cpu_thread_on_aicpu = 0;
+  ThreadHandle aicpu_thread_on_cpu = 0;
+  bool host_thread_notify_ready = false;
+  std::string thread_notify_detail =
+      "payload_thread_notify=unavailable reason=thread-export-off";
 #if FLUME_HAVE_HCOMM_THREAD_EXPORT
-  if (options.require_thread_export) {
-    ThreadHandle cpu_thread_on_aicpu = 0;
-    if (!CheckHcclResource(
-            HcclThreadExportToCommEngine(comm, 1, &cpu_ts_thread,
-                                         COMM_ENGINE_AICPU_TS,
-                                         &cpu_thread_on_aicpu),
-            "HcclThreadExportToCommEngine(CPU_TS->AICPU_TS)", error)) {
-      *status = FLUME_ERR_BACKEND;
-      return false;
+  thread_notify_detail = "payload_thread_notify=unavailable reason=not-aicpu-engine";
+  if (needs_aicpu_thread) {
+    HcclResult export_ret =
+        HcclThreadExportToCommEngine(comm, 1, &cpu_ts_thread,
+                                     COMM_ENGINE_AICPU_TS,
+                                     &cpu_thread_on_aicpu);
+    if (export_ret == HCCL_SUCCESS) {
+      export_ret =
+          HcclThreadExportToCommEngine(comm, 1, &aicpu_ts_thread,
+                                       COMM_ENGINE_CPU_TS,
+                                       &aicpu_thread_on_cpu);
     }
-    ThreadHandle aicpu_thread_on_cpu = 0;
-    if (!CheckHcclResource(
-            HcclThreadExportToCommEngine(comm, 1, &aicpu_ts_thread,
-                                         COMM_ENGINE_CPU_TS,
-                                         &aicpu_thread_on_cpu),
-            "HcclThreadExportToCommEngine(AICPU_TS->CPU_TS)", error)) {
-      *status = FLUME_ERR_BACKEND;
-      return false;
+    if (export_ret == HCCL_SUCCESS) {
+      host_thread_notify_ready = cpu_thread_on_aicpu != 0 &&
+                                 aicpu_thread_on_cpu != 0 &&
+                                 cpu_ts_thread != 0 && aicpu_ts_thread != 0;
+      thread_notify_detail = host_thread_notify_ready ?
+          "payload_thread_notify=host-aicpu" :
+          "payload_thread_notify=unavailable reason=zero-thread-handle";
+    } else if (options.require_thread_export) {
+      if (!CheckHcclResource(
+              export_ret, "HcclThreadExportToCommEngine", error)) {
+        *status = FLUME_ERR_BACKEND;
+        return false;
+      }
+    } else {
+      thread_notify_detail =
+          std::string("payload_thread_notify=unavailable hcomm_ret=") +
+          std::to_string(static_cast<int>(export_ret));
     }
   }
 #else
@@ -1772,11 +1801,14 @@ bool ProbeHcommChannelResources(const CommState& state,
     resource_info->channel_handle = channels.empty() ? 0 : channels[0];
     resource_info->cpu_ts_thread = cpu_ts_thread;
     resource_info->aicpu_ts_thread = aicpu_ts_thread;
+    resource_info->cpu_thread_on_aicpu = cpu_thread_on_aicpu;
+    resource_info->aicpu_thread_on_cpu = aicpu_thread_on_cpu;
     resource_info->channel_count = static_cast<uint32_t>(descs.size());
     resource_info->notify_num = options.notify_num;
     resource_info->resolved_engine = resolved_engine;
     resource_info->resolved_protocol = options.protocol;
     resource_info->thread_export_required = options.require_thread_export;
+    resource_info->host_thread_notify_ready = host_thread_notify_ready;
     resource_info->channel_desc_source = desc_source;
   }
   *status = FLUME_OK;
@@ -1786,7 +1818,8 @@ bool ProbeHcommChannelResources(const CommState& state,
             " channel_desc=" + desc_source +
             " channel_num=" + std::to_string(descs.size()) +
             " thread_export=" +
-            (options.require_thread_export ? "required" : "not-required");
+            (options.require_thread_export ? "required" : "not-required") +
+            " " + thread_notify_detail;
   return true;
 }
 #endif
@@ -1913,6 +1946,9 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
   desc->ready_notify_idx = 0;
   desc->done_notify_idx = 1;
   desc->bytes = bytes;
+  desc->thread_notify_mode = resource_info.host_thread_notify_ready ?
+      FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU :
+      FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE;
   desc->aicpu_thread = resource_info.aicpu_ts_thread;
   desc->channel_handle = resource_info.channel_handle;
   desc->user_buffer = reinterpret_cast<uint64_t>(user_buffer);
@@ -1927,6 +1963,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                 "Flume HCOMM payload batch tag exceeds descriptor field");
   memcpy(desc->batch_tag, kFlumeHcommPayloadBatchTag,
          sizeof(kFlumeHcommPayloadBatchTag));
+  desc->cpu_thread_on_aicpu = resource_info.cpu_thread_on_aicpu;
 }
 
 bool IsUnsupportedHcclLaunchResult(HcclResult result) {
@@ -2206,6 +2243,15 @@ std::string MakeDirectAclrtPayloadBlockedDetail(
          HcommPackageDetail(decision);
 }
 
+std::string HcommPayloadCompletionDetail(
+    const HcommChannelResourceInfo& resource_info) {
+  return resource_info.host_thread_notify_ready ?
+      " payload_thread_notify=host-aicpu "
+      "payload_completion=thread-notify+stream-sync+status-word" :
+      " payload_thread_notify=unavailable "
+      "payload_completion=stream-sync+status-word";
+}
+
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
 std::string TryLaunchHcommPayloadCopyDirectAclrt(
     flume::hcomm_payload::PayloadRole role,
@@ -2237,6 +2283,21 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     return MakeDirectAclrtPayloadBlockedDetail(
         decision, "missing AICPU_TS thread or HCOMM channel handle");
   }
+  if (resource_info.host_thread_notify_ready &&
+      (resource_info.cpu_ts_thread == 0 ||
+       resource_info.cpu_thread_on_aicpu == 0 ||
+       resource_info.aicpu_thread_on_cpu == 0)) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "incomplete host/AICPU thread notify handles");
+  }
+#if !FLUME_HAVE_HCOMM_PRIMITIVES
+  if (resource_info.host_thread_notify_ready) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "host/AICPU thread notify primitives are unavailable");
+  }
+#endif
   if (bytes > resource_info.usable_buffer_bytes) {
     *status = FLUME_ERR_INVALID_ARGUMENT;
     return MakeDirectAclrtPayloadBlockedDetail(
@@ -2350,6 +2411,28 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) + "\"";
   }
 
+#if FLUME_HAVE_HCOMM_PRIMITIVES
+  if (resource_info.host_thread_notify_ready) {
+    int32_t notify_ret = HcommThreadNotifyRecordOnThread(
+        static_cast<ThreadHandle>(resource_info.cpu_ts_thread),
+        static_cast<ThreadHandle>(resource_info.aicpu_thread_on_cpu), 0);
+    if (notify_ret != 0) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      (void)aclrtFree(kernel_status_dev);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3e_payload_copy=failed "
+                         "stage3b3e_direct_aclrt_payload_loader=passed "
+                         "stage3b3e_payload_descriptor_handoff=passed "
+                         "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+                         "payload_thread_notify=host-aicpu "
+                         "api=HcommThreadNotifyRecordOnThread "
+                         "hcomm_ret=") +
+             std::to_string(notify_ret) + " kernel_func=" +
+             FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+  }
+#endif
+
   aclrtLaunchKernelAttr attr = {};
   attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
   attr.value.timeout = desc.timeout_sec;
@@ -2371,6 +2454,28 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
   }
+
+#if FLUME_HAVE_HCOMM_PRIMITIVES
+  if (resource_info.host_thread_notify_ready) {
+    int32_t notify_ret = HcommThreadNotifyWaitOnThread(
+        static_cast<ThreadHandle>(resource_info.cpu_ts_thread), 0,
+        desc.timeout_sec);
+    if (notify_ret != 0) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      (void)aclrtFree(kernel_status_dev);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3e_payload_copy=failed "
+                         "stage3b3e_direct_aclrt_payload_loader=passed "
+                         "stage3b3e_payload_descriptor_handoff=passed "
+                         "stage3b3e_direct_aclrt_payload_launch=passed "
+                         "stage3b3e_payload_sync=failed "
+                         "payload_thread_notify=host-aicpu "
+                         "api=HcommThreadNotifyWaitOnThread hcomm_ret=") +
+             std::to_string(notify_ret) + " kernel_func=" +
+             FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+  }
+#endif
 
   acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
   if (acl_ret != ACL_SUCCESS) {
@@ -2415,7 +2520,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_sync=passed "
                        "payload_batch_mode=on payload_kernel_status=") +
            PayloadKernelStatusName(kernel_status) + " kernel_func=" +
-           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           HcommPayloadCompletionDetail(resource_info);
   }
   *status = FLUME_OK;
   return std::string("stage3b3e_payload_copy=passed "
@@ -2425,7 +2531,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_payload_sync=passed "
                      "payload_batch_mode=on payload_kernel_status=success "
                      "kernel_func=") +
-         FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+         FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+         HcommPayloadCompletionDetail(resource_info);
 }
 
 std::string TryLaunchHcommDirectAclrtCanary(

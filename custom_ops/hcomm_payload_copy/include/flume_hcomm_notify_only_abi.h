@@ -22,6 +22,8 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommPayloadCopyDirectAclrtKernel"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
+#define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE 0U
+#define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU 1U
 
 typedef enum {
   FLUME_HCOMM_NOTIFY_ROLE_SEND = 0,
@@ -72,7 +74,7 @@ typedef struct {
   uint32_t ready_notify_idx;
   uint32_t done_notify_idx;
   uint32_t timeout_sec;
-  uint32_t reserved0;
+  uint32_t thread_notify_mode;
   uint64_t bytes;
   uint64_t aicpu_thread;
   uint64_t channel_handle;
@@ -83,7 +85,7 @@ typedef struct {
   uint64_t remote_hccl_buffer_bytes;
   uint64_t status_word;
   char batch_tag[FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES];
-  uint64_t reserved1;
+  uint64_t cpu_thread_on_aicpu;
 } flume_hcomm_payload_copy_desc_v1;
 
 static inline void flume_hcomm_notify_only_desc_init(

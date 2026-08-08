@@ -275,6 +275,8 @@ stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
 payload_batch_mode=on
 payload_kernel_status=success
+payload_thread_notify=host-aicpu|unavailable
+payload_completion=thread-notify+stream-sync+status-word|stream-sync+status-word
 fallback=none
 ```
 
@@ -284,6 +286,16 @@ If launch and stream sync pass but `payload_kernel_status` is
 `invalid-argument` or `hcomm-error`, the direct ACL package route is working
 and the next debugging target is the descriptor fields or HCOMM primitive
 execution inside the AICPU kernel.
+
+The official HCOMM custom-op example also uses host CPU thread to AICPU thread
+notifications around kernel launch. Flume now models that boundary explicitly:
+when `HcclThreadExportToCommEngine` is available, the host records into the
+AICPU thread before launch and waits for the AICPU completion notify; the
+kernel waits for that host notify before running primitives and records
+completion before returning. On CANN builds without thread-export, Flume keeps
+the direct ACL route usable and reports `payload_thread_notify=unavailable`;
+the host-visible completion proof is then stream synchronization plus the
+device-visible `status_word`.
 
 Before running strict smoke, inspect the installed custom-op package:
 

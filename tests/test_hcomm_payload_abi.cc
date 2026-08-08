@@ -26,8 +26,15 @@ int main() {
                 "payload status word offset changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, batch_tag) == 120,
                 "payload batch tag offset changed");
+  static_assert(
+      offsetof(flume_hcomm_payload_copy_desc_v1, cpu_thread_on_aicpu) == 168,
+      "payload host/AICPU thread notify offset changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES == 48,
                 "payload batch tag capacity changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE == 0,
+                "default payload thread notify mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
+                "host/AICPU payload thread notify mode changed");
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);
@@ -35,8 +42,11 @@ int main() {
   FLUME_TEST_CHECK(payload.version == FLUME_HCOMM_PAYLOAD_COPY_VERSION);
   FLUME_TEST_CHECK(payload.size == sizeof(flume_hcomm_payload_copy_desc_v1));
   FLUME_TEST_CHECK(payload.timeout_sec == 1800);
+  FLUME_TEST_CHECK(payload.thread_notify_mode ==
+                   FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE);
   FLUME_TEST_CHECK(payload.status_word == 0);
   FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');
+  FLUME_TEST_CHECK(payload.cpu_thread_on_aicpu == 0);
 
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);

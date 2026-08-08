@@ -32,11 +32,17 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          desc.local_rank < desc.rank_size &&
          desc.peer_rank < desc.rank_size && desc.local_rank != desc.peer_rank &&
          desc.ready_notify_idx != desc.done_notify_idx && desc.bytes != 0 &&
+         (desc.thread_notify_mode == FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE ||
+          desc.thread_notify_mode ==
+              FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) &&
          desc.aicpu_thread != 0 && desc.channel_handle != 0 &&
          desc.user_buffer != 0 && desc.local_hccl_buffer != 0 &&
          desc.remote_hccl_buffer != 0 &&
          desc.bytes <= desc.local_hccl_buffer_bytes &&
-         desc.bytes <= desc.remote_hccl_buffer_bytes;
+         desc.bytes <= desc.remote_hccl_buffer_bytes &&
+         (desc.thread_notify_mode !=
+              FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU ||
+          desc.cpu_thread_on_aicpu != 0);
 }
 
 unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
@@ -88,6 +94,16 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   }
   StorePayloadStatus(desc, kFlumePayloadHcommError);
 
+  ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
+  const bool use_thread_notify =
+      desc.thread_notify_mode ==
+      FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  if (use_thread_notify &&
+      HcommThreadNotifyWaitOnThread(thread, 0, desc.timeout_sec) != 0) {
+    StorePayloadStatus(desc, kFlumePayloadHcommError);
+    return kFlumePayloadHcommError;
+  }
+
   bool batch_started = false;
   const bool use_batch_mode = desc.batch_tag[0] != '\0';
   if (use_batch_mode) {
@@ -108,6 +124,14 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
   } else {
     StorePayloadStatus(desc, kFlumePayloadHcommError);
+  }
+  if (use_thread_notify) {
+    int32_t notify_ret = HcommThreadNotifyRecordOnThread(
+        thread, static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
+    if (notify_ret != 0 && result == kFlumePayloadSuccess) {
+      StorePayloadStatus(desc, kFlumePayloadHcommError);
+      return kFlumePayloadHcommError;
+    }
   }
   return result;
 }

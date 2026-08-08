@@ -142,6 +142,10 @@ Expected markers:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - payload copy:
   `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on payload_kernel_status=success`
+- payload completion:
+  `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`
+  when CANN exposes thread-export handles; otherwise
+  `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL
