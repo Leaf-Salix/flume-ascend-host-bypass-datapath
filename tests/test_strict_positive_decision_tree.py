@@ -37,7 +37,8 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none\"",
+        "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=passed fallback=none\"",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -45,7 +46,8 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none\"",
+        "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=passed fallback=none\"",
         "",
     ])
 
@@ -60,7 +62,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none "
+        "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=passed fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
         "payload_verify=passed detail=\"fallback=none\"",
@@ -174,6 +177,7 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
         assert "`payload_kernel_hcomm_ret=0`" in text
+        assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
         assert "start Stage 3B.4 storage rewiring" in text
 

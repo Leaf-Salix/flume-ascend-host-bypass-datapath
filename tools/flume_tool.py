@@ -1309,6 +1309,8 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_kernel_status=success",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
+    "payload_status_schema=v",
+    "payload_status_word_count=",
     "payload_echo=passed",
     "fallback=none",
 )
@@ -1411,6 +1413,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_kernel = marker_value(strict, "payload_kernel_status")
     strict_status_word = marker_value(strict, "payload_status_word")
     strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
+    strict_status_schema = marker_value(strict, "payload_status_schema")
+    strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
     strict_semantic = marker_value(strict, "payload_semantic")
     strict_build_mode = marker_value(strict, "payload_build_mode")
@@ -1462,8 +1466,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`stage3b3e_direct_aclrt_payload_loader=passed` + "
         "`stage3b3e_payload_descriptor_handoff=passed` + "
         "`payload_kernel_status=success` + `payload_status_word=0` + "
-        "`payload_kernel_hcomm_ret=0` + `payload_echo=passed` + "
-        "`payload_verify=passed` + `fallback=none` |")
+        "`payload_kernel_hcomm_ret=0` + status schema markers + "
+        "`payload_echo=passed` + `payload_verify=passed` + `fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_log is not None:
@@ -1480,6 +1484,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
+            f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
@@ -1588,6 +1593,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_direct_aclrt_payload_launch=passed,"
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
             "payload_status_word=0,payload_kernel_hcomm_ret=0,"
+            "payload_status_schema=v,payload_status_word_count=,"
             "payload_echo=passed,payload_verify=passed,fallback=none")
     return runner.record_static("hcomm-payload-strict-evidence", lines,
                                 returncode=0 if passed else 1,
