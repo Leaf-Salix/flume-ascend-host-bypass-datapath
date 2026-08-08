@@ -322,10 +322,13 @@ python3 tools/flume_tool.py --build-dir build-full \
 
 `ascend-full-matrix` 会一次构建，然后跑 local tests/sim、HCCL collective、
 HCCL P2P baseline、HCOMM Channel probe、HCOMM payload readiness，并追加
-`--hcomm-require-payload-copy` strict negative。当前预期是 readiness 返回
-`unsupported` / `fallback=hccl-p2p`，strict negative 失败但在 summary 中标为
-optional；这说明缺的是 Flume custom-op/AICPU payload scheduler，而不是 HCCL
-collective 或 HCCL P2P baseline。
+`--hcomm-require-payload-copy`。如果 package preflight 显示
+`payload-ready`，strict payload copy 会作为 required positive 执行；如果
+package 还没 ready，则该步骤保留为 optional expected negative。当前未安装
+payload package 时预期 readiness 返回 `unsupported` / `fallback=hccl-p2p`，
+strict negative 失败但在 summary 中标为 optional；这说明缺的是可安装的
+Flume custom-op/AICPU payload package，而不是 HCCL collective 或 HCCL P2P
+baseline。
 
 如果要同时采集 CANN fixture：
 

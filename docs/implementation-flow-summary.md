@@ -473,7 +473,7 @@ flowchart TB
 | Host A root-info | `--run-hccl-smoke --hccl-devices <device-a>,<device-b>` | 通过 | base AllReduce / AllGather |
 | Host A init-all | `--hccl-init-mode all --hccl-devices <device-a>,<device-b>` | 通过 | 单进程对照路径 |
 | Host A Stage 2 P2P | `--run-hccl-p2p-smoke --hccl-devices <device-a>,<device-b>` | 通过 | `p2p_copy=on` |
-| Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 通过 | HCCL collective、HCCL P2P、HCOMM Channel、payload readiness/fallback、Stage 3A storage-HBM fallback；strict payload-copy optional expected negative |
+| Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-a>,<device-b>` | 通过 | HCCL collective、HCCL P2P、HCOMM Channel、payload readiness/fallback、Stage 3A storage-HBM fallback；未安装 payload package 时 strict payload-copy optional expected negative；package payload-ready 时 strict payload-copy required positive |
 | Host B (CANN 9.0) full-matrix | `ascend-full-matrix --hccl-devices <device-c>,<device-d>` | 通过 | 第二组 HCCS_SW 卡对稳定性验证 |
 | Host B (CANN 9.0) storage-HBM | `--run-storage-hbm-smoke --storage-smoke-file <local-ssd-file> --storage-smoke-bytes 16777216 --hccl-count 4194304` | 通过 | 本地 SSD 文件切片经 rank0 proxy HBM 和 HCCL P2P 到 rank1 compute HBM，checksum 一致 |
 | Host B (CANN 9.0) Stage 3B.3C direct ACL readiness | `--build-hcomm-custom-op --run-hcomm-notify-only-smoke` | 通过预期降级 | `direct_aclrt=on`，custom-op package 缺失时 `stage3b3c_direct_aclrt_loader=unsupported`、descriptor handoff blocked、launch not-attempted |

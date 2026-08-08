@@ -1030,8 +1030,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
 
 
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
-                            strict_log: Optional[Path],
-                            package_log: Optional[Path]) -> Path:
+                             strict_log: Optional[Path],
+                             package_log: Optional[Path]) -> Path:
     def read(path: Optional[Path]) -> str:
       if path is None:
           return ""
@@ -1065,8 +1065,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hcomm_payload_ok = "hcomm payload smoke passed" in smoke
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
     storage_hbm_ok = "storage HBM smoke passed" in smoke
-    strict_expected = ("HCOMM payload copy required but unavailable" in strict or
-                       "unsupported" in strict)
+    strict_positive_ok = ("hcomm payload smoke passed" in strict and
+                          "stage3b3e_payload_copy=passed" in strict and
+                          "fallback=none" in strict)
+    strict_negative_expected = (
+        "hcomm-payload-strict-negative" in strict and
+        ("HCOMM payload copy required but unavailable" in strict or
+         "unsupported" in strict))
     caps_match = re.search(r"FLUME_BACKEND_CAPS .+", smoke)
     caps = caps_match.group(0) if caps_match else "missing FLUME_BACKEND_CAPS"
     primitives = "unknown"
@@ -1124,16 +1129,22 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
     lines.append(
-        f"| Strict payload negative expected? | {'yes' if strict_expected else 'no'} | `hcomm-payload-strict-negative` log |")
-    next_action = (
-        "run strict Stage 3B.3E payload smoke with installed payload package"
-        if hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok
-        and package_payload_ready
-        else "build/install the Stage 3B.3E internal payload custom-op package"
-        if hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok
-        and hcomm_payload_unsupported and not package_payload_ready
-        else "inspect first failed required matrix step"
-    )
+        f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | `hcomm-payload-strict-positive` log |")
+    lines.append(
+        f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
+    if strict_positive_ok:
+        next_action = (
+            "Stage 3B.3E strict payload copy passed; inspect checksum and "
+            "start Stage 3B.4 storage rewiring")
+    elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
+          package_payload_ready):
+        next_action = "inspect hcomm-payload-strict-positive failure"
+    elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
+          hcomm_payload_unsupported and not package_payload_ready):
+        next_action = (
+            "build/install the Stage 3B.3E internal payload custom-op package")
+    else:
+        next_action = "inspect first failed required matrix step"
     lines.extend(["", f"next action: {next_action}", ""])
     path = run_dir / "ASCEND_FULL_MATRIX_DECISION_TREE.md"
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -1171,6 +1182,15 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         required=False,
         timeout_seconds=args.step_timeout_sec,
     )
+    package_text = ""
+    try:
+        package_text = package_result.log_path.read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        package_text = ""
+    package_payload_ready = (
+        "required=canary_direct_aclrt,payload_direct_aclrt" in package_text and
+        "status=PASS" in package_text)
 
     matrix_args = copy.copy(args)
     matrix_args.run_hccl_smoke = False
@@ -1216,9 +1236,10 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         strict_command = list(smoke_spec.command)
         strict_command.append("--hcomm-require-payload-copy")
         strict_result = runner.run(
-            "hcomm-payload-strict-negative",
+            "hcomm-payload-strict-positive" if package_payload_ready
+            else "hcomm-payload-strict-negative",
             strict_command,
-            required=False,
+            required=package_payload_ready,
             timeout_seconds=args.hccl_smoke_timeout_sec,
             env_updates=smoke_spec.env_updates,
         )
@@ -1247,8 +1268,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "ascend-full-matrix builds once, runs local tests/sim, then runs a "
         "two-rank root-info smoke with HCCL collective, HCCL P2P fallback, "
         "HCOMM channel resource probe, and HCOMM payload readiness. It then "
-        "runs --hcomm-require-payload-copy as an optional expected negative "
-        "until the custom-op/AICPU payload scheduler is implemented. Before "
+        "runs --hcomm-require-payload-copy as a required positive check when "
+        "the Stage 3B.3E payload package is installed, or as an optional "
+        "expected negative while the package is not ready. Before "
         "the smoke, it runs hcomm-custom-op-package-preflight to record "
         "whether the installed package is canary-ready or payload-ready. The "
         "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
