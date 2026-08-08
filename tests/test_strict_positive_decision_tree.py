@@ -90,6 +90,35 @@ def strict_log_with_kernel_local_copy_failure() -> str:
         "payload_kernel_hcomm_ret=91")
 
 
+def strict_log_with_rank1_remote_read_failure() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke passed: fallback=none detail=\""
+        "stage3b3e_payload_copy=passed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=passed "
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 "
+        "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_source_checksum=1234",
+        "rank 1 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=failed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=passed "
+        "payload_kernel_status=remote-read-failed "
+        "payload_failure_step=remote-read payload_status_word=9 "
+        "payload_kernel_hcomm_ret=88 payload_status_schema=v2 "
+        "payload_status_word_count=8 payload_echo=observed "
+        "fallback=none\"",
+        "",
+    ])
+
+
 def strict_log_with_checksum_mismatch() -> str:
     return strict_log(True).replace(
         "payload_checksum=1234", "payload_checksum=9999")
@@ -325,7 +354,7 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel HCOMM ret | 42 |" in text
-        assert "inspect in-kernel HCOMM primitive return code: 42" in text
+        assert "inspect rank 0 in-kernel HCOMM primitive return code: 42" in text
 
         strict_local_copy_fail = write(
             tmp / "strict-local-copy-fail.log",
@@ -338,8 +367,25 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel status | local-copy-failed |" in text
         assert "| kernel failure step | local-copy |" in text
-        assert ("inspect in-kernel HCOMM primitive failure: "
+        assert ("inspect rank 0 in-kernel HCOMM primitive failure: "
                 "local-copy-failed at local-copy") in text
+
+        strict_rank1_remote_read_fail = write(
+            tmp / "strict-rank1-remote-read-fail.log",
+            strict_log_with_rank1_remote_read_failure())
+        rank1_remote_read_fail_dir = tmp / "rank1-remote-read-fail"
+        rank1_remote_read_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank1_remote_read_fail_dir, smoke, strict_rank1_remote_read_fail,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| rank0 kernel status | success |" in text
+        assert "| rank1 kernel status | remote-read-failed |" in text
+        assert "| rank0 kernel HCOMM ret | 0 |" in text
+        assert "| rank1 kernel HCOMM ret | 88 |" in text
+        assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
+                "remote-read-failed at remote-read") in text
 
         strict_checksum_mismatch = write(
             tmp / "strict-checksum-mismatch.log",

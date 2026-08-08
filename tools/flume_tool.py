@@ -1474,7 +1474,8 @@ def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
     rank_lines = {0: "", 1: ""}
     for line in strict.splitlines():
         for rank in rank_lines:
-            if f"rank {rank} hcomm payload smoke passed" in line:
+            if re.search(rf"\brank {rank} hcomm payload smoke "
+                         r"(passed|unsupported|failed)\b", line):
                 rank_lines[rank] = line
     return rank_lines
 
@@ -1664,6 +1665,19 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
+    rank_status = {}
+    for rank in (0, 1):
+        rank_line = strict_rank_lines[rank]
+        rank_status[rank] = {
+            "kernel": marker_value_from_line(rank_line, "payload_kernel_status"),
+            "failure_step": marker_value_from_line(rank_line,
+                                                   "payload_failure_step"),
+            "status_word": marker_value_from_line(rank_line,
+                                                  "payload_status_word"),
+            "hcomm_ret": marker_value_from_line(rank_line,
+                                                "payload_kernel_hcomm_ret"),
+            "fallback": marker_value_from_line(rank_line, "fallback"),
+        }
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
@@ -1727,6 +1741,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + primitive-payload marker + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
+            f"| rank0 kernel status | {rank_status[0]['kernel']} | `payload_kernel_status` on rank0 line, status word `{rank_status[0]['status_word']}` |",
+            f"| rank1 kernel status | {rank_status[1]['kernel']} | `payload_kernel_status` on rank1 line, status word `{rank_status[1]['status_word']}` |",
+            f"| rank0 kernel failure step | {rank_status[0]['failure_step']} | rank0 `payload_failure_step` |",
+            f"| rank1 kernel failure step | {rank_status[1]['failure_step']} | rank1 `payload_failure_step` |",
+            f"| rank0 kernel HCOMM ret | {rank_status[0]['hcomm_ret']} | rank0 `payload_kernel_hcomm_ret` |",
+            f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
@@ -1771,6 +1791,25 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect direct ACL payload launch"
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
+        elif any(rank_status[rank]["kernel"] not in ("success", "missing")
+                 for rank in (0, 1)):
+            bad_rank = next(
+                rank for rank in (0, 1)
+                if rank_status[rank]["kernel"] not in ("success", "missing"))
+            next_action = (
+                "inspect rank "
+                f"{bad_rank} in-kernel HCOMM primitive failure: "
+                f"{rank_status[bad_rank]['kernel']} at "
+                f"{rank_status[bad_rank]['failure_step']}")
+        elif any(rank_status[rank]["hcomm_ret"] not in ("0", "missing")
+                 for rank in (0, 1)):
+            bad_rank = next(
+                rank for rank in (0, 1)
+                if rank_status[rank]["hcomm_ret"] not in ("0", "missing"))
+            next_action = (
+                "inspect rank "
+                f"{bad_rank} in-kernel HCOMM primitive return code: "
+                f"{rank_status[bad_rank]['hcomm_ret']}")
         elif strict_kernel not in ("success", "missing"):
             next_action = (
                 "inspect in-kernel HCOMM primitive failure: "
