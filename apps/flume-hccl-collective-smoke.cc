@@ -1472,6 +1472,7 @@ void RankMain(RankContext* ctx) {
             "payload_sync_api=",
             "payload_sync_timeout_sec=",
             "payload_kernel_status=success",
+            "payload_failure_step=none",
             "payload_status_word=0",
             "payload_kernel_hcomm_ret=0",
             "payload_status_schema=v",
@@ -1489,6 +1490,12 @@ void RankMain(RankContext* ctx) {
           }
           goto cleanup;
         }
+      }
+      if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy &&
+          ctx->rank == 0 && !hcomm_payload_source_checksum_ready) {
+        error = "HCOMM payload copy required but source checksum was not "
+                "recorded";
+        goto cleanup;
       }
       if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy &&
           ctx->rank == 1) {
@@ -1517,6 +1524,14 @@ void RankMain(RankContext* ctx) {
         hcomm_payload_expected_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
         hcomm_payload_expected_checksum_ready = true;
+        if (hcomm_payload_checksum != hcomm_payload_expected_checksum) {
+          std::ostringstream mismatch;
+          mismatch << "HCOMM payload checksum mismatch: received="
+                   << hcomm_payload_checksum
+                   << " expected=" << hcomm_payload_expected_checksum;
+          error = mismatch.str();
+          goto cleanup;
+        }
         hcomm_payload_verify_passed = true;
       }
       std::ostringstream line;

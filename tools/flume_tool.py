@@ -1327,6 +1327,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "stage3b3e_direct_aclrt_payload_launch=passed",
     "stage3b3e_payload_sync=passed",
     "payload_kernel_status=success",
+    "payload_failure_step=none",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
     "payload_status_schema=v",
@@ -1514,7 +1515,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`rank 0/1 passed` + `stage3b3e_payload_copy=passed` + "
         "`stage3b3e_direct_aclrt_payload_loader=passed` + "
         "`stage3b3e_payload_descriptor_handoff=passed` + "
-        "`payload_kernel_status=success` + `payload_status_word=0` + "
+        "`payload_kernel_status=success` + `payload_failure_step=none` + "
+        "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + checksum match + `payload_verify=passed` + "
         "`fallback=none` |")
@@ -1648,7 +1650,8 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_payload_descriptor_handoff=passed,"
             "stage3b3e_direct_aclrt_payload_launch=passed,"
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
-            "payload_status_word=0,payload_kernel_hcomm_ret=0,"
+            "payload_failure_step=none,payload_status_word=0,"
+            "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v,payload_status_word_count=,"
             "payload_echo=passed,payload_source_checksum=,"
             "payload_checksum=,payload_expected_checksum=,"
