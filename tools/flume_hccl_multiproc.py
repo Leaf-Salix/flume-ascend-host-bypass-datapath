@@ -72,6 +72,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hcomm-payload-disable-batch", action="store_true",
                         help=("Diagnostic only: skip HCOMM BatchModeStart/End "
                               "inside the direct ACL payload kernel"))
+    parser.add_argument("--hcomm-payload-recv-direct-output",
+                        action="store_true",
+                        help=("Diagnostic only: make recv kernel read remote "
+                              "HCCL Buffer directly into the output HBM "
+                              "buffer instead of staging through the local "
+                              "HCCL Buffer"))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for direct ACL payload "
                               "kernel experiments; empty uses Flume's stable "
@@ -172,6 +178,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
             command.append("--hcomm-require-payload-copy")
         if args.hcomm_payload_disable_batch:
             command.append("--hcomm-payload-disable-batch")
+        if args.hcomm_payload_recv_direct_output:
+            command.append("--hcomm-payload-recv-direct-output")
         if args.hcomm_payload_batch_tag:
             command.append(
                 f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")

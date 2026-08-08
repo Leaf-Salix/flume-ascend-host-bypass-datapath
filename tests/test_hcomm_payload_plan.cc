@@ -49,16 +49,20 @@ int main() {
   PayloadPlan recv;
   FLUME_TEST_CHECK(BuildPairCopyPlan(PayloadRole::kRecv, 1, 0, 2, 4096,
                                      &recv, &error));
-  FLUME_TEST_CHECK(recv.steps.size() == 3);
+  FLUME_TEST_CHECK(recv.steps.size() == 4);
   FLUME_TEST_CHECK(recv.steps[0] ==
                    PayloadStep::kChannelNotifyWaitReady);
   FLUME_TEST_CHECK(recv.steps[1] ==
-                   PayloadStep::kChannelReadRemoteToOutput);
+                   PayloadStep::kChannelReadRemoteToLocalHcclBuffer);
   FLUME_TEST_CHECK(recv.steps[2] ==
+                   PayloadStep::kLocalCopyLocalHcclBufferToOutput);
+  FLUME_TEST_CHECK(recv.steps[3] ==
                    PayloadStep::kChannelNotifyRecordDone);
   std::string recv_desc = DescribePlan(recv);
   FLUME_TEST_CHECK(recv_desc.find("role=recv") != std::string::npos);
   FLUME_TEST_CHECK(recv_desc.find("HcommReadOnThread") != std::string::npos);
+  FLUME_TEST_CHECK(recv_desc.find("local_hccl_buffer->output") !=
+                   std::string::npos);
 
   PayloadPlan invalid;
   FLUME_TEST_CHECK(!BuildPairCopyPlan(PayloadRole::kSend, 0, 1, 3, 4096,

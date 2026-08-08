@@ -523,6 +523,14 @@ installation rather than waiting for public HCCL launch exposure.
 | send rank | `HcommLocalCopyOnThread(input -> local_hccl_buffer)` -> `HcommChannelNotifyRecordOnThread(ready)` -> `HcommChannelNotifyWaitOnThread(done)` |
 | recv rank | `HcommChannelNotifyWaitOnThread(ready)` -> `HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer)` -> `HcommLocalCopyOnThread(local_hccl_buffer -> output)` -> `HcommChannelNotifyRecordOnThread(done)` |
 
+The default recv path keeps the local HCCL Buffer staging step because it is the
+stricter HCOMM Buffer-constrained path. Stage 3B.3E also has a default-off
+diagnostic switch, `--hcomm-payload-recv-direct-output`, that changes only the
+recv descriptor to `HcommReadOnThread(remote_hccl_buffer -> output)`. Its marker
+is `payload_recv_path=direct-output`; the default marker is
+`payload_recv_path=local-buffer`. This diagnostic is useful when the default
+path reaches `HcommReadOnThread` but fails at the final output local-copy.
+
 Success changes backend capability semantics from:
 
 ```text

@@ -72,6 +72,10 @@ int main() {
                 "payload default batch mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED == 1,
                 "payload disabled batch mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_RECV_PATH_LOCAL_BUFFER == 0,
+                "payload recv local-buffer path marker changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT == 1,
+                "payload recv direct-output path marker changed");
   static_assert(FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC == 60,
                 "payload default timeout changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,

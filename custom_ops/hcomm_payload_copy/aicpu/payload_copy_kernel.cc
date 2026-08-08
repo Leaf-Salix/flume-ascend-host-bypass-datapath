@@ -83,6 +83,11 @@ bool PayloadBatchModeEnabled(const flume_hcomm_payload_copy_desc_v1& desc) {
   return desc.reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
 }
 
+bool PayloadRecvDirectOutputEnabled(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  return desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+}
+
 bool CanRecordPayloadCompletionNotify(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   return HasPayloadDescHeader(desc) &&
@@ -176,7 +181,9 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
       return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED;
     }
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
-    ret = HcommReadOnThread(thread, channel, local_hccl_buffer,
+    void* read_target =
+        PayloadRecvDirectOutputEnabled(desc) ? user_buffer : local_hccl_buffer;
+    ret = HcommReadOnThread(thread, channel, read_target,
                             remote_hccl_buffer, desc.bytes);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
@@ -192,13 +199,15 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         return FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED;
       }
     }
-    BeginPayloadPrimitive(desc,
-                          FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
-    ret = HcommLocalCopyOnThread(thread, user_buffer, local_hccl_buffer,
-                                 desc.bytes);
-    if (ret != 0) {
-      StorePayloadPrimitiveRet(desc, ret);
-      return FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED;
+    if (!PayloadRecvDirectOutputEnabled(desc)) {
+      BeginPayloadPrimitive(desc,
+                            FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED);
+      ret = HcommLocalCopyOnThread(thread, user_buffer, local_hccl_buffer,
+                                   desc.bytes);
+      if (ret != 0) {
+        StorePayloadPrimitiveRet(desc, ret);
+        return FLUME_HCOMM_PAYLOAD_STATUS_OUTPUT_COPY_FAILED;
+      }
     }
     BeginPayloadPrimitive(
         desc, FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);

@@ -37,6 +37,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_timeout_sec=60 payload_desc_status_schema=v2 "
             "payload_desc_status_word_count=8 "
             "payload_desc_batch_tag=default "
+            "payload_recv_path=local-buffer "
             "payload_desc_local_hccl_buffer_bytes=8192 "
             "payload_desc_remote_hccl_buffer_bytes=8192")
     resource = (" payload_resolved_engine=aicpu-ts "
@@ -525,7 +526,8 @@ def main() -> int:
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0, thread_notify=0, batch_tag=default, "
-                "local_buffer=8192, remote_buffer=8192 |") in text
+                "recv_path=local-buffer, local_buffer=8192, "
+                "remote_buffer=8192 |") in text
         assert "| payload batch tag | default |" in text
         assert ("| HCOMM resource fingerprint | engine=aicpu-ts, "
                 "protocol=hccs, channel_desc=rank-graph, channels=1, "

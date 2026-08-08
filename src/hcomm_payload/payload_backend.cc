@@ -51,12 +51,14 @@ const char* PayloadStepName(PayloadStep step) {
       return "HcommChannelNotifyRecordOnThread(ready)";
     case PayloadStep::kChannelNotifyWaitReady:
       return "HcommChannelNotifyWaitOnThread(ready)";
-    case PayloadStep::kChannelReadRemoteToOutput:
-      return "HcommReadOnThread(remote_hccl_buffer->output)";
+    case PayloadStep::kChannelReadRemoteToLocalHcclBuffer:
+      return "HcommReadOnThread(remote_hccl_buffer->local_hccl_buffer)";
     case PayloadStep::kChannelNotifyWaitDone:
       return "HcommChannelNotifyWaitOnThread(done)";
     case PayloadStep::kChannelNotifyRecordDone:
       return "HcommChannelNotifyRecordOnThread(done)";
+    case PayloadStep::kLocalCopyLocalHcclBufferToOutput:
+      return "HcommLocalCopyOnThread(local_hccl_buffer->output)";
   }
   return "unknown";
 }
@@ -139,7 +141,8 @@ bool BuildPairCopyPlan(PayloadRole role,
   } else {
     plan.steps = {
         PayloadStep::kChannelNotifyWaitReady,
-        PayloadStep::kChannelReadRemoteToOutput,
+        PayloadStep::kChannelReadRemoteToLocalHcclBuffer,
+        PayloadStep::kLocalCopyLocalHcclBufferToOutput,
         PayloadStep::kChannelNotifyRecordDone,
     };
   }

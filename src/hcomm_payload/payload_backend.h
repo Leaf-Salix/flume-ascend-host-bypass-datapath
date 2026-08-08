@@ -25,9 +25,10 @@ enum class PayloadStep {
   kLocalCopyInputToHcclBuffer = 0,
   kChannelNotifyRecordReady = 1,
   kChannelNotifyWaitReady = 2,
-  kChannelReadRemoteToOutput = 3,
+  kChannelReadRemoteToLocalHcclBuffer = 3,
   kChannelNotifyWaitDone = 4,
   kChannelNotifyRecordDone = 5,
+  kLocalCopyLocalHcclBufferToOutput = 6,
 };
 
 enum class CustomOpLaunchSmokeStep {

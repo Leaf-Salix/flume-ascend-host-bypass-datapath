@@ -38,6 +38,10 @@ extern int calls[32];
 extern int call_count;
 extern char batch_start_tag[64];
 extern char batch_end_tag[64];
+extern void* last_local_copy_dst;
+extern const void* last_local_copy_src;
+extern void* last_read_dst;
+extern const void* last_read_src;
 extern uint32_t* status_probe_words;
 extern int status_probe_call;
 extern uint32_t status_observed_at_probe;
@@ -94,6 +98,8 @@ inline int32_t HcommLocalCopyOnThread(ThreadHandle, void* dst, const void* src,
                                       uint64_t bytes) {
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kLocalCopy);
+  last_local_copy_dst = dst;
+  last_local_copy_src = src;
   if (local_copy_ret == 0) {
     memcpy(dst, src, static_cast<size_t>(bytes));
   }
@@ -104,6 +110,8 @@ inline int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void* dst,
                                  const void* src, uint64_t bytes) {
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kRead);
+  last_read_dst = dst;
+  last_read_src = src;
   if (read_ret == 0) {
     memcpy(dst, src, static_cast<size_t>(bytes));
   }

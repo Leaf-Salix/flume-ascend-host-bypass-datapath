@@ -58,6 +58,12 @@ recv rank: HcommChannelNotifyWaitOnThread(ready)
            HcommChannelNotifyRecordOnThread(done)
 ```
 
+The default recv path is `payload_recv_path=local-buffer`. A diagnostic
+descriptor bit can switch recv to `payload_recv_path=direct-output`, which calls
+`HcommReadOnThread(remote_hccl_buffer -> dst_hbm)` directly and skips the final
+local copy. This is for isolating output-copy failures; it does not replace the
+default staging path.
+
 The descriptor also carries a batch tag and a device-visible `status_word`.
 The runtime fills a stable default batch tag, `flume_hcomm_payload`, unless the
 caller provides an alternate tag. This follows the public HCCL custom P2P

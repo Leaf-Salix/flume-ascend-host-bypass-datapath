@@ -22,6 +22,10 @@ int calls[32] = {};
 int call_count = 0;
 char batch_start_tag[64] = {};
 char batch_end_tag[64] = {};
+void* last_local_copy_dst = nullptr;
+const void* last_local_copy_src = nullptr;
+void* last_read_dst = nullptr;
+const void* last_read_src = nullptr;
 uint32_t* status_probe_words = nullptr;
 int status_probe_call = 0;
 uint32_t status_observed_at_probe = 0xFFFFFFFFU;
@@ -50,6 +54,10 @@ void Reset() {
   std::memset(calls, 0, sizeof(calls));
   std::memset(batch_start_tag, 0, sizeof(batch_start_tag));
   std::memset(batch_end_tag, 0, sizeof(batch_end_tag));
+  last_local_copy_dst = nullptr;
+  last_local_copy_src = nullptr;
+  last_read_dst = nullptr;
+  last_read_src = nullptr;
   status_probe_words = nullptr;
   status_probe_call = 0;
   status_observed_at_probe = 0xFFFFFFFFU;
@@ -208,10 +216,36 @@ int main() {
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
   FLUME_TEST_CHECK(std::memcmp(local, remote, 16) == 0);
+  FLUME_TEST_CHECK(last_read_dst == local);
+  FLUME_TEST_CHECK(last_read_src == remote);
+  FLUME_TEST_CHECK(last_local_copy_dst == user);
+  FLUME_TEST_CHECK(last_local_copy_src == local);
   const int recv_calls[] = {kAcquireComm, kBatchStart, kNotifyWait,
                             kRead, kLocalCopy, kNotifyRecord, kBatchEnd,
                             kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(recv_calls, 8));
+
+  Reset();
+  std::memset(user, 0, sizeof(user));
+  std::memset(local, 0, sizeof(local));
+  reset_status();
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  recv_desc.reserved2[1] = FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
+  FLUME_TEST_CHECK(std::memcmp(local, remote, 16) != 0);
+  FLUME_TEST_CHECK(last_read_dst == user);
+  FLUME_TEST_CHECK(last_read_src == remote);
+  FLUME_TEST_CHECK(last_local_copy_dst == nullptr);
+  FLUME_TEST_CHECK(last_local_copy_src == nullptr);
+  const int recv_direct_output_calls[] = {
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kNotifyRecord,
+      kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(recv_direct_output_calls, 7));
 
   Reset();
   std::memset(user, 0, sizeof(user));

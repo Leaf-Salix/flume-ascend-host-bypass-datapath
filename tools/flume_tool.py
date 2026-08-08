@@ -1428,6 +1428,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-require-payload-copy")
             if args.hcomm_payload_disable_batch:
                 command.append("--hcomm-payload-disable-batch")
+            if args.hcomm_payload_recv_direct_output:
+                command.append("--hcomm-payload-recv-direct-output")
             if args.hcomm_payload_batch_tag:
                 command.append(
                     f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
@@ -2268,6 +2270,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_fallback = marker_value(strict, "fallback")
     strict_batch_mode = marker_value(strict, "payload_batch_mode")
     strict_desc_batch_tag = marker_value(strict, "payload_desc_batch_tag")
+    strict_recv_path = marker_value(strict, "payload_recv_path")
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -2405,7 +2408,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
-            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify}, batch_tag={strict_desc_batch_tag}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
+            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
@@ -2477,7 +2480,14 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             bad_rank = next(
                 rank for rank in (0, 1)
                 if rank_status[rank]["failure_step"] == "output-copy")
-            next_action = rank_status[bad_rank]["action"]
+            if strict_recv_path != "direct-output":
+                next_action = (
+                    "rerun strict-positive with "
+                    "--hcomm-payload-recv-direct-output to test the official "
+                    "custom P2P-style recv path that reads directly into the "
+                    "output HBM buffer")
+            else:
+                next_action = rank_status[bad_rank]["action"]
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
         elif any(rank_status[rank]["kernel"] not in ("success", "missing")
@@ -4174,6 +4184,13 @@ def parse_args() -> argparse.Namespace:
                               "satisfy the strict-positive success gate; the "
                               "final path remains the default batch-enabled "
                               "mode."))
+    parser.add_argument("--hcomm-payload-recv-direct-output",
+                        action="store_true",
+                        help=("Diagnostic only: ask the recv payload kernel "
+                              "to HcommReadOnThread directly into the output "
+                              "HBM buffer. The default remains local-buffer "
+                              "staging, which reads remote HCCL Buffer into "
+                              "local HCCL Buffer before the output copy."))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for Stage 3B.3E "
                               "experiments. Empty uses Flume's stable default "

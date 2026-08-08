@@ -52,6 +52,14 @@ recv rank:
   HcommChannelNotifyRecordOnThread(done)
 ```
 
+The default recv path intentionally stages through the local HCCL Buffer before
+copying into user HBM. For diagnostics, Flume can set
+`FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT` in the descriptor, making the recv
+kernel call `HcommReadOnThread(remote HCCL Buffer -> output HBM)` directly and
+skip the final local copy. The smoke marker is
+`payload_recv_path=direct-output`; the default marker is
+`payload_recv_path=local-buffer`.
+
 Stage 3B.2-complete notify-only plan:
 
 ```text
@@ -138,6 +146,15 @@ recv rank kernel:
   HcommChannelNotifyWaitOnThread(ready)
   HcommReadOnThread(remote HCCL Buffer -> local HCCL Buffer)
   HcommLocalCopyOnThread(local HCCL Buffer -> dst_hbm)
+  HcommChannelNotifyRecordOnThread(done)
+```
+
+Optional recv direct-output diagnostic:
+
+```text
+recv rank kernel:
+  HcommChannelNotifyWaitOnThread(ready)
+  HcommReadOnThread(remote HCCL Buffer -> dst_hbm)
   HcommChannelNotifyRecordOnThread(done)
 ```
 

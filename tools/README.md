@@ -99,7 +99,15 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_desc_batch_tag=default|custom`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 默认走 `Notify + HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_desc_batch_tag=default|custom`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+
+若默认路径卡在 recv 端 `payload_failure_step=output-copy`，可以追加诊断开关：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-direct-output --run-hcomm-payload-smoke --hcomm-require-payload-copy --hcomm-payload-recv-direct-output --hccl-devices <device-a>,<device-b> ascend-probe
+```
+
+该模式让 recv kernel 直接执行 `HcommReadOnThread(remote_hccl_buffer -> output HBM)`，贴近公开 custom P2P 示例，用于判断失败是否来自第二段 `HcommLocalCopyOnThread(local_hccl_buffer -> output)`。默认 strict-positive 仍使用 local-buffer staging；日志中的 `payload_recv_path=local-buffer|direct-output` 会进入 decision tree 的 host descriptor fingerprint。
 
 已有日志也可以离线复核 strict-positive 门禁：
 
