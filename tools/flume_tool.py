@@ -229,6 +229,40 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
     return command
 
 
+def HcclHeaderSyntaxCommand() -> Optional[list[str]]:
+    cxx = os.environ.get("CXX", "c++")
+    if shutil.which(cxx) is None:
+        return None
+    include_roots = [
+        REPO_ROOT / "include",
+        REPO_ROOT / "src",
+        REPO_ROOT / "custom_ops" / "hcomm_payload_copy" / "include",
+        REPO_ROOT / "refer" / "cann-src" / "hccl" / "include",
+        REPO_ROOT / "refer" / "cann-src" / "hcomm" / "include",
+        REPO_ROOT / "refer" / "cann-src" / "runtime" / "include" / "external",
+        REPO_ROOT / "refer" / "cann-src" / "hcomm" / "test" / "stub" /
+        "depends" / "include",
+    ]
+    if not all(path.exists() for path in include_roots[3:]):
+        return None
+    macros = [
+        "FLUME_ENABLE_HCCL=1",
+        "FLUME_HAVE_HCCL_ROOT_INFO=1",
+        "FLUME_HAVE_HCCL_ROOT_INFO_CONFIG=1",
+        "FLUME_HAVE_HCCL_COMM_INIT_ALL=1",
+        "FLUME_HAVE_HCCL_P2P=1",
+        "FLUME_HAVE_HCOMM_CHANNEL_RES=1",
+        "FLUME_HAVE_HCOMM_PRIMITIVES=1",
+        "FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=1",
+        "FLUME_BUILD_HCOMM_CUSTOM_OP=1",
+    ]
+    command = [cxx, "-std=c++17", "-fsyntax-only"]
+    command.extend(f"-D{macro}" for macro in macros)
+    command.extend(f"-I{path}" for path in include_roots)
+    command.append(str(REPO_ROOT / "apps" / "flume-hccl-collective-smoke.cc"))
+    return command
+
+
 def ResolveHcclSourceRoot(args: argparse.Namespace) -> Path:
     if args.hccl_source_root:
         return Path(args.hccl_source_root).expanduser().resolve()
@@ -1007,6 +1041,10 @@ def run_local(args: argparse.Namespace) -> int:
         runner.run(spec.name, spec.command, required=spec.required,
                    timeout_seconds=args.step_timeout_sec,
                    env_updates=spec.env_updates)
+    syntax_command = HcclHeaderSyntaxCommand()
+    if syntax_command is not None:
+        runner.run("hccl-header-syntax", syntax_command, required=False,
+                   timeout_seconds=args.step_timeout_sec)
     return runner.write_summary()
 
 
