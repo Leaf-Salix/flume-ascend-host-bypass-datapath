@@ -146,8 +146,11 @@ python3 tools/flume_tool.py \
 ```
 
 如果第二条失败并出现 `payload_direct_aclrt ... missing`，说明当前安装的是
-canary-only 包或旧包。当前 payload-ready 要求 JSON 声明
-`FlumeHcommPayloadCopyDirectAclrtKernelV2`，需要用
+canary-only 包或 payload 包不完整；如果同时出现
+`reason.payload_direct_aclrt=legacy-entrypoint-present`，说明当前安装的是
+旧 payload 包。当前 payload-ready 要求 JSON 声明
+`FlumeHcommPayloadCopyDirectAclrtKernelV2`，旧包只声明
+`FlumeHcommPayloadCopyDirectAclrtKernel` 时会被明确判为 stale，需要用
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑 strict
 payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，避免把空包或

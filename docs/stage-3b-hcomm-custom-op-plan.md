@@ -332,7 +332,11 @@ execution yet.
 The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
 as a compatibility wrapper, but Flume's payload-ready preflight requires the V2
 entrypoint so that stale packages do not silently skip the two-word status
-diagnostic ABI.
+diagnostic ABI. When the package JSON declares only the legacy entrypoint, the
+preflight reports
+`reason.payload_direct_aclrt=legacy-entrypoint-present` and
+`action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
+package refresh problem, not as evidence that HCOMM payload primitives failed.
 
 `ascend-probe` records the same check as
 `hcomm-custom-op-package-preflight` when payload or notify-only smoke is

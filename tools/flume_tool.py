@@ -31,6 +31,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "canary_direct_aclrt": "FlumeHcommCanaryDirectAclrtKernel",
     "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
 }
+HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 
 
 def ResolveHcclInitMode(args: argparse.Namespace) -> str:
@@ -1305,6 +1306,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
 
     found_any_json = False
     found_required = False
+    found_legacy_payload = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -1338,6 +1340,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             print(f"aicpu_tar_error={tar_error}")
 
         functions_present: dict[str, bool] = {}
+        legacy_payload_present = False
         if json_exists and json_path is not None:
             found_any_json = True
             try:
@@ -1350,6 +1353,19 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 functions_present[label] = ok
                 print(f"function.{label}.{function_name}="
                       f"{'present' if ok else 'missing'}")
+            legacy_payload_present = JsonDeclaresFunction(
+                payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT)
+            found_legacy_payload = (
+                found_legacy_payload or legacy_payload_present)
+            if (args.require_hcomm_payload_kernel and
+                    not functions_present.get("payload_direct_aclrt", False) and
+                    legacy_payload_present):
+                print("function.payload_direct_aclrt.legacy."
+                      f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}=present")
+                print("reason.payload_direct_aclrt="
+                      "legacy-entrypoint-present")
+                print("action.payload_direct_aclrt="
+                      "rebuild-with-current-flume")
         else:
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
                 functions_present[label] = False
@@ -1371,7 +1387,13 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     if not found_required:
         print("status=FAIL")
         if args.require_hcomm_payload_kernel:
-            print("reason=payload kernel package is missing or incomplete")
+            if found_legacy_payload:
+                print("reason=payload kernel package uses stale legacy "
+                      "entrypoint")
+                print("action=rebuild package with current Flume V2 payload "
+                      "entrypoint")
+            else:
+                print("reason=payload kernel package is missing or incomplete")
         else:
             print("reason=canary package is missing or incomplete")
         return 1
