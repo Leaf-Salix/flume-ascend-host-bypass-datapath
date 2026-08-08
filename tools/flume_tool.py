@@ -3246,6 +3246,34 @@ def FindStepLog(run_dir: Path, step_names: Iterable[str]) -> Optional[Path]:
     return None
 
 
+HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_STEPS = (
+    "hcomm-payload-channel-handle-candidate",
+    "hcomm-payload-channel-handle-nobatch-candidate",
+    "hcomm-payload-channel-handle-direct-output-candidate",
+    "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
+)
+
+
+def FindPassingHcommPayloadCandidateLog(run_dir: Path,
+                                        *,
+                                        require_storage: bool) -> Optional[Path]:
+    for step_name in HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_STEPS:
+        candidate_log = FindStepLog(run_dir, [step_name])
+        if candidate_log is None:
+            continue
+        try:
+            candidate_text = candidate_log.read_text(
+                encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not StrictPayloadRankEvidencePassed(candidate_text)[0]:
+            continue
+        if require_storage and not StorageHbmHcommPathPassed(candidate_text):
+            continue
+        return candidate_log
+    return None
+
+
 def DecisionTreeStrictPositivePassed(tree_path: Path) -> bool:
     try:
         text = tree_path.read_text(encoding="utf-8", errors="replace")
@@ -3273,19 +3301,12 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
     package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeStrictPositivePassed(tree):
-        channel_log = FindStepLog(
-            run_dir, [
-                "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
-                "hcomm-payload-channel-handle-nobatch-candidate",
-                "hcomm-payload-channel-handle-direct-output-candidate",
-                "hcomm-payload-channel-handle-candidate",
-            ])
+        channel_log = FindPassingHcommPayloadCandidateLog(
+            run_dir, require_storage=False)
         if channel_log is not None:
             channel_tree = WriteMatrixDecisionTree(
                 run_dir, smoke_log, channel_log, package_log)
-            if DecisionTreeStrictPositivePassed(channel_tree):
-                return (channel_tree, True, smoke_log, channel_log,
-                        package_log)
+            return (channel_tree, True, smoke_log, channel_log, package_log)
     return (tree, DecisionTreeStrictPositivePassed(tree), smoke_log,
             strict_log, package_log)
 
@@ -3298,19 +3319,12 @@ def AnalyzeHcommStorageStrictPositiveLogs(
     package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeHcommStoragePassed(tree):
-        channel_log = FindStepLog(
-            run_dir, [
-                "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
-                "hcomm-payload-channel-handle-nobatch-candidate",
-                "hcomm-payload-channel-handle-direct-output-candidate",
-                "hcomm-payload-channel-handle-candidate",
-            ])
+        channel_log = FindPassingHcommPayloadCandidateLog(
+            run_dir, require_storage=True)
         if channel_log is not None:
             channel_tree = WriteMatrixDecisionTree(
                 run_dir, smoke_log, channel_log, package_log)
-            if DecisionTreeHcommStoragePassed(channel_tree):
-                return (channel_tree, True, smoke_log, channel_log,
-                        package_log)
+            return (channel_tree, True, smoke_log, channel_log, package_log)
     return (tree, DecisionTreeHcommStoragePassed(tree), smoke_log,
             strict_log, package_log)
 
