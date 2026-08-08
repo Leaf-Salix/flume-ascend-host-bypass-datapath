@@ -226,6 +226,11 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion`, which marks the success-status
 semantics where the second status word is written as
 `payload_kernel_hcomm_ret=0`.
+The packaging CMake installs a mode-specific JSON under the same runtime name:
+canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
+payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and
+rename it to `libflume_hcomm_payload_aicpu_kernel.json` in the installed OPP
+layout.
 
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints

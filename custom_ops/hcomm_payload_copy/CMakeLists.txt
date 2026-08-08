@@ -144,14 +144,21 @@ if(KERNEL_MODE)
 
   register_custom_aicpu_target(sign_aicpu_flume_hcomm_payload)
 else()
+  set(FLUME_HCOMM_PAYLOAD_AICPU_JSON
+    ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/libflume_hcomm_payload_aicpu_kernel_canary.json)
+  if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
+    set(FLUME_HCOMM_PAYLOAD_AICPU_JSON
+      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/libflume_hcomm_payload_aicpu_kernel_payload.json)
+  endif()
   install(FILES
     ${BUILD_DEVICE_DIR}/signatures/aicpu_flume_hcomm_payload.tar.gz
     DESTINATION ${CUSTOM_OPS_OPP_AICPU_KERNEL_PATH}
     COMPONENT hccl
   )
   install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/libflume_hcomm_payload_aicpu_kernel.json
+    ${FLUME_HCOMM_PAYLOAD_AICPU_JSON}
     DESTINATION ${CUSTOM_OPS_OPP_AICPU_CONFIG_PATH}
+    RENAME libflume_hcomm_payload_aicpu_kernel.json
     COMPONENT hccl
   )
 endif()

@@ -161,6 +161,27 @@ def main() -> int:
         assert flume_tool.JsonDeclaresFunction(
             static_payload, flume_tool.HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
             KERNEL_SO)
+        static_payload_json_path = (
+            repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
+            "libflume_hcomm_payload_aicpu_kernel_payload.json"
+        )
+        assert static_payload_json_path.read_text(
+            encoding="utf-8") == static_json_path.read_text(encoding="utf-8")
+        static_canary_json_path = (
+            repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
+            "libflume_hcomm_payload_aicpu_kernel_canary.json"
+        )
+        static_canary = json.loads(static_canary_json_path.read_text(
+            encoding="utf-8"))
+        for label in ("canary_direct_aclrt", "payload_direct_aclrt",
+                      "payload_abi_v2", "payload_semantic"):
+            assert flume_tool.JsonDeclaresFunction(
+                static_canary, flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS[label],
+                KERNEL_SO), label
+        assert not flume_tool.JsonDeclaresFunction(
+            static_canary,
+            flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS["build_mode_internal"],
+            KERNEL_SO)
 
         legacy_json, legacy_tar = write_package(tmp, mode="legacy")
         legacy = run_preflight(repo, legacy_json, legacy_tar)

@@ -1,0 +1,58 @@
+{
+  "FlumeHcommNotifyOnlyAicpuKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommNotifyOnlyAicpuKernel"
+    }
+  },
+  "FlumeHcommNotifyOnlyDirectAclrtKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommNotifyOnlyDirectAclrtKernel"
+    }
+  },
+  "FlumeHcommCanaryDirectAclrtKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommCanaryDirectAclrtKernel"
+    }
+  },
+  "FlumeHcommPayloadCopyDirectAclrtKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyDirectAclrtKernel"
+    }
+  },
+  "FlumeHcommPayloadCopyDirectAclrtKernelV2": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV2"
+    }
+  },
+  "FlumeHcommPayloadCopyAbiVersion2": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyAbiVersion2"
+    }
+  },
+  "FlumeHcommPayloadCopySemanticVersion": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopySemanticVersion"
+    }
+  },
+  "FlumeHcommPayloadBuildModeInternalPayload": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadBuildModeInternalPayload"
+    }
+  }
+}
