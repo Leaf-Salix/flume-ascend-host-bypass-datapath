@@ -2064,6 +2064,10 @@ def CommandUsesChannelHandleBinding(command: list[str]) -> bool:
     return "--hcomm-payload-comm-binding=channel-handle" in command
 
 
+def CommandUsesDirectOutputRecv(command: list[str]) -> bool:
+    return "--hcomm-payload-recv-direct-output" in command
+
+
 def WriteHcommPayloadChannelHandleCandidate(
         run_dir: Path,
         default_log: Optional[Path],
@@ -2173,6 +2177,30 @@ def RunHcommPayloadChannelHandleCandidate(
     command.append("--hcomm-payload-comm-binding=channel-handle")
     result = runner.run(
         "hcomm-payload-channel-handle-candidate",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadChannelHandleCandidate(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def RunHcommPayloadChannelHandleDirectOutputCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = PayloadCommandWithoutCommBinding(base_command)
+    if "--hcomm-payload-recv-direct-output" not in command:
+        command.append("--hcomm-payload-recv-direct-output")
+    command.append("--hcomm-payload-comm-binding=channel-handle")
+    result = runner.run(
+        "hcomm-payload-channel-handle-direct-output-candidate",
         command,
         required=False,
         timeout_seconds=timeout_seconds,
@@ -3177,7 +3205,10 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeStrictPositivePassed(tree):
         channel_log = FindStepLog(
-            run_dir, ["hcomm-payload-channel-handle-candidate"])
+            run_dir, [
+                "hcomm-payload-channel-handle-direct-output-candidate",
+                "hcomm-payload-channel-handle-candidate",
+            ])
         if channel_log is not None:
             channel_tree = WriteMatrixDecisionTree(
                 run_dir, smoke_log, channel_log, package_log)
@@ -3197,7 +3228,10 @@ def AnalyzeHcommStorageStrictPositiveLogs(
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeHcommStoragePassed(tree):
         channel_log = FindStepLog(
-            run_dir, ["hcomm-payload-channel-handle-candidate"])
+            run_dir, [
+                "hcomm-payload-channel-handle-direct-output-candidate",
+                "hcomm-payload-channel-handle-candidate",
+            ])
         if channel_log is not None:
             channel_tree = WriteMatrixDecisionTree(
                 run_dir, smoke_log, channel_log, package_log)
@@ -3417,6 +3451,14 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
                 if StrictPayloadLogPassed(channel_result.log_path):
                     strict_tree_log = channel_result.log_path
+                elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                      not CommandUsesDirectOutputRecv(strict_command)):
+                    channel_direct_result = (
+                        RunHcommPayloadChannelHandleDirectOutputCandidate(
+                            runner, strict_command, smoke_spec.env_updates,
+                            args.hccl_smoke_timeout_sec, strict_result.log_path))
+                    if StrictPayloadLogPassed(channel_direct_result.log_path):
+                        strict_tree_log = channel_direct_result.log_path
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-disable-batch" not in strict_command):
@@ -3465,7 +3507,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "failed default comm-name strict run triggers an explicit "
         "channel-handle backend candidate; that candidate can satisfy the "
         "strict evidence gate only with complete payload copy, checksum, "
-        "trace, and fallback=none markers. Before "
+        "trace, and fallback=none markers. If direct-output auto diagnostics "
+        "are also enabled and plain channel-handle still fails, the matrix "
+        "tries a channel-handle + direct-output candidate. Before "
         "the smoke, it runs hcomm-custom-op-package-preflight to record "
         "whether the installed package is canary-ready or payload-ready. The "
         "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
@@ -3593,6 +3637,14 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path)
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
+                    elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                          not CommandUsesDirectOutputRecv(spec.command)):
+                        channel_direct_result = (
+                            RunHcommPayloadChannelHandleDirectOutputCandidate(
+                                runner, spec.command, spec.env_updates, timeout,
+                                result.log_path))
+                        if StrictPayloadLogPassed(channel_direct_result.log_path):
+                            strict_tree_log = channel_direct_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3649,7 +3701,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "is enabled, a failed default comm-name run may be followed by an "
         "explicit channel-handle candidate; only complete strict-positive "
         "evidence from that candidate can make the required evidence gate "
-        "pass.\n",
+        "pass. If direct-output auto diagnostics are also enabled and plain "
+        "channel-handle still fails, the gate tries a channel-handle + "
+        "direct-output candidate before writing the decision tree.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
@@ -3770,6 +3824,14 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path)
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
+                    elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                          not CommandUsesDirectOutputRecv(spec.command)):
+                        channel_direct_result = (
+                            RunHcommPayloadChannelHandleDirectOutputCandidate(
+                                runner, spec.command, spec.env_updates, timeout,
+                                result.log_path))
+                        if StrictPayloadLogPassed(channel_direct_result.log_path):
+                            strict_tree_log = channel_direct_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3817,7 +3879,9 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "storage_hbm=hcomm-payload-staging. With "
         "--auto-run-hcomm-payload-channel-handle-candidate, a failed default "
         "comm-name run may be followed by an explicit channel-handle storage "
-        "candidate; both strict payload evidence and storage verification "
+        "candidate. If direct-output auto diagnostics are also enabled and plain "
+        "channel-handle still fails, it tries a channel-handle + direct-output "
+        "storage candidate. Both strict payload evidence and storage verification "
         "must pass for the storage gate to pass. This still reads the storage file "
         "through the host into proxy HBM; it validates storage-proxy wiring "
         "onto HCOMM payload copy, not full storage-direct DMA.\n",
@@ -5064,7 +5128,10 @@ def parse_args() -> argparse.Namespace:
                               "--hcomm-payload-comm-binding=channel-handle "
                               "and write HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md. "
                               "Unlike diagnostic-skip, a complete channel-handle "
-                              "run can satisfy the strict-positive evidence gate."))
+                              "run can satisfy the strict-positive evidence gate. "
+                              "When direct-output auto diagnostics are also "
+                              "enabled, a failing channel-handle run is followed "
+                              "by a channel-handle + direct-output candidate."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",
                         help=("Batch tag used by "

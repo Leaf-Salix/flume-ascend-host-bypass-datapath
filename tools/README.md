@@ -125,6 +125,11 @@ strict-positive 失败时，工具会额外运行
 `HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md`；如果该候选分支给出完整
 strict-positive 证据，最终 evidence gate 可以通过。它不同于
 `--auto-run-hcomm-payload-no-comm-acquire-diagnostic`，后者仍然只是诊断。
+如果同时打开 `--auto-run-hcomm-payload-direct-output-diagnostic`，普通
+channel-handle 候选失败后还会追加
+`hcomm-payload-channel-handle-direct-output-candidate`，用于一次性测试
+ChannelHandle 绑定和 recv direct-output 的交叉组合；完整通过时同样可以作为
+strict-positive evidence。
 
 若默认路径卡在 recv 端 `payload_failure_step=output-copy`，可以追加诊断开关：
 
@@ -535,6 +540,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
+  --auto-run-hcomm-payload-direct-output-diagnostic \
   --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
   --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
@@ -562,6 +568,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
+  --auto-run-hcomm-payload-direct-output-diagnostic \
   --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
   --collect-cann-compat-label host-b-cann \
   hcomm-storage-strict-positive
