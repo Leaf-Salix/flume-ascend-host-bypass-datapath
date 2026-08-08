@@ -319,7 +319,8 @@ Strict-positive success must include
 `stage3b3e_payload_sync=passed`, `payload_kernel_status=success`,
 `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
 `payload_status_schema=v2`, `payload_status_word_count=8`,
-`payload_echo=passed`, `payload_desc_batch_tag=default|custom`,
+`payload_echo=passed`, `payload_primitive_state=completed`,
+`payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and

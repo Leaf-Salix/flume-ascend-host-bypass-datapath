@@ -397,6 +397,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_status_schema=v2",
       "payload_status_word_count=8",
       "payload_echo=passed",
+      "payload_primitive_state=completed",
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       "payload_desc_batch_tag=",

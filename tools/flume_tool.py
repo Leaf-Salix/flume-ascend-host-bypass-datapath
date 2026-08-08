@@ -1583,6 +1583,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_schema=v2",
     "payload_status_word_count=8",
     "payload_echo=passed",
+    "payload_primitive_state=completed",
     "payload_role=",
     "payload_batch_mode=on",
     "payload_desc_batch_tag=",
