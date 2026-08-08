@@ -57,11 +57,16 @@ def strict_log(include_verify: bool) -> str:
                        "payload_semantic_v7=present "
                        "payload_semantic_v8=present payload_semantic_v9=present "
                        "payload_semantic_v10=present payload_semantic_v11=present")
-    data_probe = (" payload_data_probe=observed "
-                  "payload_data_user_entry_fingerprint=111 "
-                  "payload_data_local_exit_fingerprint=222 "
-                  "payload_data_user_exit_fingerprint=333 "
-                  "payload_data_sample_bytes=4096 ")
+    send_data_probe = (" payload_data_probe=observed "
+                       "payload_data_user_entry_fingerprint=222 "
+                       "payload_data_local_exit_fingerprint=222 "
+                       "payload_data_user_exit_fingerprint=222 "
+                       "payload_data_sample_bytes=4096 ")
+    recv_data_probe = (" payload_data_probe=observed "
+                       "payload_data_user_entry_fingerprint=111 "
+                       "payload_data_local_exit_fingerprint=222 "
+                       "payload_data_user_exit_fingerprint=222 "
+                       "payload_data_sample_bytes=4096 ")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
@@ -81,7 +86,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
         "payload_status_schema=v4 "
         "payload_status_word_count=14 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
-        + data_probe +
+        + send_data_probe +
         "payload_trace=passed payload_trace_schema=v2 "
         "payload_trace_word_count=80 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
@@ -106,7 +111,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
         "payload_status_schema=v4 "
         "payload_status_word_count=14 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=recv "
-        + data_probe +
+        + recv_data_probe +
         "payload_trace=passed payload_trace_schema=v2 "
         "payload_trace_word_count=80 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
@@ -317,6 +322,17 @@ def strict_log_with_rank1_pending_remote_read() -> str:
 def strict_log_with_checksum_mismatch() -> str:
     return strict_log(True).replace(
         "payload_checksum=1234", "payload_checksum=9999")
+
+
+def strict_log_with_data_flow_mismatch() -> str:
+    text = strict_log(True)
+    marker = "payload_data_user_exit_fingerprint=222"
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing payload data probe markers")
+    return text[:second] + text[second:].replace(
+        marker, "payload_data_user_exit_fingerprint=999", 1)
 
 
 def strict_log_with_recv_direct_output() -> str:
@@ -628,6 +644,7 @@ def main() -> int:
         assert "`payload_echo=passed`" in text
         assert "`payload_descriptor_fingerprint=passed`" in text
         assert "`payload_pattern=strict-v1`" in text
+        assert "| payload data flow | passed |" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
@@ -640,6 +657,17 @@ def main() -> int:
                 "protocol=hccs, channel_desc=rank-graph, channels=1, "
                 "notify_num=2, usable=8192, local=8192, remote=8192 |") in text
         assert "start Stage 3B.4 storage rewiring" in text
+        strict_data_mismatch = write(tmp / "strict-data-mismatch.log",
+                                     strict_log_with_data_flow_mismatch())
+        data_mismatch_dir = tmp / "data-mismatch"
+        data_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            data_mismatch_dir, smoke, strict_data_mismatch, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload data flow | recv-output-copy-mismatch |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_data_flow_mismatch())[0]
         strict_channel_handle = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
