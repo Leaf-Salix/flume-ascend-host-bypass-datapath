@@ -465,8 +465,17 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
           (std::string(expected_role) == "send" ?
                (write_path ? "send-write" : "send-local-copy") :
                (write_path ? "recv-write-local-copy" : "recv-read")),
+      "payload_trace_bytes=",
+      std::string("payload_trace_batch_mode=") + (disable_batch ? "1" : "0"),
+      "payload_trace_recv_path=",
+      skip_comm_acquire ? "payload_trace_comm_acquire=skipped" :
+                          "payload_trace_comm_acquire=default",
+      std::string("payload_trace_comm_binding=") +
+          HcommPayloadCommBindingName(comm_binding),
       std::string("payload_trace_transfer_mode=") +
           (write_path ? "write" : "read"),
+      "payload_trace_ready_notify_idx=",
+      "payload_trace_done_notify_idx=",
       "payload_trace_result=success",
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",

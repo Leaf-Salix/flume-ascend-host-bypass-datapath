@@ -1725,7 +1725,14 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
     "payload_trace_primitive_path=",
+    "payload_trace_bytes=",
+    "payload_trace_batch_mode=",
+    "payload_trace_recv_path=",
+    "payload_trace_comm_acquire=",
+    "payload_trace_comm_binding=",
     "payload_trace_transfer_mode=",
+    "payload_trace_ready_notify_idx=",
+    "payload_trace_done_notify_idx=",
     "payload_trace_result=success",
     "payload_role=",
     "payload_batch_mode=on",
@@ -1867,6 +1874,57 @@ def StrictPayloadHostDataPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     return True, "passed"
 
 
+def StrictPayloadTraceDescriptorPassed(
+        rank_lines: dict[int, str]) -> tuple[bool, str]:
+    expected_batch_trace = {"on": "0", "off": "1"}
+    expected_recv_trace = {"local-buffer": "0", "direct-output": "1"}
+    for rank in (0, 1):
+        line = rank_lines.get(rank, "")
+        if not line:
+            return False, "missing-rank-line"
+        desc_bytes = MarkerValueFromLine(line, "payload_desc_bytes")
+        trace_bytes = MarkerValueFromLine(line, "payload_trace_bytes")
+        desc_ready = MarkerValueFromLine(line, "payload_desc_ready_notify_idx")
+        trace_ready = MarkerValueFromLine(line, "payload_trace_ready_notify_idx")
+        desc_done = MarkerValueFromLine(line, "payload_desc_done_notify_idx")
+        trace_done = MarkerValueFromLine(line, "payload_trace_done_notify_idx")
+        payload_batch = MarkerValueFromLine(line, "payload_batch_mode")
+        trace_batch = MarkerValueFromLine(line, "payload_trace_batch_mode")
+        payload_recv = MarkerValueFromLine(line, "payload_recv_path")
+        trace_recv = MarkerValueFromLine(line, "payload_trace_recv_path")
+        payload_binding = MarkerValueFromLine(line, "payload_comm_binding")
+        trace_binding = MarkerValueFromLine(line, "payload_trace_comm_binding")
+        payload_acquire = MarkerValueFromLine(line, "payload_comm_acquire")
+        trace_acquire = MarkerValueFromLine(line, "payload_trace_comm_acquire")
+        payload_transfer = MarkerValueFromLine(line, "payload_transfer_mode")
+        trace_transfer = MarkerValueFromLine(
+            line, "payload_trace_transfer_mode")
+        values = (
+            desc_bytes, trace_bytes, desc_ready, trace_ready, desc_done,
+            trace_done, payload_batch, trace_batch, payload_recv, trace_recv,
+            payload_binding, trace_binding, payload_acquire, trace_acquire,
+            payload_transfer, trace_transfer)
+        if any(value == "missing" for value in values):
+            return False, f"rank{rank}-missing-trace-descriptor-field"
+        if desc_bytes != trace_bytes:
+            return False, f"rank{rank}-trace-bytes-mismatch"
+        if desc_ready != trace_ready:
+            return False, f"rank{rank}-trace-ready-notify-mismatch"
+        if desc_done != trace_done:
+            return False, f"rank{rank}-trace-done-notify-mismatch"
+        if expected_batch_trace.get(payload_batch) != trace_batch:
+            return False, f"rank{rank}-trace-batch-mode-mismatch"
+        if expected_recv_trace.get(payload_recv) != trace_recv:
+            return False, f"rank{rank}-trace-recv-path-mismatch"
+        if payload_binding != trace_binding:
+            return False, f"rank{rank}-trace-comm-binding-mismatch"
+        if payload_acquire != trace_acquire:
+            return False, f"rank{rank}-trace-comm-acquire-mismatch"
+        if payload_transfer != trace_transfer:
+            return False, f"rank{rank}-trace-transfer-mismatch"
+    return True, "passed"
+
+
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
     accepted_marker_sets = tuple(
@@ -1937,9 +1995,11 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         payload_match.group(1) == expected_match.group(1))
     data_flow_ok, _data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
     host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
+    trace_desc_ok, _trace_desc_reason = StrictPayloadTraceDescriptorPassed(
+        rank_lines)
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
-            checksum_ok and data_flow_ok and host_data_ok,
+            checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok,
             rank0_ok, rank1_ok)
 
 
@@ -3898,6 +3958,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_trace=passed` + "
         "`payload_trace_ret_order=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
+        "`payload_trace_bytes/batch/recv/comm/notify` matching descriptor + "
         "`payload_trace_transfer_mode=read|write` matching descriptor mode + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on|off` + "
@@ -4305,7 +4366,14 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_ret_order=passed,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
             "|send-write|recv-write-local-copy,"
+            "payload_trace_bytes=,"
+            "payload_trace_batch_mode=,"
+            "payload_trace_recv_path=,"
+            "payload_trace_comm_acquire=,"
+            "payload_trace_comm_binding=,"
             "payload_trace_transfer_mode=read|write,"
+            "payload_trace_ready_notify_idx=,"
+            "payload_trace_done_notify_idx=,"
             "payload_trace_result=success,payload_desc_batch_tag=,"
             "payload_transfer_mode=read|write,payload_recv_path=,"
             "payload_semantic_v6=present,"
@@ -4759,6 +4827,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_trace_order=passed, payload_trace_ret_order=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-* or "
         "send-write|recv-write-local-copy, "
+        "payload_trace_bytes/batch/recv/comm/notify fields matching the "
+        "host descriptor, "
         "payload_trace_transfer_mode=read|write matching descriptor mode, "
         "payload_trace_result=success, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "

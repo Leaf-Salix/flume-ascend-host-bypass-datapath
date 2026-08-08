@@ -92,7 +92,14 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_bytes=4096 "
+        "payload_trace_batch_mode=0 "
+        "payload_trace_recv_path=0 "
+        "payload_trace_comm_acquire=default "
+        "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
+        "payload_trace_ready_notify_idx=0 "
+        "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -120,7 +127,14 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=recv-read-local-copy "
+        "payload_trace_bytes=4096 "
+        "payload_trace_batch_mode=0 "
+        "payload_trace_recv_path=0 "
+        "payload_trace_comm_acquire=default "
+        "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
+        "payload_trace_ready_notify_idx=0 "
+        "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -154,7 +168,14 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_bytes=4096 "
+        "payload_trace_batch_mode=0 "
+        "payload_trace_recv_path=0 "
+        "payload_trace_comm_acquire=default "
+        "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
+        "payload_trace_ready_notify_idx=0 "
+        "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -184,6 +205,23 @@ def strict_write_path_log(include_verify: bool) -> str:
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-write-local-copy")
     return text
+
+
+def strict_log_with_channel_handle_binding(text: str) -> str:
+    return text.replace(
+        "payload_comm_acquire=default payload_comm_binding=comm-name",
+        "payload_comm_acquire=skipped payload_comm_binding=channel-handle"
+    ).replace(
+        "payload_trace_comm_acquire=default payload_trace_comm_binding=comm-name",
+        "payload_trace_comm_acquire=skipped "
+        "payload_trace_comm_binding=channel-handle")
+
+
+def strict_log_with_no_batch(text: str) -> str:
+    return text.replace("payload_batch_mode=on",
+                        "payload_batch_mode=off").replace(
+                            "payload_trace_batch_mode=0",
+                            "payload_trace_batch_mode=1")
 
 
 def strict_write_path_with_direct_output_log() -> str:
@@ -360,14 +398,13 @@ def strict_log_with_host_data_mismatch() -> str:
 def strict_log_with_recv_direct_output() -> str:
     text = strict_log(True)
     marker = "payload_recv_path=local-buffer"
-    first = text.find(marker)
-    second = text.find(marker, first + len(marker))
-    if first == -1 or second == -1:
+    if text.count(marker) < 2:
         raise AssertionError("synthetic log missing rank recv path markers")
-    text = text[:second] + text[second:].replace(
-        marker, "payload_recv_path=direct-output", 1)
-    return text.replace("payload_trace_primitive_path=recv-read-local-copy",
+    text = text.replace(marker, "payload_recv_path=direct-output")
+    text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-read-direct-output")
+    return text.replace("payload_trace_recv_path=0",
+                        "payload_trace_recv_path=1")
 
 
 def strict_log_with_channel_fence(text: str) -> str:
@@ -746,18 +783,15 @@ def main() -> int:
         assert "transfer=rank0:write/rank1:read" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_trace_transfer_mismatch())[0]
-        strict_channel_handle = strict_log(True).replace(
-            "payload_comm_acquire=default payload_comm_binding=comm-name",
-            "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
-        strict_channel_handle_no_batch = strict_channel_handle.replace(
-            "payload_batch_mode=on", "payload_batch_mode=off")
+        strict_channel_handle = strict_log_with_channel_handle_binding(
+            strict_log(True))
+        strict_channel_handle_no_batch = strict_log_with_no_batch(
+            strict_channel_handle)
         strict_channel_handle_direct_output = (
-            strict_log_with_recv_direct_output().replace(
-                "payload_comm_acquire=default payload_comm_binding=comm-name",
-                "payload_comm_acquire=skipped payload_comm_binding=channel-handle"))
+            strict_log_with_channel_handle_binding(
+                strict_log_with_recv_direct_output()))
         strict_channel_handle_no_batch_direct_output = (
-            strict_channel_handle_direct_output.replace(
-                "payload_batch_mode=on", "payload_batch_mode=off"))
+            strict_log_with_no_batch(strict_channel_handle_direct_output))
         strict_channel_handle_fence = strict_log_with_channel_fence(
             strict_channel_handle)
         strict_channel_handle_direct_output_fence = strict_log_with_channel_fence(
@@ -858,13 +892,11 @@ def main() -> int:
                 in candidate_matrix_text)
         assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
 
-        strict_write_channel_handle = strict_write_path_log(True).replace(
-            "payload_comm_acquire=default payload_comm_binding=comm-name",
-            "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
+        strict_write_channel_handle = strict_log_with_channel_handle_binding(
+            strict_write_path_log(True))
         strict_write_channel_handle_no_batch_fence = (
             strict_log_with_channel_fence(
-                strict_write_channel_handle.replace(
-                    "payload_batch_mode=on", "payload_batch_mode=off")))
+                strict_log_with_no_batch(strict_write_channel_handle)))
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_write_channel_handle_no_batch_fence)[0]
 
@@ -954,8 +986,7 @@ def main() -> int:
 
         strict_no_batch = write(
             tmp / "strict-no-batch.log",
-            strict_log(True).replace("payload_batch_mode=on",
-                                     "payload_batch_mode=off"))
+            strict_log_with_no_batch(strict_log(True)))
         no_batch_dir = tmp / "no-batch"
         no_batch_dir.mkdir()
         tree = flume_tool.WriteMatrixDecisionTree(
@@ -1045,7 +1076,7 @@ def main() -> int:
         assert "direct_payload_copy_and_verify: `passed`" in direct_output_text
         assert "default local-buffer path is likely failing" in direct_output_text
         assert "direct_rank0:" in direct_output_text
-        assert "payload_recv_path=local-buffer" in direct_output_text
+        assert "payload_recv_path=direct-output" in direct_output_text
         assert "direct_rank1:" in direct_output_text
         assert "payload_recv_path=direct-output" in direct_output_text
         assert "payload_trace_primitive_path=recv-read-direct-output" in direct_output_text
@@ -1541,8 +1572,7 @@ def main() -> int:
               strict_log(False))
         write(comm_name_nobatch_diagnostic_dir /
               "02-hcomm-payload-nobatch-diagnostic.log",
-              strict_log(True).replace("payload_batch_mode=on",
-                                       "payload_batch_mode=off"))
+              strict_log_with_no_batch(strict_log(True)))
         analyzed_tree, payload_passed, _, payload_strict_log, _ = (
             flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
                 comm_name_nobatch_diagnostic_dir))
@@ -1754,8 +1784,7 @@ def main() -> int:
               strict_log(False))
         write(storage_comm_name_nobatch_diagnostic_dir /
               "02-hcomm-payload-nobatch-diagnostic.log",
-              strict_log(True).replace("payload_batch_mode=on",
-                                       "payload_batch_mode=off") +
+              strict_log_with_no_batch(strict_log(True)) +
               smoke_with_hcomm_storage_path())
         analyzed_tree, storage_passed, _, storage_strict_log, _ = (
             flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
