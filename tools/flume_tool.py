@@ -1507,6 +1507,17 @@ def FindBuiltCustomOpArtifacts(hccl_source_root: Path,
     return json_path, tar_path, run_files
 
 
+def SelectCustomOpRunPackage(run_files: list[Path]) -> Optional[Path]:
+    if not run_files:
+        return None
+    preferred = [
+        item for item in run_files
+        if "custom_hcomm_payload" in item.name or
+        HCOMM_CUSTOM_OP_NAME in item.name
+    ]
+    return sorted(preferred or run_files)[0]
+
+
 def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -1583,6 +1594,38 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
             required=True,
             timeout_seconds=args.step_timeout_sec,
         )
+    if result.returncode == 0 and args.install_custom_op_package:
+        run_package = SelectCustomOpRunPackage(run_files)
+        if run_package is None:
+            setup_log = runner.run_dir / "CUSTOM_OP_INSTALL_ERROR.txt"
+            setup_log.write_text(
+                "cannot install Flume HCOMM custom-op package: no .run "
+                "installer was found under the HCCL source build outputs\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] custom-op install setup -> {setup_log}")
+            runner.results.append(StepResult(
+                "hcomm-custom-op-install", ["<missing-run-package>"], 1, 0.0,
+                setup_log, True))
+            return runner.write_summary()
+        install_result = runner.run(
+            "hcomm-custom-op-install",
+            ["bash", str(run_package), "--install"],
+            required=True,
+            timeout_seconds=args.hccl_smoke_timeout_sec,
+        )
+        if install_result.returncode == 0:
+            installed_args = copy.copy(args)
+            installed_args.custom_op_json = ""
+            installed_args.custom_op_aicpu_tar = ""
+            runner.run(
+                "hcomm-custom-op-installed-preflight",
+                HcommCustomOpPackageCommand(
+                    installed_args,
+                    require_payload=args.custom_op_build_mode == "payload"),
+                required=True,
+                timeout_seconds=args.step_timeout_sec,
+            )
     return runner.write_summary()
 
 
@@ -1903,6 +1946,12 @@ def parse_args() -> argparse.Namespace:
                         help=("Also build the legacy public HCCL-launch "
                               "notify-only entrypoint when the CANN package "
                               "exposes hccl_launch.h."))
+    parser.add_argument("--install-custom-op-package", action="store_true",
+                        help=("After hcomm-custom-op-build succeeds, install "
+                              "the generated .run package and verify that the "
+                              "installed package is visible to Flume. This is "
+                              "explicit opt-in because it changes the target "
+                              "CANN/OPP installation."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")

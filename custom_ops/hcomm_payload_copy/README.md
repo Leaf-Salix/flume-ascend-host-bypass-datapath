@@ -191,6 +191,13 @@ python3 tools/flume_tool.py \
   --custom-op-build-mode payload \
   hcomm-custom-op-build
 
+# Optional: install the generated .run package and verify installed visibility.
+python3 tools/flume_tool.py \
+  --hccl-source-root <hccl-source-root> \
+  --custom-op-build-mode payload \
+  --install-custom-op-package \
+  hcomm-custom-op-build
+
 cd <hccl-source-root>
 FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
 bash build.sh \
