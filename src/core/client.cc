@@ -2188,7 +2188,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "\" stage3b3e_payload_descriptor_handoff=blocked "
            "stage3b3e_direct_aclrt_payload_launch=not-attempted kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           " custom_op_package=present package_vendor=" +
+           " payload_kernel=missing custom_op_package=present package_vendor=" +
            decision.package.vendor;
   }
 

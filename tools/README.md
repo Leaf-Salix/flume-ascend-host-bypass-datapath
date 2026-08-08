@@ -97,6 +97,21 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 
 严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。成功 marker 是 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
+构建 Flume custom-op package 时有两种模式：
+
+```bash
+# 默认：只构建 no-internal-header canary kernel，用于 Stage 3B.3D
+bash build.sh --vendor=flume --ops=hcomm_payload \
+  --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
+
+# 实验：同时构建 HCOMM primitive payload kernel，用于 Stage 3B.3E
+FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
+bash build.sh --vendor=flume --ops=hcomm_payload \
+  --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
+```
+
+第二种包需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和 device-side `ccl_kernel` 链接能力。
+
 当前代码下严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 
 ```bash

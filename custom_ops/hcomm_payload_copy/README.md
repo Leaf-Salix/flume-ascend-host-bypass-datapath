@@ -160,6 +160,24 @@ bash build.sh \
 ./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
 ```
 
+By default this builds the no-internal-header canary package. To build the
+experimental HCOMM primitive payload package, enable the internal kernel mode
+through the environment before invoking HCCL `build.sh`:
+
+```bash
+cd <hccl-source-root>
+FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
+bash build.sh \
+  --vendor=flume \
+  --ops=hcomm_payload \
+  --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
+
+./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
+```
+
+The internal payload package is the one required for
+`stage3b3e_payload_copy=passed`.
+
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints
 `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`.
