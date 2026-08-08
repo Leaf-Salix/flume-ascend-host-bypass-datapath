@@ -62,7 +62,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed "
+        "payload_status_word_count=8 payload_echo=passed payload_role=send "
         "payload_thread_notify_order=not-used" + desc + resource +
         " fallback=none\" "
         "payload_source_checksum=1234",
@@ -76,7 +76,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed "
+        "payload_status_word_count=8 payload_echo=passed payload_role=recv "
         "payload_thread_notify_order=not-used" + recv_desc +
         resource + " fallback=none\" "
         "payload_expected_checksum=1234",
@@ -97,7 +97,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed "
+        "payload_status_word_count=8 payload_echo=passed payload_role=send "
         "payload_thread_notify_order=not-used fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
@@ -142,7 +142,8 @@ def strict_log_with_rank1_remote_read_failure() -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_status_word_count=8 payload_echo=passed payload_role=send "
+        "fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke unsupported: fallback=none detail=\""
         "stage3b3e_payload_copy=failed "
@@ -198,7 +199,8 @@ def strict_log_with_rank1_pending_remote_read() -> str:
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
         "payload_status_schema=v2 payload_status_word_count=8 "
-        "payload_echo=passed fallback=none\" payload_source_checksum=1234",
+        "payload_echo=passed payload_role=send fallback=none\" "
+        "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke failed: fallback=none detail=\""
         "stage3b3e_payload_copy=failed "
         "stage3b3e_direct_aclrt_payload_loader=passed "

@@ -1478,6 +1478,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_schema=v2",
     "payload_status_word_count=8",
     "payload_echo=passed",
+    "payload_role=",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -1497,10 +1498,12 @@ def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
     rank0_ok = bool(rank_lines[0]) and all(
-        marker in rank_lines[0] for marker in STRICT_PAYLOAD_RANK_MARKERS)
+        marker in rank_lines[0] for marker in STRICT_PAYLOAD_RANK_MARKERS) and (
+            "payload_role=send" in rank_lines[0])
     rank1_ok = (bool(rank_lines[1]) and
                 all(marker in rank_lines[1]
                     for marker in STRICT_PAYLOAD_RANK_MARKERS) and
+                "payload_role=recv" in rank_lines[1] and
                 "payload_verify=passed" in rank_lines[1])
     source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
                              rank_lines[0])
@@ -1723,6 +1726,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_schema = marker_value(strict, "payload_status_schema")
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
+    strict_rank0_role = marker_value_from_line(strict_rank_lines[0],
+                                               "payload_role")
+    strict_rank1_role = marker_value_from_line(strict_rank_lines[1],
+                                               "payload_role")
     strict_pattern = marker_value(strict, "payload_pattern")
     strict_primitive_state = marker_value(strict, "payload_primitive_state")
     strict_desc_bytes = marker_value(strict, "payload_desc_bytes")
@@ -1822,7 +1829,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_kernel_status=success` + `payload_failure_step=none` + "
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
-        "`payload_echo=passed` + `payload_thread_notify_order=...` + "
+        "`payload_echo=passed` + rank0 `payload_role=send` + "
+        "rank1 `payload_role=recv` + `payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
         "`payload_verify=passed` + "
         "`fallback=none` |")
@@ -1858,6 +1866,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
+            f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
@@ -2031,7 +2040,8 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_failure_step=none,payload_status_word=0,"
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v2,payload_status_word_count=8,"
-            "payload_echo=passed,payload_thread_notify_order=,"
+            "payload_echo=passed,payload_role=send/recv,"
+            "payload_thread_notify_order=,"
             "payload_pattern=strict-v1,"
             "payload_source_checksum=,"
             "payload_checksum=,payload_expected_checksum=,"

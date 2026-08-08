@@ -2458,6 +2458,10 @@ std::string PayloadFailureStepName(uint32_t status) {
   }
 }
 
+const char* PayloadRoleName(flume::hcomm_payload::PayloadRole role) {
+  return role == flume::hcomm_payload::PayloadRole::kSend ? "send" : "recv";
+}
+
 uint64_t PayloadEchoBytes(const uint32_t* status_words) {
   return static_cast<uint64_t>(status_words[4]) |
          (static_cast<uint64_t>(status_words[5]) << 32U);
@@ -3203,7 +3207,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_status_word=0 "
                      "payload_kernel_hcomm_ret=") +
          std::to_string(kernel_hcomm_ret) + " " +
-         "payload_echo=passed" + PayloadStatusSchemaDetail() +
+         "payload_echo=passed payload_role=" + PayloadRoleName(role) +
+         PayloadStatusSchemaDetail() +
          PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) + " " +
          "kernel_func=" +
