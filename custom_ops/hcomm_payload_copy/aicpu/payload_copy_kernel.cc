@@ -156,10 +156,8 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   }
   if (result == kFlumePayloadSuccess) {
     StorePayloadStatus(desc, kFlumePayloadSuccess);
-  } else if (result == kFlumePayloadInvalidArgument) {
-    StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
   } else {
-    StorePayloadStatus(desc, kFlumePayloadHcommError);
+    StorePayloadStatus(desc, result);
   }
   if (use_thread_notify) {
     int32_t notify_ret = HcommThreadNotifyRecordOnThread(

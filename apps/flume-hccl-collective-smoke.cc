@@ -1422,7 +1422,11 @@ void RankMain(RankContext* ctx) {
         for (uint64_t i = 0; i < ctx->count; ++i) {
           float expected = static_cast<float>(1 + i);
           if (host[i] != expected) {
-            error = "HCOMM payload copy verification failed";
+            std::ostringstream mismatch;
+            mismatch << "HCOMM payload copy verification failed: index=" << i
+                     << " got=" << host[i]
+                     << " expected=" << expected;
+            error = mismatch.str();
             goto cleanup;
           }
         }
@@ -1450,8 +1454,12 @@ void RankMain(RankContext* ctx) {
            << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
            << " primitives="
            << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built")
-           << " fallback="
-           << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
+           << " fallback=";
+      if (ctx->hcomm_require_payload_copy && wait_ret == FLUME_OK) {
+        line << "none";
+      } else {
+        line << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
+      }
       if (ctx->hcomm_require_payload_copy && ctx->rank == 1 &&
           wait_ret == FLUME_OK) {
         line << " payload_verify="
