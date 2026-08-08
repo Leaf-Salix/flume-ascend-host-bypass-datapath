@@ -17,8 +17,12 @@ python3 tools/flume_tool.py local
 - 执行 `ctest --output-on-failure`。
 - 执行 `flume-sim-demo`。
 - 执行 `flume-sim-collective-demo`，其中会注册 sim A3 symmetric memory window 后再跑 collective。
+- 如果 `refer/cann-src` 里存在 HCCL/HCOMM/runtime 参考头文件，执行
+  `hccl-header-syntax` 和 `hcomm-payload-kernel-syntax` 作为 required
+  步骤，用 `-fsyntax-only` 在无 NPU 环境提前检查 Ascend smoke app 和
+  HCOMM payload kernel 的语法兼容性。
 
-macOS 或无 Ascend Linux 上的预期结果：HCCL 布局检查可以失败，但 configure、build、CTest 和 sim demo 应通过。普通步骤默认 600 秒超时，可用 `--step-timeout-sec` 调整。
+macOS 或无 Ascend Linux 上的预期结果：HCCL 布局检查可以失败，但 configure、build、CTest、sim demo 和可用的 refer syntax gate 应通过。普通步骤默认 600 秒超时，可用 `--step-timeout-sec` 调整。
 
 ## Ascend 主机探测
 

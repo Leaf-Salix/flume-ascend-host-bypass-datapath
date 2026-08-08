@@ -1429,12 +1429,12 @@ def run_local(args: argparse.Namespace) -> int:
                    env_updates=spec.env_updates)
     syntax_command = HcclHeaderSyntaxCommand()
     if syntax_command is not None:
-        runner.run("hccl-header-syntax", syntax_command, required=False,
+        runner.run("hccl-header-syntax", syntax_command, required=True,
                    timeout_seconds=args.step_timeout_sec)
     payload_kernel_syntax_command = HcommPayloadKernelSyntaxCommand()
     if payload_kernel_syntax_command is not None:
         runner.run("hcomm-payload-kernel-syntax",
-                   payload_kernel_syntax_command, required=False,
+                   payload_kernel_syntax_command, required=True,
                    timeout_seconds=args.step_timeout_sec)
     return runner.write_summary()
 
