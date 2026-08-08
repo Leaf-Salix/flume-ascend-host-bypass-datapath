@@ -1916,6 +1916,24 @@ def HcommPrimitiveAbiFixtureStatus(
     return result, evidence, next_action, str(fixture)
 
 
+def RunCannCompatCollection(
+        runner: Runner,
+        args: argparse.Namespace,
+        hccl_devices: list[str]) -> Optional[StepResult]:
+    if not args.collect_cann_compat_label:
+        return None
+    return runner.run(
+        "collect-cann-compat",
+        [sys.executable, "tools/collect_cann_compat.py",
+         "--label", args.collect_cann_compat_label,
+         "--flume-log-dir", str(runner.run_dir),
+         "--devices", ",".join(hccl_devices)],
+        required=False,
+        timeout_seconds=args.step_timeout_sec,
+        env_updates=CannRuntimeEnvUpdates(args),
+    )
+
+
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                              strict_log: Optional[Path],
                              package_log: Optional[Path]) -> Path:
@@ -2521,16 +2539,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
 
-    if args.collect_cann_compat_label:
-        runner.run(
-            "collect-cann-compat",
-            [sys.executable, "tools/collect_cann_compat.py",
-             "--label", args.collect_cann_compat_label,
-             "--flume-log-dir", str(runner.run_dir),
-             "--devices", ",".join(hccl_devices)],
-            required=False,
-            timeout_seconds=args.step_timeout_sec,
-        )
+    RunCannCompatCollection(runner, args, hccl_devices)
 
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
@@ -2669,6 +2678,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
 
+    RunCannCompatCollection(runner, args, hccl_devices)
+
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
@@ -2794,6 +2805,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             strict_result = result
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+
+    RunCannCompatCollection(runner, args, hccl_devices)
 
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
