@@ -731,6 +731,17 @@ def main() -> int:
             hcomm_storage_dir, hcomm_storage_smoke, None, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |" in text
+        assert not flume_tool.DecisionTreeHcommStoragePassed(tree)
+
+        hcomm_storage_strict_dir = tmp / "hcomm-storage-strict-path"
+        hcomm_storage_strict_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            hcomm_storage_strict_dir, hcomm_storage_smoke, strict_pass,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | yes |" in text
+        assert "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |" in text
+        assert flume_tool.DecisionTreeHcommStoragePassed(tree)
 
         stale_status_schema_package = write(
             tmp / "package-stale-status-schema.log",

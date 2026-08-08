@@ -920,13 +920,22 @@ def CollectHcclSmokeSetupNotes(args: argparse.Namespace,
             "Use a multi-node rank table to validate RoCE RDMA explicitly."
         )
     if args.run_storage_hbm_smoke:
-        notes.append(
-            "Storage HBM smoke is Stage 3A fallback validation. Rank0 reads "
-            "a file slice from local storage, copies it into proxy-rank HBM, "
-            "then sends it to rank1 HBM with HcclSend/HcclRecv. This is not "
-            "full storage direct; it keeps the API/test surface ready for a "
-            "future HCOMM/RDMA backend."
-        )
+        if args.hcomm_require_payload_copy:
+            notes.append(
+                "Storage HBM smoke is running through the HCOMM payload "
+                "scheduler path. Rank0 still reads a local file slice through "
+                "the host into proxy-rank HBM, then sends it to rank1 compute "
+                "HBM with Flume HCOMM payload copy. This validates Stage 3B.4 "
+                "storage-proxy wiring, not full storage-direct DMA."
+            )
+        else:
+            notes.append(
+                "Storage HBM smoke is Stage 3A fallback validation. Rank0 "
+                "reads a file slice from local storage, copies it into "
+                "proxy-rank HBM, then sends it to rank1 HBM with "
+                "HcclSend/HcclRecv. This is not full storage direct; it keeps "
+                "the API/test surface ready for a future HCOMM/RDMA backend."
+            )
     return notes
 
 
@@ -1971,6 +1980,17 @@ def DecisionTreeStrictPositivePassed(tree_path: Path) -> bool:
     return "| Strict payload positive passed? | yes |" in text
 
 
+def DecisionTreeHcommStoragePassed(tree_path: Path) -> bool:
+    try:
+        text = tree_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return (
+        DecisionTreeStrictPositivePassed(tree_path) and
+        "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |"
+        in text)
+
+
 def AnalyzeHcommPayloadStrictPositiveLogs(
         run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
                                 Optional[Path]]:
@@ -2001,12 +2021,30 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v2,payload_status_word_count=8,"
             "payload_echo=passed,payload_thread_notify_order=,"
+            "payload_pattern=strict-v1,"
             "payload_source_checksum=,"
             "payload_checksum=,payload_expected_checksum=,"
             "payload_verify=passed,fallback=none")
     return runner.record_static("hcomm-payload-strict-evidence", lines,
                                 returncode=0 if passed else 1,
                                 required=required)
+
+
+def RecordHcommStorageEvidenceGate(runner: Runner, tree: Path,
+                                   passed: bool) -> StepResult:
+    lines = [
+        f"decision_tree={tree}",
+        f"hcomm_storage_evidence={'passed' if passed else 'failed'}",
+    ]
+    if not passed:
+        lines.append(
+            "reason=missing Stage 3B.4 HCOMM storage evidence")
+        lines.append(
+            "required_markers=strict-positive passed,"
+            "storage_hbm=hcomm-payload-staging,storage HBM smoke passed")
+    return runner.record_static("hcomm-storage-strict-evidence", lines,
+                                returncode=0 if passed else 1,
+                                required=True)
 
 
 def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
@@ -2291,6 +2329,133 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
+    return runner.write_summary()
+
+
+def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    if len(hccl_devices) != 2:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "hcomm-storage-strict-positive requires exactly two "
+            "--hccl-devices entries\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+    runner.run("hccl-env-check", [sys.executable, "scripts/check_hccl_env.py"],
+               required=True, timeout_seconds=args.step_timeout_sec,
+               env_updates=CannRuntimeEnvUpdates(args))
+    if shutil.which("npu-smi"):
+        runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
+                   required=False, timeout_seconds=args.step_timeout_sec)
+        runner.run(
+            "npu-topo-check",
+            [sys.executable, "tools/flume_npu_topo_check.py",
+             f"--devices={','.join(hccl_devices)}"],
+            required=False,
+            timeout_seconds=args.step_timeout_sec,
+        )
+
+    runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
+    if not runtime_json_ok:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    package_result = runner.run(
+        "hcomm-custom-op-package-preflight",
+        HcommCustomOpPackageCommand(args, require_payload=True),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if package_result.returncode != 0:
+        next_steps = WritePayloadPackageBuildNextSteps(runner.run_dir, args)
+        print(f"[ok] payload package next steps -> {next_steps}")
+        note = runner.run_dir / "HCOMM_STORAGE_STRICT_POSITIVE_SCOPE.txt"
+        note.write_text(
+            "hcomm-storage-strict-positive stopped before launch because the "
+            "installed Flume HCOMM custom-op package is not payload-ready. "
+            "This gate requires the same Stage 3B.3E payload package as "
+            "hcomm-payload-strict-positive, then wires that scheduler into "
+            "the Stage 3B.4 storage proxy smoke.\n",
+            encoding="utf-8",
+        )
+        print(f"[ok] hcomm storage scope -> {note}")
+        return runner.write_summary()
+
+    strict_args = copy.copy(args)
+    strict_args.build_hcomm_custom_op = True
+    strict_args.run_hccl_smoke = False
+    strict_args.run_a3_symmetric_smoke = False
+    strict_args.run_hccl_p2p_smoke = True
+    strict_args.run_hcomm_channel_probe = True
+    strict_args.run_hcomm_custom_op_launch_smoke = False
+    strict_args.run_hcomm_resource_descriptor_smoke = False
+    strict_args.run_hcomm_notify_only_smoke = False
+    strict_args.run_hcomm_payload_smoke = True
+    strict_args.run_storage_hbm_smoke = True
+    strict_args.hcomm_require_payload_copy = True
+    strict_args.hcomm_require_thread_export = False
+
+    try:
+        command_specs = build_commands(strict_args, enable_hccl=True,
+                                       run_dir=runner.run_dir)
+    except RuntimeError as exc:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(str(exc) + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    WriteHcclSmokeSetupNotes(
+        runner.run_dir,
+        CollectHcclSmokeSetupNotes(strict_args,
+                                   ResolveHcclInitMode(strict_args)),
+    )
+
+    strict_result: Optional[StepResult] = None
+    for spec in command_specs:
+        timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
+                   else args.step_timeout_sec)
+        step_name = ("hcomm-storage-strict-positive"
+                     if spec.name == "hccl-collective-smoke"
+                     else spec.name)
+        result = runner.run(step_name, spec.command, required=spec.required,
+                            timeout_seconds=timeout,
+                            env_updates=spec.env_updates)
+        if step_name == "hcomm-storage-strict-positive":
+            strict_result = result
+            if result.returncode != 0:
+                WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+
+    tree = WriteMatrixDecisionTree(
+        runner.run_dir,
+        None,
+        strict_result.log_path if strict_result is not None else None,
+        package_result.log_path,
+    )
+    strict_passed = DecisionTreeStrictPositivePassed(tree)
+    storage_passed = DecisionTreeHcommStoragePassed(tree)
+    RecordStrictPositiveEvidenceGate(runner, tree, strict_passed,
+                                     required=True)
+    RecordHcommStorageEvidenceGate(runner, tree, storage_passed)
+    note = runner.run_dir / "HCOMM_STORAGE_STRICT_POSITIVE_SCOPE.txt"
+    note.write_text(
+        "hcomm-storage-strict-positive is the focused Stage 3B.4 gate. It "
+        "requires a payload-ready Flume custom-op package, enables "
+        "FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline and "
+        "Stage 3B.3E strict HCOMM payload copy, then runs storage HBM smoke "
+        "through the HCOMM payload scheduler. Success requires the strict "
+        "payload evidence to pass and rank1 storage verification to report "
+        "storage_hbm=hcomm-payload-staging. This still reads the storage file "
+        "through the host into proxy HBM; it validates storage-proxy wiring "
+        "onto HCOMM payload copy, not full storage-direct DMA.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] hcomm storage scope -> {note}")
     return runner.write_summary()
 
 
@@ -3268,8 +3433,10 @@ def parse_args() -> argparse.Namespace:
                               "readiness probe after the collective smoke"))
     parser.add_argument("--run-storage-hbm-smoke", action="store_true",
                         help=("Run the optional Stage 3A storage proxy rank "
-                              "to compute rank HBM smoke through HCCL P2P "
-                              "fallback"))
+                              "to compute rank HBM smoke. The default path "
+                              "uses HCCL P2P fallback; with "
+                              "--hcomm-require-payload-copy it uses the "
+                              "HCOMM payload scheduler."))
     parser.add_argument("--storage-smoke-file", default="",
                         help=("Input file for --run-storage-hbm-smoke. If "
                               "empty, flume_tool generates a deterministic "
@@ -3410,6 +3577,9 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "hcomm-payload-strict-positive",
         help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
+    subparsers.add_parser(
+        "hcomm-storage-strict-positive",
+        help=("Run the focused Stage 3B.4 storage-over-HCOMM payload gate"))
     verify_logs_parser = subparsers.add_parser(
         "hcomm-payload-verify-logs",
         help=("Analyze an existing flume-check log directory and return "
@@ -3501,6 +3671,8 @@ def main() -> int:
         return run_ascend_full_matrix(args)
     if args.command == "hcomm-payload-strict-positive":
         return run_hcomm_payload_strict_positive(args)
+    if args.command == "hcomm-storage-strict-positive":
+        return run_hcomm_storage_strict_positive(args)
     if args.command == "hcomm-payload-verify-logs":
         return run_hcomm_payload_verify_logs(args)
     if args.command == "hcomm-custom-op-build":

@@ -521,6 +521,20 @@ This is still a staging path unless storage/RDMA can DMA directly into
 NPU-visible memory. Full host-bypass requires Stage 4 storage registration work.
 The `hcomm-payload-staging` marker should only be considered valid after
 Stage 3B.3E itself passes with `fallback=none` and checksum verification.
+Use the focused gate once the payload package is installed:
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  hcomm-storage-strict-positive
+```
+
+The command records both `hcomm-payload-strict-evidence` and
+`hcomm-storage-strict-evidence`; the second gate requires strict-positive
+payload copy plus `storage_hbm=hcomm-payload-staging`.
 
 ## Remote Validation Commands
 

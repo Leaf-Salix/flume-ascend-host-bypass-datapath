@@ -468,6 +468,25 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
 
+Stage 3B.4 storage-over-HCOMM focused gate：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  hcomm-storage-strict-positive
+```
+
+这个入口同样要求 custom-op package `payload-ready`，并先要求 Stage 3B.3E
+strict payload copy 证据完整，再运行 storage HBM smoke。完整成功除了
+strict-positive 全套 marker，还必须看到 rank1 storage 校验通过并打印
+`storage_hbm=hcomm-payload-staging`。这条路径仍然是
+`file -> host -> proxy_hbm -> HCOMM payload -> compute_hbm`，用于验证
+storage proxy 已接到 HCOMM payload scheduler；它还不是 full
+storage-direct DMA。
+
 如果要同时采集 CANN fixture：
 
 ```bash

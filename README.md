@@ -59,13 +59,15 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Stage 3B.3C direct ACL custom-op readiness. It probes installed package loading, direct function lookup, descriptor ABI handoff, and `aclrtLaunchKernelWithConfig` separately.
 - Stage 3B.3D no-internal-header direct ACL canary path. It verifies that a Flume custom-op package can be launched through the public ACL runtime route without relying on unpublished `hccl_launch.h` headers.
 - Stage 3B.3E HCOMM payload-copy candidate. The custom-op package exports the V4 payload ABI plus the current payload semantic v5 marker, and contains a kernel that consumes the Flume descriptor, acquires the HCOMM communicator by HCCL comm name, calls `HcommLocalCopyOnThread`, `HcommReadOnThread`, and HCOMM Channel Notify primitives, releases the communicator, then reports device-visible status words plus descriptor echo words. The recv rank reads the peer HCCL Buffer into its local HCCL Buffer first, then performs a kernel-side local copy into user HBM, matching HCOMM's stricter HCCL Buffer memory constraints. This is implemented as a strict-positive candidate, but still requires an installed payload-ready custom-op package and remote NPU evidence before it is considered complete.
+- Stage 3B.4 storage-over-HCOMM focused gate. `hcomm-storage-strict-positive` requires the same Stage 3B.3E strict payload evidence, then runs storage HBM smoke through the HCOMM payload scheduler and requires `storage_hbm=hcomm-payload-staging`.
 - One-shot Ascend matrix command for collecting collective, HCCL P2P, HCOMM channel, HCOMM custom-op launch readiness, HCOMM resource descriptor readiness, HCOMM notify-only readiness, HCOMM payload readiness, Stage 3A storage-HBM fallback, and strict expected-negative logs in one run. Verified on Host B (CANN 9.0) with HCCS_SW device pairs; the strict payload-copy step is an optional expected negative while the custom-op/AICPU scheduler launch is not implemented.
 - Optional Atlas A3 HCCS symmetric-memory smoke using ACL mapped HBM and `HcclCommSymWinRegister` when those APIs are exposed by the installed CANN/HCCL headers.
 
 Not complete yet:
 
 - Strict-positive validation of the HCOMM primitive / custom-op payload backend for direct HBM-to-HBM copy. The code path and package ABI exist; completion requires `hcomm-payload-strict-positive` to pass with both ranks passed, `stage3b3e_payload_copy=passed`, direct ACL payload launch/sync passed, `payload_kernel_status=success`, `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_status_schema=v2`, `payload_status_word_count=8`, `payload_echo=passed`, `payload_thread_notify_order=...`, `payload_pattern=strict-v1`, source/received/expected checksum match, `payload_verify=passed`, and `fallback=none` on Ascend hardware.
-- Storage proxy rank backed by HCCL/HCOMM communication memory.
+- Strict-positive validation of the storage-over-HCOMM path. The command `hcomm-storage-strict-positive` now exists, but completion requires the payload package and remote NPU evidence to pass with `storage_hbm=hcomm-payload-staging`.
+- Storage proxy rank backed by HCCL/HCOMM communication memory beyond the current staging smoke.
 - Full RDMA / NVMe-oF / SPDK to NPU HBM data path.
 - Transparent framework integration.
 
