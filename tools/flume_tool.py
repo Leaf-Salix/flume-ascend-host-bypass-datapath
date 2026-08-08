@@ -2002,6 +2002,17 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
             strict_log, package_log)
 
 
+def AnalyzeHcommStorageStrictPositiveLogs(
+        run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
+                                Optional[Path]]:
+    smoke_log = FindStepLog(run_dir, ["hccl-collective-smoke"])
+    strict_log = FindStepLog(run_dir, ["hcomm-storage-strict-positive"])
+    package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
+    tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
+    return (tree, DecisionTreeHcommStoragePassed(tree), smoke_log,
+            strict_log, package_log)
+
+
 def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
                                      *, required: bool) -> StepResult:
     lines = [
@@ -2064,6 +2075,27 @@ def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
         print("[ok] strict-positive evidence -> passed")
         return 0
     print("[failed] strict-positive evidence -> incomplete or failed")
+    print(f"[failed] inspect -> {tree}")
+    return 1
+
+
+def run_hcomm_storage_verify_logs(args: argparse.Namespace) -> int:
+    root = (Path(args.log_dir).expanduser() if args.log_dir else
+            Path(args.log_root))
+    run_dir = FindLatestRunDir(root)
+    if run_dir is None:
+        print(f"[failed] no flume-check log directory found under {root}")
+        return 2
+    tree, passed, smoke_log, strict_log, package_log = (
+        AnalyzeHcommStorageStrictPositiveLogs(run_dir))
+    print(f"[ok] analyzed log dir -> {run_dir}")
+    print(f"[ok] storage strict log -> {strict_log if strict_log else '<missing>'}")
+    print(f"[ok] smoke log -> {smoke_log if smoke_log else '<missing>'}")
+    print(f"[ok] package log -> {package_log if package_log else '<missing>'}")
+    if passed:
+        print("[ok] hcomm storage evidence -> passed")
+        return 0
+    print("[failed] hcomm storage evidence -> incomplete or failed")
     print(f"[failed] inspect -> {tree}")
     return 1
 
@@ -3589,6 +3621,15 @@ def parse_args() -> argparse.Namespace:
         "log_dir", nargs="?",
         help=("Existing flume-check-* directory to analyze. Defaults to the "
               "latest directory under --log-root."))
+    storage_verify_logs_parser = subparsers.add_parser(
+        "hcomm-storage-verify-logs",
+        help=("Analyze an existing flume-check log directory and return "
+              "success only when Stage 3B.4 storage-over-HCOMM evidence is "
+              "complete"))
+    storage_verify_logs_parser.add_argument(
+        "log_dir", nargs="?",
+        help=("Existing flume-check-* directory to analyze. Defaults to the "
+              "latest directory under --log-root."))
     subparsers.add_parser(
         "hcomm-custom-op-build",
         help=("Build the Flume HCOMM custom-op package through a HCCL source "
@@ -3675,6 +3716,8 @@ def main() -> int:
         return run_hcomm_storage_strict_positive(args)
     if args.command == "hcomm-payload-verify-logs":
         return run_hcomm_payload_verify_logs(args)
+    if args.command == "hcomm-storage-verify-logs":
+        return run_hcomm_storage_verify_logs(args)
     if args.command == "hcomm-custom-op-build":
         return run_hcomm_custom_op_build(args)
     if args.command == "hcomm-custom-op-export-runtime":

@@ -743,6 +743,19 @@ def main() -> int:
         assert "| Storage to HBM path ok? | yes | `storage_hbm=hcomm-payload-staging` marker |" in text
         assert flume_tool.DecisionTreeHcommStoragePassed(tree)
 
+        hcomm_storage_log_dir = tmp / "flume-check-storage-strict"
+        hcomm_storage_log_dir.mkdir()
+        write(hcomm_storage_log_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(hcomm_storage_log_dir / "01-hcomm-storage-strict-positive.log",
+              strict_log(True) + smoke_with_hcomm_storage_path())
+        analyzed_tree, storage_passed, _, storage_strict_log, _ = (
+            flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
+                hcomm_storage_log_dir))
+        assert storage_strict_log is not None
+        assert storage_passed
+        assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+
         stale_status_schema_package = write(
             tmp / "package-stale-status-schema.log",
             stale_status_schema_package_log())

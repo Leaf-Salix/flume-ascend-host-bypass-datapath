@@ -487,6 +487,15 @@ strict-positive 全套 marker，还必须看到 rank1 storage 校验通过并打
 storage proxy 已接到 HCOMM payload scheduler；它还不是 full
 storage-direct DMA。
 
+已有日志可以离线验证：
+
+```bash
+python3 tools/flume_tool.py hcomm-storage-verify-logs logs/flume-check-...
+```
+
+该命令只有在 strict-positive payload 证据完整且 storage smoke 走
+`storage_hbm=hcomm-payload-staging` 时返回 0。
+
 如果要同时采集 CANN fixture：
 
 ```bash
