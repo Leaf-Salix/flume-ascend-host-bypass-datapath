@@ -162,7 +162,8 @@ unsigned int PayloadCompletionMode(
 
 bool PayloadSkipCommAcquire(const flume_hcomm_payload_copy_desc_v1& desc) {
   return (desc.completion_mode &
-          FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0;
+          (FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+           FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING)) != 0;
 }
 
 bool CanRecordPayloadCompletionNotify(

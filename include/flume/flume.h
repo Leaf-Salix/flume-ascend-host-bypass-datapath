@@ -81,6 +81,12 @@ typedef enum {
   FLUME_HCOMM_PROTOCOL_HCCS_ONLY = 5
 } flume_hcomm_protocol_t;
 
+typedef enum {
+  FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME = 0,
+  FLUME_HCOMM_PAYLOAD_COMM_BINDING_DIAGNOSTIC_SKIP = 1,
+  FLUME_HCOMM_PAYLOAD_COMM_BINDING_CHANNEL_HANDLE = 2
+} flume_hcomm_payload_comm_binding_t;
+
 typedef struct {
   uint32_t size;
   uint32_t notify_num;
@@ -92,6 +98,7 @@ typedef struct {
   const char *payload_batch_tag;
   uint32_t payload_recv_direct_output;
   uint32_t payload_skip_comm_acquire;
+  flume_hcomm_payload_comm_binding_t payload_comm_binding;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {

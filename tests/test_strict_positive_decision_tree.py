@@ -78,6 +78,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
+        "payload_comm_binding=comm-name "
         "payload_thread_notify_order=not-used" + desc + resource +
         package_runtime +
         " fallback=none\" "
@@ -98,6 +99,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
+        "payload_comm_binding=comm-name "
         "payload_thread_notify_order=not-used" + recv_desc +
         resource + package_runtime + " fallback=none\" "
         "payload_expected_checksum=1234",
@@ -124,6 +126,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_trace_order=passed "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
+        "payload_comm_binding=comm-name "
         "payload_desc_batch_tag=default "
         "payload_recv_path=local-buffer "
 	        "payload_semantic_v6=present "
@@ -571,6 +574,17 @@ def main() -> int:
                 "protocol=hccs, channel_desc=rank-graph, channels=1, "
                 "notify_num=2, usable=8192, local=8192, remote=8192 |") in text
         assert "start Stage 3B.4 storage rewiring" in text
+        strict_channel_handle = strict_log(True).replace(
+            "payload_comm_acquire=default payload_comm_binding=comm-name",
+            "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_channel_handle)[0]
+        strict_mixed_binding = strict_log(True).replace(
+            "payload_comm_acquire=default payload_comm_binding=comm-name",
+            "payload_comm_acquire=skipped payload_comm_binding=channel-handle",
+            1)
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_mixed_binding)[0]
 
         strict_no_batch_tag = write(
             tmp / "strict-no-batch-tag.log",
@@ -608,7 +622,9 @@ def main() -> int:
         strict_no_comm = write(
             tmp / "strict-no-comm-acquire.log",
             strict_log(True).replace("payload_comm_acquire=default",
-                                     "payload_comm_acquire=skipped"))
+                                     "payload_comm_acquire=skipped").replace(
+                                         "payload_comm_binding=comm-name",
+                                         "payload_comm_binding=diagnostic-skip"))
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_no_comm.read_text(encoding="utf-8"))[0]
         no_comm_passed, no_comm_rank0, no_comm_rank1 = (
@@ -621,7 +637,7 @@ def main() -> int:
             no_batch_dir, default_failure, strict_no_comm)
         no_comm_text = no_comm_note.read_text(encoding="utf-8")
         assert "no-comm-acquire HCOMM payload copy" in no_comm_text
-        assert "`payload_comm_acquire=default`" in no_comm_text
+        assert "`payload_comm_binding=channel-handle`" in no_comm_text
         no_batch_note = flume_tool.WriteHcommPayloadNoBatchDiagnostic(
             no_batch_dir, default_failure, strict_no_batch)
         no_batch_text = no_batch_note.read_text(encoding="utf-8")

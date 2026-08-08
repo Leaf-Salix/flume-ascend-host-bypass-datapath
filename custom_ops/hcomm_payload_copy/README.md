@@ -170,7 +170,7 @@ Expected markers:
 - no-internal canary:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - payload copy:
-  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on payload_comm_acquire=default payload_kernel_status=success`
+  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on payload_comm_binding=comm-name payload_comm_acquire=default payload_kernel_status=success`
 - payload completion:
   `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`
   when CANN exposes thread-export handles; otherwise
@@ -324,7 +324,8 @@ Strict-positive success must include
 `payload_echo=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_result=success`,
-`payload_comm_acquire=default`,
+`payload_comm_binding=comm-name` plus `payload_comm_acquire=default`, or
+explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_semantic_v7=present`, `payload_semantic_v8=present`,

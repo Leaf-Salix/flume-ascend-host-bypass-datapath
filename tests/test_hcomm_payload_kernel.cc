@@ -266,6 +266,27 @@ int main() {
 
   Reset();
   reset_status();
+  reset_trace();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status, trace);
+  send_desc.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(status[7] == send_desc.completion_mode);
+  FLUME_TEST_CHECK(trace[12] == send_desc.completion_mode);
+  FLUME_TEST_CHECK(CallsEqual(send_no_comm_calls, 5));
+  FLUME_TEST_CHECK(trace[4] == sizeof(send_no_comm_events) /
+                                   sizeof(send_no_comm_events[0]));
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    FLUME_TEST_CHECK(trace[event_base + i] == send_no_comm_events[i]);
+  }
+
+  Reset();
+  reset_status();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status);
   status_probe_words = status;

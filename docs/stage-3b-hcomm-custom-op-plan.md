@@ -41,7 +41,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
-| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_status_schema=v2`, `payload_status_word_count=8`, `payload_echo=passed`, `payload_primitive_state=completed`, `payload_trace=passed`, `payload_trace_event=kernel-exit`, `payload_trace_order=passed`, `payload_trace_result=success`, `payload_comm_acquire=default`, `payload_desc_batch_tag=default\|custom`, `payload_recv_path=local-buffer\|direct-output`, `payload_semantic_v6=present`, `payload_semantic_v7=present`, `payload_semantic_v8=present`, `payload_thread_notify_order=...`, `payload_pattern=strict-v1`, source/received/expected checksum match, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
+| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_status_schema=v2`, `payload_status_word_count=8`, `payload_echo=passed`, `payload_primitive_state=completed`, `payload_trace=passed`, `payload_trace_event=kernel-exit`, `payload_trace_order=passed`, `payload_trace_result=success`, `payload_comm_binding=comm-name` + `payload_comm_acquire=default` or explicit `payload_comm_binding=channel-handle`, `payload_desc_batch_tag=default\|custom`, `payload_recv_path=local-buffer\|direct-output`, `payload_semantic_v6=present`, `payload_semantic_v7=present`, `payload_semantic_v8=present`, `payload_thread_notify_order=...`, `payload_pattern=strict-v1`, source/received/expected checksum match, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
 | 3B.3 | stabilize HCOMM pair-copy scheduler as default payload backend | `hcomm_payload_scheduler=custom-op-aicpu` | environment-specific fallback remains required |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -303,6 +303,7 @@ payload_trace_event=kernel-exit
 payload_trace_order=passed
 payload_trace_result=success
 payload_comm_acquire=default
+payload_comm_binding=comm-name
 payload_desc_batch_tag=default|custom
 payload_recv_path=local-buffer|direct-output
 payload_semantic_v6=present
@@ -430,11 +431,14 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-no-comm \
   hcomm-payload-strict-positive
 ```
 
-This is also deliberately not a final success path: strict-positive still
-requires `payload_comm_acquire=default`. A no-comm-acquire pass means the
-Channel Notify, `HcommLocalCopyOnThread`, and `HcommReadOnThread` path is viable
-and the remaining issue is comm-name binding or `HcommAcquireComm` /
-`HcommReleaseComm` semantics for the selected CANN build.
+This is also deliberately not a final success path: it is marked
+`payload_comm_binding=diagnostic-skip`. A no-comm-acquire pass means the Channel
+Notify, `HcommLocalCopyOnThread`, and `HcommReadOnThread` path is viable and the
+remaining issue is comm-name binding or `HcommAcquireComm` / `HcommReleaseComm`
+semantics for the selected CANN build. To test the same ChannelHandle-only
+behavior as a candidate backend rather than a diagnostic, run the strict smoke
+with `--hcomm-payload-comm-binding=channel-handle`; that path can satisfy the
+final gate only if both ranks pass with checksum match and `fallback=none`.
 
 Before running strict smoke against an existing package, inspect it:
 
@@ -592,7 +596,8 @@ direct ACL payload launch/sync passed, `payload_kernel_status=success`,
 `payload_echo=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_result=success`,
-`payload_comm_acquire=default`,
+`payload_comm_binding=comm-name` plus `payload_comm_acquire=default`, or
+explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_semantic_v7=present`, `payload_semantic_v8=present`,

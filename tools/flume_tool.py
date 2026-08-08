@@ -1462,6 +1462,9 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-payload-recv-direct-output")
             if args.hcomm_payload_skip_comm_acquire:
                 command.append("--hcomm-payload-skip-comm-acquire")
+            if args.hcomm_payload_comm_binding:
+                command.append(
+                    f"--hcomm-payload-comm-binding={args.hcomm_payload_comm_binding}")
             if args.hcomm_payload_batch_tag:
                 command.append(
                     f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
@@ -1620,6 +1623,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_role=",
     "payload_batch_mode=on",
     "payload_comm_acquire=default",
+    "payload_comm_binding=comm-name",
     "payload_desc_batch_tag=",
     "payload_recv_path=",
     "payload_semantic_v6=present",
@@ -1629,6 +1633,26 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_pattern=strict-v1",
     "fallback=none",
 )
+
+
+def StrictPayloadRankMarkersForCommBinding(binding: str) -> tuple[str, ...]:
+    if binding == "comm-name":
+        return STRICT_PAYLOAD_RANK_MARKERS
+    if binding == "channel-handle":
+        return tuple(
+            "payload_comm_acquire=skipped"
+            if item == "payload_comm_acquire=default" else (
+                "payload_comm_binding=channel-handle"
+                if item == "payload_comm_binding=comm-name" else item)
+            for item in STRICT_PAYLOAD_RANK_MARKERS)
+    if binding == "diagnostic-skip":
+        return tuple(
+            "payload_comm_acquire=skipped"
+            if item == "payload_comm_acquire=default" else (
+                "payload_comm_binding=diagnostic-skip"
+                if item == "payload_comm_binding=comm-name" else item)
+            for item in STRICT_PAYLOAD_RANK_MARKERS)
+    raise ValueError(f"unsupported payload comm binding marker: {binding}")
 
 
 def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
@@ -1643,12 +1667,22 @@ def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
 
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
-    rank0_ok = bool(rank_lines[0]) and all(
-        marker in rank_lines[0] for marker in STRICT_PAYLOAD_RANK_MARKERS) and (
+    accepted_marker_sets = (
+        StrictPayloadRankMarkersForCommBinding("comm-name"),
+        StrictPayloadRankMarkersForCommBinding("channel-handle"),
+    )
+    rank0_binding = MarkerValueFromLine(rank_lines[0], "payload_comm_binding")
+    rank1_binding = MarkerValueFromLine(rank_lines[1], "payload_comm_binding")
+    binding_ok = (
+        rank0_binding == rank1_binding and
+        rank0_binding in ("comm-name", "channel-handle"))
+    rank0_ok = bool(rank_lines[0]) and any(
+        all(marker in rank_lines[0] for marker in markers)
+        for markers in accepted_marker_sets) and (
             "payload_role=send" in rank_lines[0])
-    rank1_ok = (bool(rank_lines[1]) and
-                all(marker in rank_lines[1]
-                    for marker in STRICT_PAYLOAD_RANK_MARKERS) and
+    rank1_ok = (bool(rank_lines[1]) and any(
+        all(marker in rank_lines[1] for marker in markers)
+        for markers in accepted_marker_sets) and
                 "payload_role=recv" in rank_lines[1] and
                 "payload_verify=passed" in rank_lines[1])
     source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
@@ -1661,7 +1695,8 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         source_match is not None and payload_match is not None and
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
-    return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
+    return (rank0_ok and rank1_ok and binding_ok and checksum_ok,
+            rank0_ok, rank1_ok)
 
 
 def StorageHbmRank1Passed(text: str) -> bool:
@@ -1697,7 +1732,7 @@ def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(text)
     no_batch_markers = tuple(
         "payload_batch_mode=off" if item == "payload_batch_mode=on" else item
-        for item in STRICT_PAYLOAD_RANK_MARKERS)
+        for item in StrictPayloadRankMarkersForCommBinding("comm-name"))
     rank0_ok = bool(rank_lines[0]) and all(
         marker in rank_lines[0] for marker in no_batch_markers) and (
             "payload_role=send" in rank_lines[0])
@@ -1717,10 +1752,7 @@ def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
 def StrictPayloadNoCommAcquireDiagnosticPassed(
         text: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(text)
-    no_comm_markers = tuple(
-        "payload_comm_acquire=skipped"
-        if item == "payload_comm_acquire=default" else item
-        for item in STRICT_PAYLOAD_RANK_MARKERS)
+    no_comm_markers = StrictPayloadRankMarkersForCommBinding("diagnostic-skip")
     rank0_ok = bool(rank_lines[0]) and all(
         marker in rank_lines[0] for marker in no_comm_markers) and (
             "payload_role=send" in rank_lines[0])
@@ -1914,6 +1946,7 @@ def WriteHcommPayloadNoCommAcquireDiagnostic(
     no_comm_kernel = MarkerValue(no_comm_text, "payload_kernel_status")
     no_comm_hcomm_ret = MarkerValue(no_comm_text, "payload_kernel_hcomm_ret")
     no_comm_acquire = MarkerValue(no_comm_text, "payload_comm_acquire")
+    no_comm_binding = MarkerValue(no_comm_text, "payload_comm_binding")
 
     if no_comm_ok:
         decision = (
@@ -1953,6 +1986,7 @@ def WriteHcommPayloadNoCommAcquireDiagnostic(
         f"- no_comm_rank1_failure_step: `{no_comm_rank1_failure_step}`",
         f"- no_comm_hcomm_ret: `{no_comm_hcomm_ret}`",
         f"- no_comm_acquire_marker: `{no_comm_acquire}`",
+        f"- no_comm_binding_marker: `{no_comm_binding}`",
         f"- no_comm_rank0_evidence: `{'passed' if no_comm_rank0_ok else 'missing'}`",
         f"- no_comm_rank1_evidence: `{'passed' if no_comm_rank1_ok else 'missing'}`",
         f"- no_comm_payload_copy_and_verify: `{'passed' if no_comm_ok else 'not-passed'}`",
@@ -1962,7 +1996,9 @@ def WriteHcommPayloadNoCommAcquireDiagnostic(
         "",
         "The no-comm-acquire path is diagnostic only. It intentionally cannot "
         "satisfy the final strict-positive gate, which still requires "
-        "`payload_comm_acquire=default`.",
+        "either `payload_comm_binding=comm-name` with "
+        "`payload_comm_acquire=default`, or an explicit "
+        "`payload_comm_binding=channel-handle` backend run.",
         "",
         "## Rank Evidence",
         "",
@@ -2724,7 +2760,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_echo=passed` + `payload_trace=passed` + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
-        "`payload_comm_acquire=default` + "
+        "payload comm binding `comm-name|channel-handle` + "
         "`payload_desc_batch_tag=...` + "
         "`payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
@@ -3021,6 +3057,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_batch_mode=on,"
             "payload_comm_acquire=default,"
+            "or payload_comm_binding=channel-handle,"
             "payload_thread_notify_order=,"
             "payload_pattern=strict-v1,"
             "payload_source_checksum=,"
@@ -4726,7 +4763,21 @@ def parse_args() -> argparse.Namespace:
                               "exercise the ChannelHandle-based Notify/Read "
                               "path. This mode cannot satisfy the final "
                               "strict-positive gate, which requires "
-                              "payload_comm_acquire=default."))
+                              "comm-name/default acquire or explicit "
+                              "channel-handle binding."))
+    parser.add_argument("--hcomm-payload-comm-binding",
+                        choices=["comm-name", "channel-handle",
+                                 "diagnostic-skip"],
+                        default="",
+                        help=("Select how the payload kernel binds HCOMM "
+                              "communication context. `comm-name` follows the "
+                              "official HcommAcquireComm/HcommReleaseComm "
+                              "sample; `channel-handle` is the direct ACL "
+                              "backend candidate that uses acquired "
+                              "ThreadHandle/ChannelHandle resources without "
+                              "in-kernel comm acquire; `diagnostic-skip` is "
+                              "for isolation only and does not satisfy the "
+                              "final strict-positive gate."))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for Stage 3B.3E "
                               "experiments. Empty uses Flume's stable default "
