@@ -74,7 +74,8 @@ def parse_args() -> argparse.Namespace:
                               "inside the direct ACL payload kernel"))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for direct ACL payload "
-                              "kernel experiments; empty uses temporary batch"))
+                              "kernel experiments; empty uses Flume's stable "
+                              "default batch tag"))
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")

@@ -212,7 +212,7 @@ using flume::protocol::WriteFrame;
 
 constexpr int kSocketTimeoutSeconds = 30;
 constexpr uint32_t kDefaultHcommTimeoutSeconds = 60;
-constexpr const char* kDefaultHcommPayloadBatchTag = "";
+constexpr const char* kDefaultHcommPayloadBatchTag = "flume_hcomm_payload";
 
 struct CommState {
   bool hccl_attached = false;
@@ -2541,6 +2541,13 @@ std::string PayloadDescriptorDetail(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   const bool batch_disabled =
       desc.reserved2[0] == FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  const char* batch_tag_state = "custom";
+  if (desc.batch_tag[0] == '\0') {
+    batch_tag_state = "empty";
+  } else if (strncmp(desc.batch_tag, kDefaultHcommPayloadBatchTag,
+                    FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES) == 0) {
+    batch_tag_state = "default";
+  }
   return std::string(" payload_desc_role=") + std::to_string(desc.role) +
          " payload_desc_local_rank=" + std::to_string(desc.local_rank) +
          " payload_desc_peer_rank=" + std::to_string(desc.peer_rank) +
@@ -2560,8 +2567,7 @@ std::string PayloadDescriptorDetail(
          " payload_desc_status_word_count=" +
          std::to_string(desc.status_word_count) +
          " payload_desc_batch_mode=" + (batch_disabled ? "off" : "on") +
-         " payload_desc_batch_tag=" +
-         (desc.batch_tag[0] == '\0' ? "empty" : "set") +
+         " payload_desc_batch_tag=" + batch_tag_state +
          " payload_desc_local_hccl_buffer_bytes=" +
          std::to_string(desc.local_hccl_buffer_bytes) +
          " payload_desc_remote_hccl_buffer_bytes=" +

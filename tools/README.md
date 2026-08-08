@@ -117,8 +117,9 @@ Channel desc source、channel count 和 notify 数量是否符合预期。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on` 和
-`payload_kernel_status=success`。payload kernel 使用 HCOMM 空 tag 临时批量任务，
-避免 AICPU+TS 非空 tag 缓存语义影响 pair-copy smoke。如果 CANN 暴露 host/AICPU thread-export，
+`payload_kernel_status=success`。payload kernel 默认使用稳定非空 batch tag
+`flume_hcomm_payload`，对齐公开 HCCL custom P2P 示例里用 tag 绑定 batch
+上下文的做法。如果 CANN 暴露 host/AICPU thread-export，
 日志还会包含
 `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`；
 kernel 按公开 HCCL custom P2P 示例的顺序先 record host completion notify，
@@ -127,10 +128,10 @@ kernel 按公开 HCCL custom P2P 示例的顺序先 record host completion notif
 否则会保留 direct ACL 路线并标记
 `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
 和 `payload_thread_notify_order=not-used`。
-默认 batch tag 为空，保持 HCOMM temporary batch 语义。如果 batch-enabled
-strict gate 失败但 no-batch 诊断通过，可以加
-`--hcomm-payload-batch-tag=flume-payload-v1` 跑一次非空 tag 对照；成功日志会用
-`payload_desc_batch_tag=empty|set` 标出本次 descriptor 传入的 tag 形态。
+默认 batch tag 为 `flume_hcomm_payload`。如果 batch-enabled strict gate 失败但
+no-batch 诊断通过，可以加 `--hcomm-payload-batch-tag=flume-payload-v1`
+跑一次 alternate tag 对照；成功日志会用
+`payload_desc_batch_tag=empty|default|custom` 标出本次 descriptor 传入的 tag 形态。
 如果 direct ACL launch
 和 stream sync 都通过但该字段不是 `success`，说明包加载/launch
 已经不是问题，下一步应检查 descriptor 字段或 AICPU kernel 里的 HCOMM

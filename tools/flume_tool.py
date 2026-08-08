@@ -1865,8 +1865,7 @@ def WriteHcommPayloadTaggedDiagnostic(
     if tagged_ok:
         decision = (
             "tagged batch HCOMM payload copy and checksum verification passed; "
-            "the default empty-tag batch path is the likely compatibility "
-            "problem")
+            "the default batch tag path is the likely compatibility problem")
         next_action = (
             "rerun strict-positive with the same --hcomm-payload-batch-tag and "
             "then wire Stage 3B.4 storage once the strict gate is green")
@@ -1927,8 +1926,7 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
             "HcommBatchModeStart compatibility for the selected AICPU_TS "
             "engine and batch tag",
         "batch-end":
-            "HcommBatchModeEnd completion; host notify is intentionally "
-            "recorded only after this point",
+            "HcommBatchModeEnd completion after host completion notify record",
         "host-aicpu-thread-notify-wait":
             "host/AICPU thread notify wait handles and launch ordering",
         "host-aicpu-thread-notify-record":
@@ -4160,9 +4158,10 @@ def parse_args() -> argparse.Namespace:
                               "mode."))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for Stage 3B.3E "
-                              "experiments. Empty keeps HCOMM temporary batch "
-                              "mode; non-empty tags test CANN tag caching "
-                              "compatibility without disabling batch mode."))
+                              "experiments. Empty uses Flume's stable default "
+                              "batch tag; non-empty tags test alternate CANN "
+                              "tag caching compatibility without disabling "
+                              "batch mode."))
     parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
@@ -4178,7 +4177,7 @@ def parse_args() -> argparse.Namespace:
                               "the default batch-enabled strict payload gate "
                               "fails, automatically rerun the same smoke with "
                               "--hcomm-payload-batch-tag set. This collects "
-                              "empty-tag vs tagged-batch evidence only and "
+                              "default-batch vs tagged-batch evidence only and "
                               "does not turn the strict-positive gate green."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",

@@ -36,7 +36,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_completion_mode=0 "
             "payload_desc_timeout_sec=60 payload_desc_status_schema=v2 "
             "payload_desc_status_word_count=8 "
-            "payload_desc_batch_tag=empty "
+            "payload_desc_batch_tag=default "
             "payload_desc_local_hccl_buffer_bytes=8192 "
             "payload_desc_remote_hccl_buffer_bytes=8192")
     resource = (" payload_resolved_engine=aicpu-ts "
@@ -552,18 +552,18 @@ def main() -> int:
         tagged_dir.mkdir()
         tagged_log = write(
             tagged_dir / "03-hcomm-payload-tagged-diagnostic.log",
-            strict_log(True).replace("payload_desc_batch_tag=empty",
-                                     "payload_desc_batch_tag=set"))
+            strict_log(True).replace("payload_desc_batch_tag=default",
+                                     "payload_desc_batch_tag=custom"))
         tagged_note = flume_tool.WriteHcommPayloadTaggedDiagnostic(
             tagged_dir, default_failure, tagged_log, "flume-payload-v1")
         tagged_text = tagged_note.read_text(encoding="utf-8")
         assert "tagged_payload_copy_and_verify: `passed`" in tagged_text
-        assert "default empty-tag batch path is the likely compatibility problem" in tagged_text
+        assert "default batch tag path is the likely compatibility problem" in tagged_text
         tree = flume_tool.WriteMatrixDecisionTree(
             tagged_dir, smoke, default_failure, package)
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM payload tagged-batch diagnostic | passed |" in text
-        assert "tag=set" in text
+        assert "tag=custom" in text
         assert "tagged HCOMM payload copy passed; rerun strict-positive" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",

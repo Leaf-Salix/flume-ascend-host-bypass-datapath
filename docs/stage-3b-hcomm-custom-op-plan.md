@@ -378,7 +378,7 @@ If the batch-enabled strict gate fails, the optional no-batch rerun writes
 `HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md`, the optional tagged-batch rerun writes
 `HCOMM_PAYLOAD_TAGGED_DIAGNOSTIC.md`, and the CANN fixture adds
 `hcomm-primitive-call-shape-probe.txt` so the same log bundle can distinguish
-ABI call-shape problems, empty-tag batch compatibility, batch submit/ordering
+ABI call-shape problems, default-tag batch compatibility, batch submit/ordering
 problems, and primitive-copy problems.
 
 If the batch-enabled strict gate fails inside the payload kernel, use the
