@@ -410,6 +410,9 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace=passed",
       "payload_trace_event=kernel-exit",
       "payload_trace_order=passed",
+      std::string("payload_trace_primitive_path=") +
+          (std::string(expected_role) == "send" ? "send-local-copy" :
+                                                   "recv-read"),
       "payload_trace_result=success",
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",

@@ -1619,6 +1619,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace=passed",
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
+    "payload_trace_primitive_path=",
     "payload_trace_result=success",
     "payload_role=",
     "payload_batch_mode=on",
@@ -1679,11 +1680,13 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank0_ok = bool(rank_lines[0]) and any(
         all(marker in rank_lines[0] for marker in markers)
         for markers in accepted_marker_sets) and (
-            "payload_role=send" in rank_lines[0])
+            "payload_role=send" in rank_lines[0] and
+            "payload_trace_primitive_path=send-local-copy" in rank_lines[0])
     rank1_ok = (bool(rank_lines[1]) and any(
         all(marker in rank_lines[1] for marker in markers)
         for markers in accepted_marker_sets) and
                 "payload_role=recv" in rank_lines[1] and
+                "payload_trace_primitive_path=recv-read" in rank_lines[1] and
                 "payload_verify=passed" in rank_lines[1])
     source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
                              rank_lines[0])
@@ -3620,7 +3623,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
         "markers, payload_echo=passed, payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
-        "payload_trace_order=passed, payload_trace_result=success, "
+        "payload_trace_order=passed, "
+        "payload_trace_primitive_path=send-local-copy|recv-read-*, "
+        "payload_trace_result=success, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "
         "or explicit payload_comm_binding=channel-handle, "
         "payload_desc_batch_tag=default|custom, payload_semantic_v7=present, "

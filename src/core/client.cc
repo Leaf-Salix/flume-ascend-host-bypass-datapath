@@ -2978,6 +2978,22 @@ std::string PayloadTraceOrderState(const uint32_t* trace_words,
   return "observed";
 }
 
+std::string PayloadTracePrimitivePath(const uint32_t* trace_words) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return "missing";
+  }
+  if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
+    return "send-local-copy";
+  }
+  if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    return trace_words[11] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT ?
+        "recv-read-direct-output" : "recv-read-local-copy";
+  }
+  return "unknown";
+}
+
 std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
                                     aclError read_status = ACL_SUCCESS) {
   if (trace_words == nullptr) {
@@ -3028,6 +3044,8 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
          " payload_trace_order=" + PayloadTraceOrderState(trace_words, events) +
+         " payload_trace_primitive_path=" +
+         PayloadTracePrimitivePath(trace_words) +
          " payload_trace_capacity=" +
          std::to_string(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) +
          " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) + "\"";
