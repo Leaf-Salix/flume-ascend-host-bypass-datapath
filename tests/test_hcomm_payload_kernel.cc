@@ -256,6 +256,21 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 98U);
 
   Reset();
+  batch_start_ret = 33;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED);
+  FLUME_TEST_CHECK(status[1] == 33U);
+  const int batch_start_fail_calls[] = {kAcquireComm, kBatchStart,
+                                        kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(batch_start_fail_calls, 3));
+
+  Reset();
   local_copy_ret = 77;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
@@ -286,6 +301,22 @@ int main() {
   FLUME_TEST_CHECK(CallsEqual(thread_notify_failure_calls, 7));
 
   Reset();
+  notify_record_ret = 22;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[1] == 22U);
+  const int ready_record_fail_calls[] = {
+      kAcquireComm, kBatchStart, kLocalCopy, kNotifyRecord, kBatchEnd,
+      kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(ready_record_fail_calls, 6));
+
+  Reset();
   thread_wait_ret = 79;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
@@ -302,6 +333,39 @@ int main() {
       kAcquireComm, kBatchStart, kThreadWait, kThreadRecord, kBatchEnd,
       kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_wait_failure_calls, 6));
+
+  Reset();
+  thread_record_ret = 58;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[1] == 58U);
+  const int thread_record_failure_calls[] = {
+      kAcquireComm, kBatchStart, kThreadWait, kLocalCopy, kNotifyRecord,
+      kNotifyWait, kThreadRecord, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(thread_record_failure_calls, 9));
+
+  Reset();
+  notify_wait_ret = 56;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED);
+  FLUME_TEST_CHECK(status[1] == 56U);
+  const int ready_wait_failure_calls[] = {
+      kAcquireComm, kBatchStart, kNotifyWait, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(ready_wait_failure_calls, 5));
 
   Reset();
   read_ret = 88;
@@ -327,6 +391,22 @@ int main() {
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED);
   FLUME_TEST_CHECK(status[1] == 44U);
+
+  Reset();
+  notify_record_ret = 57;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED);
+  FLUME_TEST_CHECK(status[1] == 57U);
+  const int done_record_failure_calls[] = {
+      kAcquireComm, kBatchStart, kNotifyWait, kRead, kNotifyRecord,
+      kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(done_record_failure_calls, 7));
 
   Reset();
   batch_end_ret = 66;
