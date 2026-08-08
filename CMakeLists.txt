@@ -561,6 +561,8 @@ if(FLUME_ENABLE_HCCL)
 endif()
 
 if(FLUME_BUILD_TESTS)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
   enable_testing()
 
   add_executable(test_protocol tests/test_protocol.cc)
@@ -621,6 +623,11 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   add_test(NAME hcomm_payload_kernel COMMAND test_hcomm_payload_kernel)
+
+  add_test(NAME hcomm_package_preflight
+    COMMAND ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/test_hcomm_package_preflight.py
+      ${PROJECT_SOURCE_DIR})
 
   add_executable(test_sim_collective_failures tests/test_sim_collective_failures.cc)
   target_link_libraries(test_sim_collective_failures PRIVATE flume)
