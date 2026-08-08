@@ -354,6 +354,24 @@ python3 tools/flume_tool.py \
 Then pass `--custom-op-root <temporary-custom-op-root>` to
 `hcomm-payload-strict-positive` or `ascend-full-matrix`.
 
+For a focused one-command Stage 3B.3E attempt, strict-positive can now build
+that same direct ACL payload package automatically if the initial package
+preflight fails:
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  --auto-build-hcomm-payload-package \
+  hcomm-payload-strict-positive
+```
+
+The auto path exports the package under the current log directory and retries
+the strict gate with that isolated runtime root. It does not install into the
+system CANN/OPP tree, so it is the preferred first attempt on shared hosts.
+
 Before running strict smoke against an existing package, inspect it:
 
 ```bash

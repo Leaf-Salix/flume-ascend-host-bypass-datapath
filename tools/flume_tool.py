@@ -259,6 +259,72 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
     return command
 
 
+def HcommPayloadAutoDirectBuildCommand(args: argparse.Namespace,
+                                       runner: Runner,
+                                       export_root: Path) -> list[str]:
+    build_root = Path(args.build_dir) / "hcomm-payload-auto-direct-build"
+    command = [
+        sys.executable,
+        "tools/flume_tool.py",
+        f"--build-dir={build_root}",
+        f"--log-root={runner.run_dir / 'auto-direct-build-logs'}",
+        f"--jobs={args.jobs}",
+        f"--custom-op-vendor={args.custom_op_vendor}",
+        "--custom-op-build-mode=payload",
+        f"--custom-op-export-root={export_root}",
+    ]
+    if args.cann_package_root:
+        command.append(f"--cann-package-root={args.cann_package_root}")
+    command.append("hcomm-custom-op-direct-build")
+    return command
+
+
+def MaybeAutoBuildPayloadPackage(
+        runner: Runner,
+        args: argparse.Namespace,
+        original_package_result: StepResult) -> tuple[argparse.Namespace,
+                                                     StepResult]:
+    if (original_package_result.returncode == 0 or
+            not getattr(args, "auto_build_hcomm_payload_package", False)):
+        return args, original_package_result
+
+    export_root = runner.run_dir / "hcomm-payload-auto-runtime"
+    build_result = runner.run(
+        "hcomm-payload-auto-direct-build",
+        HcommPayloadAutoDirectBuildCommand(args, runner, export_root),
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+    )
+    if build_result.returncode != 0:
+        return args, original_package_result
+
+    auto_args = copy.copy(args)
+    auto_args.custom_op_root = str(export_root)
+    auto_args.custom_op_json = ""
+    auto_args.custom_op_aicpu_tar = ""
+    package_result = runner.run(
+        "hcomm-custom-op-package-preflight-autobuilt",
+        HcommCustomOpPackageCommand(auto_args, require_payload=True),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if package_result.returncode != 0:
+        return args, package_result
+    note = runner.run_dir / "HCOMM_PAYLOAD_AUTO_PACKAGE.txt"
+    note.write_text(
+        "Flume auto-built an isolated direct ACL HCOMM payload package for "
+        "this run.\n"
+        f"custom_op_root: {export_root}\n"
+        "The package was built with hcomm-custom-op-direct-build and exported "
+        "under this log directory; no system CANN/OPP installation was "
+        "modified. Reuse it with --custom-op-root if the strict smoke needs "
+        "to be rerun against the same artifacts.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] payload auto package -> {note}")
+    return auto_args, package_result
+
+
 def PackageRequirementBlocks(package_text: str) -> list[tuple[set[str], str]]:
     blocks: list[tuple[set[str], str]] = []
     current_required: Optional[set[str]] = None
@@ -2296,9 +2362,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",
         HcommCustomOpPackageCommand(args, require_payload=True),
-        required=True,
+        required=not args.auto_build_hcomm_payload_package,
         timeout_seconds=args.step_timeout_sec,
     )
+    args, package_result = MaybeAutoBuildPayloadPackage(
+        runner, args, package_result)
     if package_result.returncode != 0:
         next_steps = WritePayloadPackageBuildNextSteps(runner.run_dir, args)
         print(f"[ok] payload package next steps -> {next_steps}")
@@ -2421,9 +2489,11 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",
         HcommCustomOpPackageCommand(args, require_payload=True),
-        required=True,
+        required=not args.auto_build_hcomm_payload_package,
         timeout_seconds=args.step_timeout_sec,
     )
+    args, package_result = MaybeAutoBuildPayloadPackage(
+        runner, args, package_result)
     if package_result.returncode != 0:
         next_steps = WritePayloadPackageBuildNextSteps(runner.run_dir, args)
         print(f"[ok] payload package next steps -> {next_steps}")
@@ -2619,8 +2689,24 @@ def WritePayloadPackageBuildNextSteps(run_dir: Path,
     lines = [
         "Flume HCOMM payload package is not ready",
         "",
-        "Build and install the primitive payload custom-op package, then rerun "
-        "hcomm-payload-strict-positive:",
+        "Preferred no-install path for hosts with an installed CANN toolkit:",
+        "",
+        "python3 tools/flume_tool.py \\",
+        "  --custom-op-build-mode payload \\",
+        "  --custom-op-export-root <temporary-custom-op-root> \\",
+        "  hcomm-custom-op-direct-build",
+        "",
+        "Then rerun hcomm-payload-strict-positive with "
+        "--custom-op-root <temporary-custom-op-root>.",
+        "",
+        "For a one-command retry, add --auto-build-hcomm-payload-package to "
+        "hcomm-payload-strict-positive. It runs the same direct build/export "
+        "flow into an isolated runtime root under the current log directory "
+        "and does not modify the system CANN/OPP installation.",
+        "",
+        "If the target environment requires the HCCL source-tree packaging "
+        "flow, build and install the primitive payload custom-op package, "
+        "then rerun hcomm-payload-strict-positive:",
         "",
         "python3 tools/flume_tool.py \\",
         f"  --hccl-source-root {source_root} \\",
@@ -2633,7 +2719,8 @@ def WritePayloadPackageBuildNextSteps(run_dir: Path,
         "explicit because it changes the target CANN/OPP custom-op "
         "installation.",
         "",
-        "If changing the system CANN/OPP installation is not desired, export "
+        "If changing the system CANN/OPP installation is not desired after "
+        "a source-tree build, export "
         "the preflight-passing build artifacts into an isolated runtime root:",
         "",
         "python3 tools/flume_tool.py \\",
@@ -3620,6 +3707,16 @@ def parse_args() -> argparse.Namespace:
                               "Defaults to ASCEND_HOME_PATH or the standard "
                               "CANN layout; the command expects an "
                               "aarch64-linux include/lib64 tree."))
+    parser.add_argument("--auto-build-hcomm-payload-package",
+                        action="store_true",
+                        help=("For hcomm-payload-strict-positive and "
+                              "hcomm-storage-strict-positive, if the payload "
+                              "custom-op package preflight fails, build the "
+                              "direct ACL payload package from the installed "
+                              "CANN toolkit and export an isolated runtime "
+                              "package under the current log directory before "
+                              "retrying the strict gate. This never installs "
+                              "into the system CANN/OPP tree."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")

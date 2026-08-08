@@ -521,11 +521,27 @@ def main() -> int:
             tmp, SimpleNamespace(hccl_source_root=str(repo / "refer" /
                                                       "cann-src" / "hccl")))
         build_steps_text = build_steps.read_text(encoding="utf-8")
+        assert "hcomm-custom-op-direct-build" in build_steps_text
+        assert "--auto-build-hcomm-payload-package" in build_steps_text
         assert "--custom-op-build-mode payload" in build_steps_text
         assert "--install-custom-op-package" in build_steps_text
         assert "hcomm-custom-op-build" in build_steps_text
         assert "--custom-op-export-root <temporary-custom-op-root>" in build_steps_text
         assert "hcomm-custom-op-export-runtime" in build_steps_text
+        auto_cann = tmp / "auto-cann"
+        auto_command = flume_tool.HcommPayloadAutoDirectBuildCommand(
+            SimpleNamespace(build_dir=str(tmp / "strict-build"),
+                            jobs=3,
+                            custom_op_vendor="flume",
+                            cann_package_root=str(auto_cann)),
+            SimpleNamespace(run_dir=tmp / "strict-logs"),
+            tmp / "strict-logs" / "hcomm-payload-auto-runtime")
+        assert "hcomm-custom-op-direct-build" == auto_command[-1]
+        assert "--custom-op-build-mode=payload" in auto_command
+        assert f"--cann-package-root={auto_cann}" in auto_command
+        assert any(item.startswith("--custom-op-export-root=")
+                   for item in auto_command)
+        assert any(item.startswith("--log-root=") for item in auto_command)
         inferred_tar_preflight = subprocess.run(
             [
                 sys.executable,
