@@ -41,7 +41,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
-| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_status_schema=v2`, `payload_status_word_count=8`, `payload_echo=passed`, `payload_thread_notify_order=...`, source/received/expected checksum match, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
+| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_status_schema=v2`, `payload_status_word_count=8`, `payload_echo=passed`, `payload_thread_notify_order=...`, `payload_pattern=strict-v1`, source/received/expected checksum match, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
 | 3B.3 | stabilize HCOMM pair-copy scheduler as default payload backend | `hcomm_payload_scheduler=custom-op-aicpu` | environment-specific fallback remains required |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -497,7 +497,7 @@ strict payload smoke passing on both ranks with `stage3b3e_payload_copy=passed`,
 direct ACL payload launch/sync passed, `payload_kernel_status=success`,
 `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
 `payload_status_schema=v2`, `payload_status_word_count=8`,
-`payload_echo=passed`, `payload_thread_notify_order=...`, source/received/expected checksum match,
+`payload_echo=passed`, `payload_thread_notify_order=...`, `payload_pattern=strict-v1`, source/received/expected checksum match,
 `payload_verify=passed`, and `fallback=none`. `thread_export=off` changes the
 completion marker to `payload_completion=stream-sync+status-word`; it does not
 by itself block the direct ACL payload candidate.

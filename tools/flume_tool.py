@@ -1470,6 +1470,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_word_count=8",
     "payload_echo=passed",
     "payload_thread_notify_order=",
+    "payload_pattern=strict-v1",
     "fallback=none",
 )
 
@@ -1713,6 +1714,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_schema = marker_value(strict, "payload_status_schema")
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
+    strict_pattern = marker_value(strict, "payload_pattern")
     strict_primitive_state = marker_value(strict, "payload_primitive_state")
     strict_desc_bytes = marker_value(strict, "payload_desc_bytes")
     strict_desc_ready_notify = marker_value(strict,
@@ -1812,7 +1814,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + `payload_thread_notify_order=...` + "
-        "checksum match + `payload_verify=passed` + "
+        "`payload_pattern=strict-v1` + checksum match + "
+        "`payload_verify=passed` + "
         "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
@@ -1846,6 +1849,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
+            f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| payload semantic v5 marker | {strict_semantic_v5} | `payload_semantic_v5=missing` means the package predates the current recv local-buffer scheduler |",

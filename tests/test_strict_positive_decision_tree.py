@@ -52,7 +52,8 @@ def strict_log(include_verify: bool) -> str:
                                   "payload_desc_peer_rank=0")
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
-        "rank 0 hcomm payload smoke passed: fallback=none detail=\""
+        "rank 0 hcomm payload smoke passed: fallback=none "
+        "payload_pattern=strict-v1 detail=\""
         "stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
         "stage3b3e_payload_descriptor_handoff=passed "
@@ -65,7 +66,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_thread_notify_order=not-used" + desc + resource +
         " fallback=none\" "
         "payload_source_checksum=1234",
-        "rank 1 hcomm payload smoke passed: fallback=none" + verify +
+        "rank 1 hcomm payload smoke passed: fallback=none "
+        "payload_pattern=strict-v1" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
         "stage3b3e_payload_descriptor_handoff=passed "
@@ -85,7 +87,8 @@ def strict_log(include_verify: bool) -> str:
 def strict_log_with_cross_line_false_positive() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
-        "rank 0 hcomm payload smoke passed: fallback=none detail=\""
+        "rank 0 hcomm payload smoke passed: fallback=none "
+        "payload_pattern=strict-v1 detail=\""
         "stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
         "stage3b3e_payload_descriptor_handoff=passed "
@@ -428,8 +431,10 @@ def main() -> int:
         assert "`payload_kernel_hcomm_ret=0`" in text
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
+        assert "`payload_pattern=strict-v1`" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
+        assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0, thread_notify=0, local_buffer=8192, "
                 "remote_buffer=8192 |") in text

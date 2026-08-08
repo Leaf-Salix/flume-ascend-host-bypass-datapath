@@ -156,6 +156,19 @@ struct BufferLayout {
   size_t a3_total_bytes = 0;
 };
 
+constexpr const char* kStrictHcommPayloadPattern = "strict-v1";
+
+float StrictHcommPayloadValue(uint64_t i, uint64_t count) {
+  uint64_t mixed = i * 17ULL + count * 31ULL + 7ULL;
+  return static_cast<float>(1000ULL + (mixed % 100000ULL));
+}
+
+void FillStrictHcommPayloadPattern(float* host, uint64_t count) {
+  for (uint64_t i = 0; i < count; ++i) {
+    host[i] = StrictHcommPayloadValue(i, count);
+  }
+}
+
 bool ParseU64(const std::string& text, uint64_t* out) {
   if (out == nullptr || text.empty() || text[0] == '-') {
     return false;
@@ -1402,6 +1415,15 @@ void RankMain(RankContext* ctx) {
           }
         }
         if (ctx->rank == 0) {
+          auto* host = static_cast<float*>(host_buf);
+          FillStrictHcommPayloadPattern(host, ctx->count);
+          if (!CheckAcl(aclrtMemcpy(reduce_send, one_rank_bytes, host,
+                                    one_rank_bytes,
+                                    ACL_MEMCPY_HOST_TO_DEVICE),
+                        "aclrtMemcpy hcomm payload source pattern H2D",
+                        &error)) {
+            goto cleanup;
+          }
           if (!CheckAcl(aclrtMemcpy(host_buf, one_rank_bytes, reduce_send,
                                     one_rank_bytes,
                                     ACL_MEMCPY_DEVICE_TO_HOST),
@@ -1471,6 +1493,7 @@ void RankMain(RankContext* ctx) {
              << " fallback=";
         if (ctx->hcomm_require_payload_copy) {
           line << "none";
+          line << " payload_pattern=" << kStrictHcommPayloadPattern;
         } else {
           line << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
         }
@@ -1565,7 +1588,7 @@ void RankMain(RankContext* ctx) {
           goto cleanup;
         }
         for (uint64_t i = 0; i < ctx->count; ++i) {
-          float expected = static_cast<float>(1 + i);
+          float expected = StrictHcommPayloadValue(i, ctx->count);
           if (host[i] != expected) {
             std::ostringstream mismatch;
             mismatch << "HCOMM payload copy verification failed: index=" << i
@@ -1577,9 +1600,7 @@ void RankMain(RankContext* ctx) {
         }
         hcomm_payload_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
-        for (uint64_t i = 0; i < ctx->count; ++i) {
-          host[i] = static_cast<float>(1 + i);
-        }
+        FillStrictHcommPayloadPattern(host, ctx->count);
         hcomm_payload_expected_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
         hcomm_payload_expected_checksum_ready = true;
