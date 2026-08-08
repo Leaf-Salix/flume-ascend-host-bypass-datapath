@@ -43,11 +43,13 @@ extern "C" {
   "FlumeHcommPayloadCopyAbiVersion3"
 #define FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC \
   "FlumeHcommPayloadCopyAbiVersion4"
-#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION 5U
+#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION 6U
 #define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC \
   "FlumeHcommPayloadCopySemanticVersion"
 #define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC \
   "FlumeHcommPayloadCopySemanticVersion5"
+#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC \
+  "FlumeHcommPayloadCopySemanticVersion6"
 #define FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC \
   "FlumeHcommPayloadCopyRequiresCommAcquire"
 #define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC \

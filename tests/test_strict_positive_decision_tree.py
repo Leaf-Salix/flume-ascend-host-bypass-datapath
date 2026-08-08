@@ -49,7 +49,10 @@ def strict_log(include_verify: bool) -> str:
                 "payload_remote_hccl_buffer_bytes=8192")
     package_runtime = (" package_source=explicit-json "
                        "package_aicpu_tar=present "
-                       "package_aicpu_tar_readable=yes")
+                       "package_aicpu_tar_readable=yes "
+                       "payload_semantic=present "
+                       "payload_semantic_v5=present "
+                       "payload_semantic_v6=present")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
@@ -108,6 +111,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_status_word_count=8 payload_echo=passed payload_role=send "
         "payload_batch_mode=on "
         "payload_desc_batch_tag=default "
+        "payload_recv_path=local-buffer "
+        "payload_semantic_v6=present "
         "payload_thread_notify_order=not-used fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
@@ -298,6 +303,22 @@ def strict_log_with_missing_semantic_v5() -> str:
     ])
 
 
+def strict_log_with_missing_semantic_v6() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=unsupported "
+        "stage3b3e_direct_aclrt_payload_loader=unsupported "
+        "payload_semantic=present "
+        "payload_semantic_v5=present "
+        "payload_semantic_v6=missing "
+        "stage3b3e_payload_descriptor_handoff=blocked "
+        "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+        "fallback=none\"",
+        "",
+    ])
+
+
 def strict_log_with_canary_build_mode() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -319,6 +340,7 @@ def payload_ready_package_log() -> str:
             "aicpu_tar_so.libflume_hcomm_payload_aicpu_kernel.so=present\n"
             "required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v4,payload_semantic,payload_semantic_v5,"
+            "payload_semantic_v6,"
             "payload_requires_comm_acquire,payload_status_schema,"
             "payload_status_word_count,payload_primitive_deps,"
             "build_mode_internal\n"
@@ -365,7 +387,7 @@ def smoke_with_mixed_storage_path() -> str:
 
 def stale_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=missing",
         "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing",
         "status=FAIL",
@@ -376,7 +398,7 @@ def stale_status_schema_package_log() -> str:
 
 def old_pass_without_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,build_mode_internal",
         "status=PASS",
         "",
     ])
@@ -384,7 +406,7 @@ def old_pass_without_status_schema_package_log() -> str:
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -395,7 +417,7 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
@@ -406,7 +428,7 @@ def canary_only_package_log() -> str:
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,build_mode_internal",
         "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",
@@ -416,7 +438,7 @@ def abi_missing_package_log() -> str:
 
 def missing_aicpu_tar_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
         "json=present",
         "aicpu_tar=missing",
         "aicpu_tar_readable=missing",
@@ -436,7 +458,7 @@ def multi_candidate_payload_package_log() -> str:
         "",
         "root=/tmp/current-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_primitive_deps,build_mode_internal",
         "status=PASS",
         "",
         "status=PASS",
@@ -448,7 +470,7 @@ def multi_candidate_canary_only_package_log() -> str:
     return "\n".join([
         "root=/tmp/stale-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
         "status=FAIL",
         "",
         "root=/tmp/canary-cann",
@@ -879,6 +901,18 @@ def main() -> int:
         assert "| payload semantic v5 marker | missing |" in text
         assert ("rebuild/reinstall payload custom-op package with current "
                 "Flume semantic v5 kernel") in text
+
+        strict_missing_semantic_v6 = write(
+            tmp / "strict-missing-semantic-v6.log",
+            strict_log_with_missing_semantic_v6())
+        stale_semantic_v6_dir = tmp / "stale-semantic-v6-runtime"
+        stale_semantic_v6_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            stale_semantic_v6_dir, smoke, strict_missing_semantic_v6, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| payload semantic v6 marker | missing |" in text
+        assert ("rebuild/reinstall payload custom-op package with current "
+                "Flume semantic v6 direct-output-capable kernel") in text
 
         canary_package = write(tmp / "package-canary-only.log",
                                canary_only_package_log())

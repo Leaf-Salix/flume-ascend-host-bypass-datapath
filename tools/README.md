@@ -271,11 +271,12 @@ canary-only 包或 payload 包不完整；如果同时出现
 `reason.payload_direct_aclrt=legacy-entrypoint-present`，说明当前安装的是
 旧 payload 包。当前 payload-ready 要求 JSON 声明
 `FlumeHcommPayloadCopyDirectAclrtKernelV4`、`FlumeHcommPayloadCopyAbiVersion4`
-、`FlumeHcommPayloadCopySemanticVersion` 和
+、`FlumeHcommPayloadCopySemanticVersion`、
+`FlumeHcommPayloadCopySemanticVersion6` 和
 `FlumeHcommPayloadCopyRequiresCommAcquire`，以及当前 device-visible status ABI
 marker `FlumeHcommPayloadStatusSchemaVersion` 和
 `FlumeHcommPayloadStatusWordCount`。旧包只声明
-`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v5 marker 时会被明确判为
+`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v6 marker 时会被明确判为
 stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
@@ -284,7 +285,8 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopyDirectAclrtKernelV4` 和
 `FlumeHcommPayloadBuildModeInternalPayload`，并要求
 `FlumeHcommPayloadCopyAbiVersion4` 和
-`FlumeHcommPayloadCopySemanticVersion` 以及
+`FlumeHcommPayloadCopySemanticVersion`、
+`FlumeHcommPayloadCopySemanticVersion6` 以及
 `FlumeHcommPayloadCopyRequiresCommAcquire`、`FlumeHcommPayloadStatusSchemaVersion`
 和 `FlumeHcommPayloadStatusWordCount` 同时出现在 JSON 和 SO 里。此外，
 payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
@@ -294,7 +296,7 @@ marker-only 包会被拒绝。上述条件共同作为当前 descriptor ABI、pa
 success-status schema/word-count 与 HCOMM comm acquire/release 语义 marker。
 默认 canary-only
 包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
-ABI v4 marker、semantic v5 marker、comm-acquire marker、status schema marker
+ABI v4 marker、semantic v6 marker、comm-acquire marker、status schema marker
 或 HCOMM primitive 依赖时不会被判为 payload-ready，避免把空包、坏包、
 stub 包、旧 ABI 包、旧语义包、缺 HCOMM comm acquire/release、旧 status ABI、
 marker-only 的包或 JSON/SO 不一致的包误判为可跑 strict payload。

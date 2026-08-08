@@ -271,6 +271,7 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopyAbiVersion4`,
 `FlumeHcommPayloadCopySemanticVersion`,
 `FlumeHcommPayloadCopySemanticVersion5`,
+`FlumeHcommPayloadCopySemanticVersion6`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
 `FlumeHcommPayloadStatusWordCount`. These mark the descriptor ABI with HCCL

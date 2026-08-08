@@ -2196,6 +2196,7 @@ bool JsonLooksPayloadReady(const std::string& json_text,
       FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC,
@@ -2798,6 +2799,8 @@ std::string HcommPayloadRuntimeDetail(
     const HcommLauncherDecision& decision) {
   return PayloadDescriptorDetail(desc) +
          HcommPayloadCompletionDetail(resource_info) +
+         " payload_semantic=present payload_semantic_v5=present "
+         "payload_semantic_v6=present payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }
 
@@ -3003,6 +3006,27 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_semantic=present payload_semantic_v5=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle semantic_v6_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC,
+      &semantic_v6_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_semantic=present payload_semantic_v5=present "
+           "payload_semantic_v6=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC +
            PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
