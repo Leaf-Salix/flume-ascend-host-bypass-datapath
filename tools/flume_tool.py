@@ -1213,6 +1213,36 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+STRICT_PAYLOAD_RANK_MARKERS = (
+    "stage3b3e_payload_copy=passed",
+    "stage3b3e_direct_aclrt_payload_launch=passed",
+    "stage3b3e_payload_sync=passed",
+    "payload_kernel_status=success",
+    "payload_status_word=0",
+    "fallback=none",
+)
+
+
+def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
+    rank_lines = {0: "", 1: ""}
+    for line in strict.splitlines():
+        for rank in rank_lines:
+            if f"rank {rank} hcomm payload smoke passed" in line:
+                rank_lines[rank] = line
+    return rank_lines
+
+
+def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
+    rank_lines = ExtractStrictPayloadRankLines(strict)
+    rank0_ok = bool(rank_lines[0]) and all(
+        marker in rank_lines[0] for marker in STRICT_PAYLOAD_RANK_MARKERS)
+    rank1_ok = (bool(rank_lines[1]) and
+                all(marker in rank_lines[1]
+                    for marker in STRICT_PAYLOAD_RANK_MARKERS) and
+                "payload_verify=passed" in rank_lines[1])
+    return (rank0_ok and rank1_ok, rank0_ok, rank1_ok)
+
+
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                              strict_log: Optional[Path],
                              package_log: Optional[Path]) -> Path:
@@ -1259,16 +1289,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     hcomm_payload_ok = "hcomm payload smoke passed" in combined
     hcomm_payload_unsupported = "hcomm payload smoke unsupported" in combined
     storage_hbm_ok = "storage HBM smoke passed" in combined
-    strict_positive_ok = (
-        "rank 0 hcomm payload smoke passed" in strict and
-        "rank 1 hcomm payload smoke passed" in strict and
-        "stage3b3e_payload_copy=passed" in strict and
-        "stage3b3e_direct_aclrt_payload_launch=passed" in strict and
-        "stage3b3e_payload_sync=passed" in strict and
-        "payload_kernel_status=success" in strict and
-        "payload_status_word=0" in strict and
-        "fallback=none" in strict and
-        "payload_verify=passed" in strict)
+    strict_positive_ok, strict_rank0_ok, strict_rank1_ok = (
+        StrictPayloadRankEvidencePassed(strict))
     strict_negative_expected = (
         "hcomm-payload-strict-negative" in strict and
         ("HCOMM payload copy required but unavailable" in strict or
@@ -1350,6 +1372,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
             f"| package preflight | {package_status} | `required=canary_direct_aclrt,payload_direct_aclrt` + `status=PASS` |",
+            f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/fallback markers |",
+            f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",

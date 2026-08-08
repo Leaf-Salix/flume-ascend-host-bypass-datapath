@@ -50,6 +50,23 @@ def strict_log(include_verify: bool) -> str:
     ])
 
 
+def strict_log_with_cross_line_false_positive() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke passed: fallback=none detail=\""
+        "stage3b3e_payload_copy=passed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=passed "
+        "payload_kernel_status=success payload_status_word=0 "
+        "fallback=none payload_verify=passed\"",
+        "rank 1 hcomm payload smoke passed: fallback=none "
+        "payload_verify=passed detail=\"fallback=none\"",
+        "",
+    ])
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: test_strict_positive_decision_tree.py <repo-root>",
@@ -91,6 +108,19 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| rank1 verify | missing |" in text
         assert "inspect hcomm-payload-strict-positive failure" in text
+
+        strict_cross_line = write(tmp / "strict-cross-line.log",
+                                  strict_log_with_cross_line_false_positive())
+        cross_line_dir = tmp / "cross-line"
+        cross_line_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            cross_line_dir, smoke, strict_cross_line, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| rank0 strict evidence | passed |" in text
+        assert "| rank1 strict evidence | missing |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_cross_line_false_positive())[0]
 
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()
