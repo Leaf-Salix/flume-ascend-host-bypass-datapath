@@ -1115,28 +1115,30 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     smoke = read(smoke_log)
     strict = read(strict_log)
     package = read(package_log)
+    combined = smoke + "\n" + strict
     lines = [
         "# Flume Ascend Full Matrix Decision Tree",
         "",
         "| Check | Result | Evidence |",
         "| --- | --- | --- |",
     ]
-    hccl_ok = "hccl collective smoke passed" in smoke
-    p2p_ok = "p2p_copy=on" in smoke and "hccl collective smoke passed" in smoke
-    hcomm_channel_ok = "hcomm channel probe passed" in smoke
-    hcomm_custom_op_launch_ok = "hcomm custom-op launch smoke passed" in smoke
+    hccl_ok = "hccl collective smoke passed" in combined
+    p2p_ok = ("p2p_copy=on" in combined and
+              "hccl collective smoke passed" in combined)
+    hcomm_channel_ok = "hcomm channel probe passed" in combined
+    hcomm_custom_op_launch_ok = "hcomm custom-op launch smoke passed" in combined
     hcomm_custom_op_launch_unsupported = (
-        "hcomm custom-op launch smoke unsupported" in smoke)
+        "hcomm custom-op launch smoke unsupported" in combined)
     hcomm_resource_descriptor_ok = (
-        "hcomm resource descriptor smoke passed" in smoke)
+        "hcomm resource descriptor smoke passed" in combined)
     hcomm_resource_descriptor_unsupported = (
-        "hcomm resource descriptor smoke unsupported" in smoke)
-    hcomm_notify_only_ok = "hcomm notify-only smoke passed" in smoke
+        "hcomm resource descriptor smoke unsupported" in combined)
+    hcomm_notify_only_ok = "hcomm notify-only smoke passed" in combined
     hcomm_notify_only_unsupported = (
-        "hcomm notify-only smoke unsupported" in smoke)
-    hcomm_payload_ok = "hcomm payload smoke passed" in smoke
-    hcomm_payload_unsupported = "hcomm payload smoke unsupported" in smoke
-    storage_hbm_ok = "storage HBM smoke passed" in smoke
+        "hcomm notify-only smoke unsupported" in combined)
+    hcomm_payload_ok = "hcomm payload smoke passed" in combined
+    hcomm_payload_unsupported = "hcomm payload smoke unsupported" in combined
+    storage_hbm_ok = "storage HBM smoke passed" in combined
     strict_positive_ok = (
         "rank 0 hcomm payload smoke passed" in strict and
         "rank 1 hcomm payload smoke passed" in strict and
@@ -1151,7 +1153,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "hcomm-payload-strict-negative" in strict and
         ("HCOMM payload copy required but unavailable" in strict or
          "unsupported" in strict))
-    caps_match = re.search(r"FLUME_BACKEND_CAPS .+", smoke)
+    caps_match = re.search(r"FLUME_BACKEND_CAPS .+", combined)
     caps = caps_match.group(0) if caps_match else "missing FLUME_BACKEND_CAPS"
     primitives = "unknown"
     if "hcomm_primitives=on" in caps:
@@ -1161,8 +1163,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     scheduler_candidate = "hcomm_payload_scheduler_candidate=on" in caps
     scheduler_missing = (not hcomm_payload_ok and
                          ("hcomm_payload_scheduler=not-implemented" in caps or
-                          "custom-op/AICPU scheduler" in smoke or
-                          "custom-op launch" in smoke))
+                          "custom-op/AICPU scheduler" in combined or
+                          "custom-op launch" in combined))
     package_payload_ready = ("required=canary_direct_aclrt,payload_direct_aclrt" in
                              package and "status=PASS" in package)
     package_canary_ready = ("required=canary_direct_aclrt" in package and
@@ -1218,8 +1220,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         next_action = (
             "Stage 3B.3E strict payload copy passed; inspect checksum and "
             "start Stage 3B.4 storage rewiring")
-    elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
-          package_payload_ready):
+    elif (hccl_ok and p2p_ok and hcomm_channel_ok and package_payload_ready and
+          (storage_hbm_ok or strict_log is not None)):
         next_action = "inspect hcomm-payload-strict-positive failure"
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and
           hcomm_payload_unsupported and not package_payload_ready):
