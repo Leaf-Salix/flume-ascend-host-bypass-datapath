@@ -129,6 +129,17 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
         flume_tool = load_flume_tool(repo)
+        static_json_path = (
+            repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
+            KERNEL_JSON
+        )
+        static_payload = json.loads(static_json_path.read_text(encoding="utf-8"))
+        for label, function_name in flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS.items():
+            assert flume_tool.JsonDeclaresFunction(
+                static_payload, function_name, KERNEL_SO), label
+        assert flume_tool.JsonDeclaresFunction(
+            static_payload, flume_tool.HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
+            KERNEL_SO)
 
         legacy_json, legacy_tar = write_package(tmp, mode="legacy")
         legacy = run_preflight(repo, legacy_json, legacy_tar)
