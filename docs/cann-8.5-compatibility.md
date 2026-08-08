@@ -128,7 +128,10 @@ refer/cann-compat/cann-8.5.0-aarch64/
   env.txt
   include-manifest.txt
   include-feature-presence.txt
+  hcomm-primitive-headers.txt
+  hcomm-primitive-call-shape-probe.txt
   lib-manifest.txt
+  hcomm-primitive-symbols.txt
   lib-symbols/
   cmake-feature-probe.txt
   flume-backend-caps.txt
@@ -138,6 +141,11 @@ refer/cann-compat/cann-8.5.0-aarch64/
 ```
 
 这些文件是文本清单，不包含 CANN 二进制。默认不提交具体机器采集结果。
+
+如果在 Stage 3B.3E strict payload copy 卡住，先看
+`hcomm-primitive-call-shape-probe.txt`。`status: PASS` 表示真实 CANN 头文件接受 Flume 当前 AICPU
+payload kernel 的 primitive 调用形状；`status: FAIL` 则优先修 kernel ABI，而不是继续调 HCCL 建链或
+storage fallback。
 
 ## 6. CANN 8.5 主测试与预期
 

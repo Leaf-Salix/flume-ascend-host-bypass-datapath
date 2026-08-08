@@ -521,6 +521,12 @@ python3 tools/collect_cann_compat.py --label cann-8.5.0-aarch64 --flume-log-dir 
 
 采集结果写入 `refer/cann-compat/cann-8.5.0-aarch64/`，默认被 Git 忽略；它只包含 header/lib/symbol/log 文本清单，不复制 CANN 二进制。
 
+Stage 3B.3E payload copy 调试时，优先查看这些新增 fixture：
+
+- `hcomm-primitive-headers.txt`：真实 `hcomm_primitives.h` 中和 Flume payload kernel 有关的声明摘录。
+- `hcomm-primitive-call-shape-probe.txt`：只编译、不链接、不运行，验证当前 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、Notify、Batch 调用形状是否被真实 CANN 头文件接受；`status: PASS` 才说明 ABI 形状匹配。
+- `hcomm-primitive-symbols.txt`：`libhcomm` 中这些 primitive 的目标符号是否存在。
+
 常见判读：
 
 - `LoadOpBinary` / `dynamic_*.o failed`：先检查 `ASCEND_HOME_PATH` 是否指向 CANN toolkit 根目录，例如 `/usr/local/Ascend/cann-8.5/cann-8.5.0`，不要指到 `aarch64-linux` 子目录，也不要落到错误的 `/usr/local/Ascend/cann` 软链。

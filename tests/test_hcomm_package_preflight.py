@@ -614,6 +614,38 @@ def main() -> int:
         assert "status=PASS" in exported_preflight.stdout
 
         fake_cann = write_fake_cann_root(tmp)
+        compat = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "collect_cann_compat.py"),
+                f"--ascend-home={fake_cann}",
+                f"--output-root={tmp / 'cann-compat'}",
+                "--label=fake-hcomm",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if compat.returncode != 0:
+            print(compat.stdout)
+            print(compat.stderr, file=sys.stderr)
+            raise AssertionError("CANN compat collection did not pass")
+        fixture = tmp / "cann-compat" / "fake-hcomm"
+        primitive_headers = (
+            fixture / "hcomm-primitive-headers.txt").read_text(
+                encoding="utf-8")
+        assert "HcommReadOnThread" in primitive_headers
+        assert "ThreadHandle" in primitive_headers
+        primitive_symbols = (
+            fixture / "hcomm-primitive-symbols.txt").read_text(
+                encoding="utf-8")
+        assert "HcommReadOnThread: present" in primitive_symbols
+        call_shape = (
+            fixture / "hcomm-primitive-call-shape-probe.txt").read_text(
+                encoding="utf-8")
+        assert "status: PASS" in call_shape
+
         cann_pair = flume_tool.ResolveCannRootPair(str(fake_cann))
         assert cann_pair == (fake_cann, fake_cann / "aarch64-linux")
         assert flume_tool.ResolveCannBinaryRoot(str(fake_cann)) == (

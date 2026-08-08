@@ -8,9 +8,11 @@ import datetime as _dt
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -38,6 +40,78 @@ KEY_LIBS = [
     "libascendcl.so",
     "libc_sec.so",
 ]
+
+HCOMM_PRIMITIVE_HEADERS = [
+    "hccl/hcomm_primitives.h",
+    "hcomm/hcomm_primitives.h",
+    "hcomm_primitives.h",
+]
+
+HCOMM_PRIMITIVE_NAMES = [
+    "HcommAcquireComm",
+    "HcommReleaseComm",
+    "HcommBatchModeStart",
+    "HcommBatchModeEnd",
+    "HcommLocalCopyOnThread",
+    "HcommReadOnThread",
+    "HcommChannelNotifyRecordOnThread",
+    "HcommChannelNotifyWaitOnThread",
+    "HcommChannelFenceOnThread",
+    "HcommThreadNotifyRecordOnThread",
+    "HcommThreadNotifyWaitOnThread",
+]
+
+HCOMM_CALL_SHAPE_PROBE = r"""
+#include <cstdint>
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+
+int main() {
+  ThreadHandle thread = 0;
+  ThreadHandle peer_thread = 0;
+  ChannelHandle channel = 0;
+  void *dst = nullptr;
+  const void *src = nullptr;
+  const char *tag = "flume-probe";
+  uint64_t bytes = 64;
+  uint32_t notify_idx = 0;
+  uint32_t timeout_sec = 1;
+  auto acquire_ret = HcommAcquireComm(tag);
+  auto local_copy_ret = HcommLocalCopyOnThread(thread, dst, src, bytes);
+  auto read_ret = HcommReadOnThread(thread, channel, dst, src, bytes);
+  auto record_ret =
+      HcommChannelNotifyRecordOnThread(thread, channel, notify_idx);
+  auto wait_ret =
+      HcommChannelNotifyWaitOnThread(thread, channel, notify_idx, timeout_sec);
+  auto fence_ret = HcommChannelFenceOnThread(thread, channel);
+  auto thread_record_ret =
+      HcommThreadNotifyRecordOnThread(thread, peer_thread, notify_idx);
+  auto thread_wait_ret =
+      HcommThreadNotifyWaitOnThread(thread, notify_idx, timeout_sec);
+  auto batch_start_ret = HcommBatchModeStart(tag);
+  auto batch_end_ret = HcommBatchModeEnd(tag);
+  auto release_ret = HcommReleaseComm(tag);
+  (void)acquire_ret;
+  (void)local_copy_ret;
+  (void)read_ret;
+  (void)record_ret;
+  (void)wait_ret;
+  (void)fence_ret;
+  (void)thread_record_ret;
+  (void)thread_wait_ret;
+  (void)batch_start_ret;
+  (void)batch_end_ret;
+  (void)release_ret;
+  return 0;
+}
+"""
 
 FEATURE_LINE_RE = re.compile(
     r"(FLUME_HAVE_[A-Z0-9_]+: [01]|"
@@ -272,6 +346,130 @@ def collect_header_presence(include_roots: list[Path]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def extract_declaration_blocks(text: str, names: list[str]) -> list[str]:
+    lines = text.splitlines()
+    blocks: list[str] = []
+    for index, line in enumerate(lines):
+        if not any(name in line for name in names):
+            continue
+        start = index
+        while start > 0 and lines[start - 1].strip() and not lines[start - 1].lstrip().startswith("#"):
+            if ";" in lines[start - 1] or "{" in lines[start - 1] or "}" in lines[start - 1]:
+                break
+            start -= 1
+        end = index
+        while end + 1 < len(lines) and ";" not in lines[end] and "{" not in lines[end]:
+            end += 1
+        block = "\n".join(lines[start:end + 1]).strip()
+        if block and block not in blocks:
+            blocks.append(block)
+    return blocks
+
+
+def collect_hcomm_primitive_headers(include_roots: list[Path]) -> str:
+    lines = [
+        "# HCOMM primitive header excerpts",
+        "",
+        "This file captures declaration snippets that affect Flume's AICPU payload "
+        "kernel call shape. It is a compatibility aid; do not treat it as a "
+        "vendored copy of CANN headers.",
+        "",
+    ]
+    found_any = False
+    type_patterns = [
+        re.compile(r"\b(?:typedef|using)\b.*\b(?:ThreadHandle|ChannelHandle)\b"),
+        re.compile(r"\b(?:struct|class|enum)\b.*\b(?:ThreadHandle|ChannelHandle)\b"),
+    ]
+    for header in HCOMM_PRIMITIVE_HEADERS:
+        path = find_header(include_roots, header)
+        lines.append(f"## {header}: {'FOUND ' + str(path) if path else 'missing'}")
+        if path is None:
+            lines.append("")
+            continue
+        found_any = True
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            lines.append(f"failed to read: {exc}")
+            lines.append("")
+            continue
+        type_lines = [
+            raw.strip() for raw in text.splitlines()
+            if any(pattern.search(raw) for pattern in type_patterns)
+        ]
+        if type_lines:
+            lines.append("### handle type lines")
+            lines.extend(type_lines)
+        declarations = extract_declaration_blocks(text, HCOMM_PRIMITIVE_NAMES)
+        if declarations:
+            lines.append("### primitive declarations")
+            lines.extend(declarations)
+        else:
+            lines.append("no matching primitive declarations found")
+        lines.append("")
+    if not found_any:
+        lines.append("no HCOMM primitive header found")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def collect_hcomm_primitive_symbols(lib_roots: list[Path]) -> str:
+    lib_path = find_library(lib_roots, "libhcomm.so")
+    if lib_path is None:
+        lib_path = find_library(lib_roots, "libhcomm.dylib")
+    if lib_path is None:
+        return "libhcomm.so: missing\n"
+    symbols = collect_symbols(lib_path)
+    lines = [
+        f"# library: {lib_path}",
+        "",
+        "# HCOMM primitive symbol presence",
+    ]
+    for name in HCOMM_PRIMITIVE_NAMES:
+        matches = [
+            line for line in symbols.splitlines()
+            if name in line
+        ]
+        lines.append(f"{name}: {'present' if matches else 'missing'}")
+        for match in matches[:8]:
+            lines.append(f"  {match}")
+        if len(matches) > 8:
+            lines.append(f"  ... {len(matches) - 8} more matches")
+    return "\n".join(lines) + "\n"
+
+
+def collect_hcomm_primitive_compile_probe(include_roots: list[Path]) -> str:
+    compiler_value = os.environ.get("CXX") or shutil.which("c++") or shutil.which("g++")
+    if not compiler_value:
+        return "status: SKIP\nreason: no C++ compiler found\n"
+    compiler_command = shlex.split(compiler_value)
+    with tempfile.TemporaryDirectory(prefix="flume-hcomm-abi-probe-") as tmp_text:
+        tmp = Path(tmp_text)
+        source = tmp / "hcomm_call_shape_probe.cc"
+        source.write_text(HCOMM_CALL_SHAPE_PROBE, encoding="utf-8")
+        command = compiler_command + [
+            "-std=c++17",
+            "-fsyntax-only",
+            str(source),
+        ]
+        for root in include_roots:
+            command.extend(["-I", str(root)])
+        code, output = run_capture(command, 30)
+    lines = [
+        "# HCOMM primitive call-shape compile probe",
+        "",
+        "This probe compiles the call expressions used by Flume's direct ACL "
+        "payload kernel. It does not link, load, launch, or run any NPU code.",
+        "",
+        f"compiler: {compiler_value}",
+        "command: " + " ".join(command),
+        f"returncode: {code}",
+        f"status: {'PASS' if code == 0 else 'FAIL'}",
+        "",
+    ]
+    lines.append(output.rstrip() if output.strip() else "no compiler output")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def collect_lib_manifest(ascend_home: Path, lib_roots: list[Path]) -> str:
     lines = ["# lib roots"]
     for root in lib_roots:
@@ -300,7 +498,10 @@ def collect_lib_manifest(ascend_home: Path, lib_roots: list[Path]) -> str:
 def collect_symbols(lib_path: Path) -> str:
     nm = shutil.which("nm")
     if nm:
-        code, output = run_capture([nm, "-D", "--defined-only", str(lib_path)], 60)
+        nm_command = ([nm, "-gU", str(lib_path)]
+                      if platform.system() == "Darwin"
+                      else [nm, "-D", "--defined-only", str(lib_path)])
+        code, output = run_capture(nm_command, 60)
         if code == 0:
             return output
         nm_output = output
@@ -405,8 +606,13 @@ def write_summary(
         "- `env.txt`: host environment relevant to CANN/HCCL",
         "- `include-manifest.txt`: text header manifest",
         "- `include-feature-presence.txt`: key Flume/HCCL/HCOMM headers",
+        "- `hcomm-primitive-headers.txt`: HCOMM primitive declaration snippets",
+        "- `hcomm-primitive-call-shape-probe.txt`: compile-only probe for "
+        "Flume's current HCOMM primitive call shape",
         "- `lib-manifest.txt`: text library manifest with sizes",
         "- `lib-symbols/`: `nm -D` or `readelf -Ws` output for key libraries",
+        "- `hcomm-primitive-symbols.txt`: targeted HCOMM primitive symbols in "
+        "`libhcomm`",
         "- `cmake-feature-probe.txt`: Flume CMake/smoke feature lines from logs",
         "- `flume-backend-caps.txt`: `FLUME_BACKEND_CAPS` and HCOMM probe lines",
         "- `npu-smi.txt`: `npu-smi info` and topology output when available",
@@ -453,8 +659,14 @@ def main() -> int:
                collect_include_manifest(ascend_home, include_roots))
     write_text(out_dir / "include-feature-presence.txt",
                collect_header_presence(include_roots))
+    write_text(out_dir / "hcomm-primitive-headers.txt",
+               collect_hcomm_primitive_headers(include_roots))
+    write_text(out_dir / "hcomm-primitive-call-shape-probe.txt",
+               collect_hcomm_primitive_compile_probe(include_roots))
     write_text(out_dir / "lib-manifest.txt",
                collect_lib_manifest(ascend_home, lib_roots))
+    write_text(out_dir / "hcomm-primitive-symbols.txt",
+               collect_hcomm_primitive_symbols(lib_roots))
 
     symbol_dir = out_dir / "lib-symbols"
     symbol_dir.mkdir(parents=True, exist_ok=True)
