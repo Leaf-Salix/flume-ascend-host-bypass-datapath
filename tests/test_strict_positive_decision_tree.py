@@ -107,6 +107,16 @@ def strict_log_with_kernel_local_copy_failure() -> str:
         "payload_kernel_hcomm_ret=91")
 
 
+def strict_log_with_comm_acquire_failure() -> str:
+    return strict_log(True).replace(
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 payload_kernel_hcomm_ret=0",
+        "payload_kernel_status=comm-acquire-failed "
+        "payload_failure_step=comm-acquire payload_status_word=14 "
+        "payload_kernel_hcomm_ret=77",
+        1)
+
+
 def strict_log_with_rank1_remote_read_failure() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -140,6 +150,16 @@ def strict_log_with_rank1_failed_wait_remote_read() -> str:
     return strict_log_with_rank1_remote_read_failure().replace(
         "rank 1 hcomm payload smoke unsupported",
         "rank 1 hcomm payload smoke failed")
+
+
+def strict_log_with_rank1_ready_wait_failure() -> str:
+    return strict_log_with_rank1_remote_read_failure().replace(
+        "payload_kernel_status=remote-read-failed "
+        "payload_failure_step=remote-read payload_status_word=9 "
+        "payload_kernel_hcomm_ret=88",
+        "payload_kernel_status=ready-notify-wait-failed "
+        "payload_failure_step=ready-notify-wait payload_status_word=8 "
+        "payload_kernel_hcomm_ret=66")
 
 
 def strict_log_with_rank1_output_copy_failure() -> str:
@@ -450,8 +470,20 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel status | local-copy-failed |" in text
         assert "| kernel failure step | local-copy |" in text
-        assert ("inspect rank 0 in-kernel HCOMM primitive failure: "
-                "local-copy-failed at local-copy") in text
+        assert ("inspect rank 0 HcommLocalCopyOnThread input HBM to local "
+                "HCCL Buffer path") in text
+
+        strict_comm_acquire_fail = write(
+            tmp / "strict-comm-acquire-fail.log",
+            strict_log_with_comm_acquire_failure())
+        comm_acquire_fail_dir = tmp / "comm-acquire-fail"
+        comm_acquire_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            comm_acquire_fail_dir, smoke, strict_comm_acquire_fail, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank0 kernel failure step | comm-acquire |" in text
+        assert ("inspect rank 0 HcommAcquireComm path, HCCL comm name, and "
+                "payload package libhcomm linkage") in text
 
         strict_rank1_remote_read_fail = write(
             tmp / "strict-rank1-remote-read-fail.log",
@@ -467,8 +499,20 @@ def main() -> int:
         assert "| rank1 kernel status | remote-read-failed |" in text
         assert "| rank0 kernel HCOMM ret | 0 |" in text
         assert "| rank1 kernel HCOMM ret | 88 |" in text
-        assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
-                "remote-read-failed at remote-read") in text
+        assert ("inspect rank 1 HcommReadOnThread remote HCCL Buffer to "
+                "local HCCL Buffer path") in text
+
+        strict_rank1_ready_wait = write(
+            tmp / "strict-rank1-ready-wait.log",
+            strict_log_with_rank1_ready_wait_failure())
+        rank1_ready_wait_dir = tmp / "rank1-ready-wait"
+        rank1_ready_wait_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank1_ready_wait_dir, smoke, strict_rank1_ready_wait, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank1 kernel failure step | ready-notify-wait |" in text
+        assert ("inspect rank 1 HCOMM ready notify wait index, peer rank "
+                "launch, and role pairing") in text
 
         strict_rank1_failed_wait = write(
             tmp / "strict-rank1-failed-wait.log",
@@ -480,8 +524,8 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| rank1 kernel status | remote-read-failed |" in text
         assert "| rank1 kernel HCOMM ret | 88 |" in text
-        assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
-                "remote-read-failed at remote-read") in text
+        assert ("inspect rank 1 HcommReadOnThread remote HCCL Buffer to "
+                "local HCCL Buffer path") in text
 
         strict_rank1_output_copy_fail = write(
             tmp / "strict-rank1-output-copy-fail.log",

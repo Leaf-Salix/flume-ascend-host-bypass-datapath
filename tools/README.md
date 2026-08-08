@@ -104,6 +104,9 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 ```
 
 该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
+把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
+`output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on` 和

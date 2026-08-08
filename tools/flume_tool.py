@@ -1505,6 +1505,54 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
 
 
+def StrictPayloadFailureAction(rank: int, failure_step: str,
+                               primitive_state: str = "missing") -> str:
+    prefix = f"inspect rank {rank} "
+    if primitive_state == "pending":
+        return (prefix + "pending HCOMM primitive timeout/hang at " +
+                failure_step)
+    actions = {
+        "invalid-argument":
+            "payload descriptor fields and ABI/status schema",
+        "comm-acquire":
+            "HcommAcquireComm path, HCCL comm name, and payload package "
+            "libhcomm linkage",
+        "batch-start":
+            "HcommBatchModeStart compatibility for the selected AICPU_TS "
+            "engine and batch tag",
+        "batch-end":
+            "HcommBatchModeEnd completion; host notify is intentionally "
+            "recorded only after this point",
+        "host-aicpu-thread-notify-wait":
+            "host/AICPU thread notify wait handles and launch ordering",
+        "host-aicpu-thread-notify-record":
+            "host/AICPU completion notify record handles after batch end",
+        "local-copy":
+            "HcommLocalCopyOnThread input HBM to local HCCL Buffer path",
+        "ready-notify-record":
+            "HCOMM ready notify record index and Channel descriptor",
+        "ready-notify-wait":
+            "HCOMM ready notify wait index, peer rank launch, and role pairing",
+        "remote-read":
+            "HcommReadOnThread remote HCCL Buffer to local HCCL Buffer path",
+        "channel-fence":
+            "HcommChannelFenceOnThread completion for RoCE/channel-drain mode",
+        "output-copy":
+            "local HCCL Buffer to user HBM output copy",
+        "done-notify-record":
+            "HCOMM done notify record index after recv-side output copy",
+        "done-notify-wait":
+            "HCOMM done notify wait index and recv rank completion",
+        "comm-release":
+            "HcommReleaseComm cleanup after payload primitives complete",
+    }
+    if failure_step in actions:
+        return prefix + actions[failure_step]
+    if failure_step == "none":
+        return "inspect strict payload success markers and checksum evidence"
+    return prefix + "in-kernel HCOMM primitive failure at " + failure_step
+
+
 def AnalyzeNpuRuntimeDiagnostics(run_dir: Path,
                                   combined_smoke_text: str) -> tuple[str, str, str]:
     """Classify pre-payload NPU runtime failures without exposing host details."""
@@ -1695,6 +1743,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 rank_line, "payload_primitive_state"),
             "fallback": marker_value_from_line(rank_line, "fallback"),
         }
+        rank_status[rank]["action"] = StrictPayloadFailureAction(
+            rank, rank_status[rank]["failure_step"],
+            rank_status[rank]["primitive_state"])
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
@@ -1767,6 +1818,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
             f"| rank0 primitive state | {rank_status[0]['primitive_state']} | rank0 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
             f"| rank1 primitive state | {rank_status[1]['primitive_state']} | rank1 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
+            f"| rank0 suggested action | {rank_status[0]['action']} | stage-specific HCOMM payload diagnostic hint |",
+            f"| rank1 suggested action | {rank_status[1]['action']} | stage-specific HCOMM payload diagnostic hint |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
@@ -1821,18 +1874,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             bad_rank = next(
                 rank for rank in (0, 1)
                 if rank_status[rank]["primitive_state"] == "pending")
-            next_action = (
-                "inspect rank "
-                f"{bad_rank} pending HCOMM primitive timeout/hang at "
-                f"{rank_status[bad_rank]['failure_step']}")
+            next_action = rank_status[bad_rank]["action"]
         elif any(rank_status[rank]["failure_step"] == "output-copy"
                  for rank in (0, 1)):
             bad_rank = next(
                 rank for rank in (0, 1)
                 if rank_status[rank]["failure_step"] == "output-copy")
-            next_action = (
-                "inspect rank "
-                f"{bad_rank} local HCCL Buffer to user HBM output copy")
+            next_action = rank_status[bad_rank]["action"]
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
         elif any(rank_status[rank]["kernel"] not in ("success", "missing")
@@ -1840,11 +1888,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             bad_rank = next(
                 rank for rank in (0, 1)
                 if rank_status[rank]["kernel"] not in ("success", "missing"))
-            next_action = (
-                "inspect rank "
-                f"{bad_rank} in-kernel HCOMM primitive failure: "
-                f"{rank_status[bad_rank]['kernel']} at "
-                f"{rank_status[bad_rank]['failure_step']}")
+            next_action = rank_status[bad_rank]["action"]
         elif any(rank_status[rank]["hcomm_ret"] not in ("0", "missing")
                  for rank in (0, 1)):
             bad_rank = next(
