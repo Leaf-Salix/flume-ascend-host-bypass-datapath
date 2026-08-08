@@ -35,6 +35,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
 HCOMM_PAYLOAD_BUILD_MODE_INTERNAL = "FlumeHcommPayloadBuildModeInternalPayload"
+HCOMM_PAYLOAD_COPY_ABI_VERSION = "FlumeHcommPayloadCopyAbiVersion"
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
@@ -1726,6 +1727,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_legacy_payload = False
     found_canary_only_marker = False
     found_internal_payload_marker = False
+    found_payload_abi_version_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -1761,6 +1763,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
             HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY,
             HCOMM_PAYLOAD_BUILD_MODE_INTERNAL,
+            HCOMM_PAYLOAD_COPY_ABI_VERSION,
         ]
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
@@ -1798,6 +1801,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_internal_payload_marker or
                     symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL,
                                         False))
+                found_payload_abi_version_marker = (
+                    found_payload_abi_version_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
@@ -1807,6 +1813,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.build_mode.internal_payload."
                       f"{HCOMM_PAYLOAD_BUILD_MODE_INTERNAL}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) else 'missing'}")
+                print("function_so.payload_abi_version."
+                      f"{HCOMM_PAYLOAD_COPY_ABI_VERSION}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -1834,10 +1843,13 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             if args.require_hcomm_payload_kernel:
                 required_ok = (
                     required_ok and
-                    symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False))
+                    symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False))
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
+            print("required_payload_abi_version_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_ABI_VERSION}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok
@@ -1859,6 +1871,11 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "payload entrypoint is a compatibility stub")
                 print("action=rebuild package with "
                       "FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON")
+            elif (found_internal_payload_marker and
+                  not found_payload_abi_version_marker):
+                print("reason=payload kernel package is missing the payload "
+                      "ABI version marker")
+                print("action=rebuild package with current Flume headers")
             else:
                 print("reason=payload kernel package is missing or incomplete")
         else:

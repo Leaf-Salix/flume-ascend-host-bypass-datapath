@@ -31,6 +31,8 @@ extern "C" {
   "FlumeHcommPayloadBuildModeCanaryOnly"
 #define FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC \
   "FlumeHcommPayloadBuildModeInternalPayload"
+#define FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_FUNC \
+  "FlumeHcommPayloadCopyAbiVersion"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE 0U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU 1U

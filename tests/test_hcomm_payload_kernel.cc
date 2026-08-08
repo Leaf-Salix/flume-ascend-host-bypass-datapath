@@ -89,6 +89,9 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
 int main() {
   using namespace flume_hcomm_payload_kernel_mock;
 
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion() ==
+                   FLUME_HCOMM_PAYLOAD_COPY_VERSION);
+
   uint8_t user[64] = {};
   uint8_t local[64] = {};
   uint8_t remote[64] = {};

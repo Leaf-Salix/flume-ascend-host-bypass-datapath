@@ -201,3 +201,7 @@ extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
 extern "C" unsigned int FlumeHcommPayloadBuildModeInternalPayload() {
   return 1U;
 }
+
+extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion() {
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION;
+}

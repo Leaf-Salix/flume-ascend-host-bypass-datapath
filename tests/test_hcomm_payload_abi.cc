@@ -98,6 +98,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC,
       "FlumeHcommPayloadBuildModeInternalPayload") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_FUNC,
+      "FlumeHcommPayloadCopyAbiVersion") == 0);
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);
