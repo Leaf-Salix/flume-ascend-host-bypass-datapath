@@ -229,9 +229,9 @@ def strict_log_with_canary_build_mode() -> str:
 
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
-            "payload_abi_v4,payload_semantic,payload_requires_comm_acquire,"
-            "payload_status_schema,payload_status_word_count,"
-            "build_mode_internal\n"
+            "payload_abi_v4,payload_semantic,payload_semantic_v5,"
+            "payload_requires_comm_acquire,payload_status_schema,"
+            "payload_status_word_count,build_mode_internal\n"
             "status=PASS\n")
 
 
@@ -249,7 +249,7 @@ def smoke_with_hcomm_storage_path() -> str:
 
 def stale_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=missing",
         "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing",
         "status=FAIL",
@@ -260,7 +260,7 @@ def stale_status_schema_package_log() -> str:
 
 def old_pass_without_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
         "status=PASS",
         "",
     ])
@@ -268,7 +268,7 @@ def old_pass_without_status_schema_package_log() -> str:
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -279,7 +279,7 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
@@ -290,7 +290,7 @@ def canary_only_package_log() -> str:
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,build_mode_internal",
         "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",
@@ -300,7 +300,7 @@ def abi_missing_package_log() -> str:
 
 def missing_aicpu_tar_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
         "json=present",
         "aicpu_tar=missing",
         "aicpu_tar_readable=missing",
@@ -320,7 +320,7 @@ def multi_candidate_payload_package_log() -> str:
         "",
         "root=/tmp/current-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
         "status=PASS",
         "",
         "status=PASS",
@@ -332,7 +332,7 @@ def multi_candidate_canary_only_package_log() -> str:
     return "\n".join([
         "root=/tmp/stale-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
         "status=FAIL",
         "",
         "root=/tmp/canary-cann",

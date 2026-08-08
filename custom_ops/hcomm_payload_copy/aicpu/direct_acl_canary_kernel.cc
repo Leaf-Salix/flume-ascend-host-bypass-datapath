@@ -94,6 +94,10 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {
   return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION;
 }
 
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion5() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 5U ? 1U : 0U;
+}
+
 extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {
   return FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
 }

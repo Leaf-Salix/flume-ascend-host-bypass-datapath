@@ -144,6 +144,9 @@ int main() {
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       "FlumeHcommPayloadCopySemanticVersion") == 0);
   FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion5") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);
   FLUME_TEST_CHECK(std::strcmp(

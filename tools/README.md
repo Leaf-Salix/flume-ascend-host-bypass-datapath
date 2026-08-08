@@ -233,7 +233,7 @@ canary-only 包或 payload 包不完整；如果同时出现
 `FlumeHcommPayloadCopyRequiresCommAcquire`，以及当前 device-visible status ABI
 marker `FlumeHcommPayloadStatusSchemaVersion` 和
 `FlumeHcommPayloadStatusWordCount`。旧包只声明
-`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic marker 时会被明确判为
+`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v5 marker 时会被明确判为
 stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
@@ -248,7 +248,7 @@ strict payload smoke。该检查还会确认 AICPU tar
 descriptor ABI、payload success-status schema/word-count 与 HCOMM comm
 acquire/release 语义 marker。默认 canary-only
 包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
-ABI v4 marker、semantic marker、comm-acquire marker 或 status schema marker 时不会被判为
+ABI v4 marker、semantic v5 marker、comm-acquire marker 或 status schema marker 时不会被判为
 payload-ready，避免把空包、坏包、stub 包、旧 ABI 包、旧语义包、缺 HCOMM
 comm acquire/release、旧 status ABI 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 

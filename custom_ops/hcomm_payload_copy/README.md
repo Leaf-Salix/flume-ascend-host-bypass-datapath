@@ -251,10 +251,11 @@ The package preflight treats the build as payload-ready only when the AICPU SO
 exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
 export the V4 payload function as a compatibility stub, but it is not accepted
 as a real payload package. Current payload-ready packages also export
-`FlumeHcommPayloadCopyAbiVersion4` and
-`FlumeHcommPayloadCopySemanticVersion`, and
-`FlumeHcommPayloadCopyRequiresCommAcquire`, plus
-`FlumeHcommPayloadStatusSchemaVersion` and
+`FlumeHcommPayloadCopyAbiVersion4`,
+`FlumeHcommPayloadCopySemanticVersion`,
+`FlumeHcommPayloadCopySemanticVersion5`,
+`FlumeHcommPayloadCopyRequiresCommAcquire`,
+`FlumeHcommPayloadStatusSchemaVersion`, and
 `FlumeHcommPayloadStatusWordCount`. These mark the descriptor ABI with HCCL
 comm-name handoff, descriptor echo words, the success-status schema where the
 second status word is written as `payload_kernel_hcomm_ret=0`, the expected
