@@ -199,14 +199,6 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   unsigned int result = kFlumePayloadSuccess;
   bool batch_started = false;
 
-  if (use_thread_notify) {
-    ret = HcommThreadNotifyWaitOnThread(thread, 0, desc.timeout_sec);
-    if (ret != 0) {
-      StorePayloadPrimitiveRet(desc, ret);
-      result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED;
-    }
-  }
-
   if (result == kFlumePayloadSuccess) {
     ret = HcommBatchModeStart(desc.batch_tag);
     if (ret != 0) {
@@ -217,8 +209,29 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     }
   }
 
+  if (result == kFlumePayloadSuccess && use_thread_notify) {
+    ret = HcommThreadNotifyWaitOnThread(thread, 0, desc.timeout_sec);
+    if (ret != 0) {
+      StorePayloadPrimitiveRet(desc, ret);
+      result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED;
+    }
+  }
+
   if (result == kFlumePayloadSuccess) {
     result = RunPayloadCopyBody(desc);
+  }
+  StorePayloadStatus(desc, result == kFlumePayloadSuccess ?
+                               kFlumePayloadSuccess :
+                               result);
+  if (use_thread_notify) {
+    ret = HcommThreadNotifyRecordOnThread(
+        thread, static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
+    if (ret != 0 && result == kFlumePayloadSuccess) {
+      StorePayloadPrimitiveRet(desc, ret);
+      StorePayloadStatus(
+          desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
+      result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED;
+    }
   }
   if (batch_started) {
     ret = HcommBatchModeEnd(desc.batch_tag);
@@ -231,16 +244,6 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     StorePayloadStatus(desc, kFlumePayloadSuccess);
   } else {
     StorePayloadStatus(desc, result);
-  }
-  if (use_thread_notify) {
-    ret = HcommThreadNotifyRecordOnThread(
-        thread, static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
-    if (ret != 0 && result == kFlumePayloadSuccess) {
-      StorePayloadPrimitiveRet(desc, ret);
-      StorePayloadStatus(
-          desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
-      result = FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED;
-    }
   }
   if (result == kFlumePayloadSuccess) {
     StorePayloadPrimitiveRet(desc, 0);

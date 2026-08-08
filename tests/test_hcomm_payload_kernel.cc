@@ -197,8 +197,8 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   const int thread_notify_send_calls[] = {
-      kAcquireComm, kThreadWait, kBatchStart, kLocalCopy, kNotifyRecord,
-      kNotifyWait, kBatchEnd, kThreadRecord, kReleaseComm};
+      kAcquireComm, kBatchStart, kThreadWait, kLocalCopy, kNotifyRecord,
+      kNotifyWait, kThreadRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_notify_send_calls, 9));
 
   Reset();
@@ -281,9 +281,27 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
   FLUME_TEST_CHECK(status[1] == 78U);
   const int thread_notify_failure_calls[] = {
-      kAcquireComm, kThreadWait, kBatchStart, kLocalCopy,
-      kBatchEnd, kThreadRecord, kReleaseComm};
+      kAcquireComm, kBatchStart, kThreadWait, kLocalCopy,
+      kThreadRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_notify_failure_calls, 7));
+
+  Reset();
+  thread_wait_ret = 79;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED);
+  FLUME_TEST_CHECK(status[1] == 79U);
+  const int thread_wait_failure_calls[] = {
+      kAcquireComm, kBatchStart, kThreadWait, kThreadRecord, kBatchEnd,
+      kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(thread_wait_failure_calls, 6));
 
   Reset();
   read_ret = 88;
