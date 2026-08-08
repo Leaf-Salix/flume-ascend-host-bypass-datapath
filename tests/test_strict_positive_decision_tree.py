@@ -295,6 +295,22 @@ def main() -> int:
             flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(fail_log_dir))
         assert not passed
 
+        pass_runner = flume_tool.Runner(tmp / "runner-pass")
+        flume_tool.RecordStrictPositiveEvidenceGate(
+            pass_runner, tree, True, required=True)
+        assert pass_runner.write_summary() == 0
+
+        fail_runner = flume_tool.Runner(tmp / "runner-fail")
+        flume_tool.RecordStrictPositiveEvidenceGate(
+            fail_runner, tree, False, required=True)
+        assert fail_runner.write_summary() == 1
+        evidence_logs = sorted(fail_runner.run_dir.glob(
+            "*-hcomm-payload-strict-evidence.log"))
+        assert evidence_logs
+        evidence_text = evidence_logs[-1].read_text(encoding="utf-8")
+        assert "strict_positive_evidence=failed" in evidence_text
+        assert "payload_kernel_hcomm_ret=0" in evidence_text
+
     return 0
 
 

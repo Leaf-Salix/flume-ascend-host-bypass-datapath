@@ -456,6 +456,27 @@ class Runner:
         print(f"[{marker}] {name}{optional} -> {log_path}")
         return result
 
+    def record_static(self, name: str, lines: Iterable[str], *,
+                      returncode: int, required: bool = True) -> StepResult:
+        self._step_index += 1
+        log_path = self.run_dir / f"{self._step_index:02d}-{name}.log"
+        with log_path.open("w", encoding="utf-8") as f:
+            f.write("$ internal evidence gate\n")
+            f.write(f"cwd: {REPO_ROOT}\n")
+            f.write(f"returncode: {returncode}\n")
+            f.write("duration_seconds: 0.000\n\n")
+            for line in lines:
+                f.write(line)
+                if not line.endswith("\n"):
+                    f.write("\n")
+        result = StepResult(name, ["internal", name], returncode, 0.0,
+                            log_path, required)
+        self.results.append(result)
+        marker = "ok" if result.returncode == 0 else "failed"
+        optional = "" if required else " optional"
+        print(f"[{marker}] {name}{optional} -> {log_path}")
+        return result
+
     def write_env_report(self) -> None:
         report = self.run_dir / "00-environment.txt"
         lines = [
@@ -1533,6 +1554,28 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
             strict_log, package_log)
 
 
+def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
+                                     *, required: bool) -> StepResult:
+    lines = [
+        f"decision_tree={tree}",
+        f"strict_positive_evidence={'passed' if passed else 'failed'}",
+    ]
+    if not passed:
+        lines.append(
+            "reason=missing complete Stage 3B.3E strict-positive evidence")
+        lines.append(
+            "required_markers=rank0/1 passed,stage3b3e_payload_copy=passed,"
+            "stage3b3e_direct_aclrt_payload_loader=passed,"
+            "stage3b3e_payload_descriptor_handoff=passed,"
+            "stage3b3e_direct_aclrt_payload_launch=passed,"
+            "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
+            "payload_status_word=0,payload_kernel_hcomm_ret=0,"
+            "payload_verify=passed,fallback=none")
+    return runner.record_static("hcomm-payload-strict-evidence", lines,
+                                returncode=0 if passed else 1,
+                                required=required)
+
+
 def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
     root = (Path(args.log_dir).expanduser() if args.log_dir else
             Path(args.log_root))
@@ -1663,12 +1706,15 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             timeout_seconds=args.step_timeout_sec,
         )
 
-    WriteMatrixDecisionTree(
+    tree = WriteMatrixDecisionTree(
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
         strict_result.log_path if strict_result is not None else None,
         package_result.log_path,
     )
+    RecordStrictPositiveEvidenceGate(
+        runner, tree, DecisionTreeStrictPositivePassed(tree),
+        required=package_payload_ready)
     note = runner.run_dir / "ASCEND_FULL_MATRIX_SCOPE.txt"
     note.write_text(
         "ascend-full-matrix builds once, runs local tests/sim, then runs a "
@@ -1788,12 +1834,14 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
 
-    WriteMatrixDecisionTree(
+    tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
         strict_result.log_path if strict_result is not None else None,
         package_result.log_path,
     )
+    RecordStrictPositiveEvidenceGate(
+        runner, tree, DecisionTreeStrictPositivePassed(tree), required=True)
     note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
     note.write_text(
         "hcomm-payload-strict-positive is the focused Stage 3B.3E gate. It "
