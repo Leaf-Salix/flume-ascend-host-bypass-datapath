@@ -410,6 +410,30 @@ def ResolveHcclSourceRoot(args: argparse.Namespace) -> Path:
     return (REPO_ROOT / "refer" / "cann-src" / "hccl").resolve()
 
 
+def CannToolkitCustomOpTemplateBuildScripts(
+        extra_roots: Optional[Iterable[str]] = None) -> list[Path]:
+    scripts: list[Path] = []
+    roots = AscendHomeCandidates(extra_roots)
+    roots.extend(sorted(Path("/usr/local/Ascend").glob("cann-*")))
+    for root in roots:
+        for rel in (
+                "tools/new_op_project_template/custom_op/build.sh",
+                "tools/op_project_templates/op_project_tmpl/build.sh",
+                "tools/op_project_templates/ascendc/aclnn/build.sh",
+                "tools/op_project_templates/ascendc/customize/build.sh"):
+            candidate = root / rel
+            if candidate.exists():
+                scripts.append(candidate)
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for script in scripts:
+        text = str(script)
+        if text not in seen:
+            seen.add(text)
+            unique.append(script)
+    return unique[:16]
+
+
 @dataclass
 class StepResult:
     name: str
@@ -1934,8 +1958,10 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline, and "
         "then requires real HCOMM payload copy. Success requires both ranks "
         "to pass with stage3b3e_payload_copy=passed, direct ACL payload launch/"
-        "sync passed, payload_kernel_status=success, payload_status_word=0, "
-        "payload_kernel_hcomm_ret=0, payload_verify=passed, and fallback=none.\n",
+        "sync passed, payload_kernel_status=success, payload_failure_step=none, "
+        "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
+        "markers, payload_echo=passed, source/received/expected checksum "
+        "match, payload_verify=passed, and fallback=none.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
@@ -2067,13 +2093,27 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     build_sh = hccl_source_root / "build.sh"
     if not build_sh.exists():
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        toolkit_scripts = CannToolkitCustomOpTemplateBuildScripts(
+            [args.custom_op_root])
+        toolkit_lines = "\n".join(
+            f"- {script}" for script in toolkit_scripts) or "- <not-found>"
         setup_log.write_text(
             "missing HCCL source build.sh for custom-op packaging\n"
             f"checked: {build_sh}\n"
             "Provide --hccl-source-root=<path-to-cann-hccl-source> or set "
             "FLUME_HCCL_SOURCE_ROOT. The source tree is only needed to run "
             "the CANN/HCCL custom-op packaging flow; Flume runtime tests do "
-            "not depend on the local refer/ clone.\n",
+            "not depend on the local refer/ clone.\n"
+            "\n"
+            "Detected CANN toolkit custom-op template build scripts:\n"
+            f"{toolkit_lines}\n"
+            "\n"
+            "These toolkit templates are useful for generating generic CANN "
+            "custom-op projects, but they are not a drop-in replacement for "
+            "the HCCL source build.sh flow used here because that flow accepts "
+            "--vendor, --ops, and --custom_ops_path and packages the "
+            "hcomm_payload layout expected by Flume. Clone/provide the CANN "
+            "HCCL source tree, then rerun hcomm-custom-op-build.\n",
             encoding="utf-8",
         )
         print(f"[failed] command setup -> {setup_log}")

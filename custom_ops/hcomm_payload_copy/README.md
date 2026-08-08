@@ -263,6 +263,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
 Strict-positive success must include
 `stage3b3e_payload_copy=passed`, `stage3b3e_direct_aclrt_payload_launch=passed`,
 `stage3b3e_payload_sync=passed`, `payload_kernel_status=success`,
-`payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
+`payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
 `payload_status_schema=v2`, `payload_status_word_count=8`,
-`payload_echo=passed`, `payload_verify=passed`, and `fallback=none` on both ranks.
+`payload_echo=passed`, source/received/expected checksum match,
+`payload_verify=passed`, and `fallback=none` on both ranks.
