@@ -1390,7 +1390,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | "
         "`rank 0/1 passed` + `stage3b3e_payload_copy=passed` + "
         "`payload_kernel_status=success` + `payload_status_word=0` + "
-        "`payload_verify=passed` + `fallback=none` |")
+        "`payload_kernel_hcomm_ret=0` + `payload_verify=passed` + "
+        "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_log is not None:

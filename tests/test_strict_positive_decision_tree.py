@@ -145,6 +145,7 @@ def main() -> int:
             pass_dir, smoke, strict_pass, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
+        assert "`payload_kernel_hcomm_ret=0`" in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",

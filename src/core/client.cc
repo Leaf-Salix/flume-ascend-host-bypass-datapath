@@ -2665,6 +2665,19 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadCompletionDetail(resource_info);
   }
+  if (kernel_hcomm_ret != 0) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=passed "
+                       "payload_batch_mode=on payload_kernel_status=success "
+                       "payload_status_word=0 payload_kernel_hcomm_ret=") +
+           std::to_string(kernel_hcomm_ret) + " kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           HcommPayloadCompletionDetail(resource_info);
+  }
   *status = FLUME_OK;
   return std::string("stage3b3e_payload_copy=passed "
                      "stage3b3e_direct_aclrt_payload_loader=passed "
