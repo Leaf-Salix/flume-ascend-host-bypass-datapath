@@ -136,6 +136,23 @@ def InspectAicpuTar(tar_path: Optional[Path]) -> tuple[str, str, int, str]:
             len(names), "")
 
 
+def HcommCustomOpPackageCommand(args: argparse.Namespace,
+                                require_payload: bool) -> list[str]:
+    command = [sys.executable, "tools/flume_tool.py"]
+    if args.custom_op_vendor:
+        command.append(f"--custom-op-vendor={args.custom_op_vendor}")
+    if args.custom_op_root:
+        command.append(f"--custom-op-root={args.custom_op_root}")
+    if args.custom_op_json:
+        command.append(f"--custom-op-json={args.custom_op_json}")
+    if args.custom_op_aicpu_tar:
+        command.append(f"--custom-op-aicpu-tar={args.custom_op_aicpu_tar}")
+    if require_payload:
+        command.append("--require-hcomm-payload-kernel")
+    command.append("hcomm-custom-op-package")
+    return command
+
+
 @dataclass
 class StepResult:
     name: str
@@ -907,6 +924,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     requested_hccl_smoke = (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                             args.run_hccl_p2p_smoke or
                             args.run_hcomm_channel_probe or
+                            args.run_hcomm_custom_op_launch_smoke or
+                            args.run_hcomm_resource_descriptor_smoke or
+                            args.run_hcomm_notify_only_smoke or
                             args.run_hcomm_payload_smoke or
                             args.run_storage_hbm_smoke)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
@@ -921,6 +941,14 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                 required=False,
                 timeout_seconds=args.step_timeout_sec,
             )
+    if args.run_hcomm_payload_smoke or args.run_hcomm_notify_only_smoke:
+        runner.run(
+            "hcomm-custom-op-package-preflight",
+            HcommCustomOpPackageCommand(
+                args, require_payload=args.hcomm_require_payload_copy),
+            required=False,
+            timeout_seconds=args.step_timeout_sec,
+        )
     try:
         command_specs = build_commands(args, enable_hccl=True,
                                        run_dir=runner.run_dir)
@@ -976,7 +1004,10 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "Pass --run-hcomm-payload-smoke to run the "
         "Stage 2.5 payload-readiness probe: it checks Channel resources and "
         "HCOMM primitive capability, then reports unsupported/fallback clearly "
-        "until Flume implements the custom-op/AICPU payload scheduler. Add "
+        "until Flume implements the custom-op/AICPU payload scheduler. "
+        "The tool also runs hcomm-custom-op-package-preflight before payload "
+        "or notify-only smoke so the log distinguishes missing/incomplete "
+        "custom-op packages from runtime launch or primitive failures. Add "
         "--hcomm-require-thread-export for a strict AICPU thread-export "
         "prerequisite check, which is expected to report unsupported on CANN "
         "builds without hccl_res_expt.h such as CANN 8.5. Add "
@@ -993,7 +1024,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
 
 
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
-                            strict_log: Optional[Path]) -> Path:
+                            strict_log: Optional[Path],
+                            package_log: Optional[Path]) -> Path:
     def read(path: Optional[Path]) -> str:
       if path is None:
           return ""
@@ -1004,6 +1036,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
 
     smoke = read(smoke_log)
     strict = read(strict_log)
+    package = read(package_log)
     lines = [
         "# Flume Ascend Full Matrix Decision Tree",
         "",
@@ -1038,6 +1071,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     scheduler_missing = ("hcomm_payload_scheduler=not-implemented" in caps or
                          "custom-op/AICPU scheduler" in smoke or
                          "custom-op launch" in smoke)
+    package_payload_ready = ("required=canary_direct_aclrt,payload_direct_aclrt" in
+                             package and "status=PASS" in package)
+    package_canary_ready = ("required=canary_direct_aclrt" in package and
+                            "status=PASS" in package)
+    package_status = "payload-ready" if package_payload_ready else (
+        "canary-ready" if package_canary_ready else (
+            "not-ready" if package else "not-checked"))
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
@@ -1064,6 +1104,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"{'pass' if hcomm_payload_ok else ('unsupported' if hcomm_payload_unsupported else 'no signal')} | "
         "`hcomm payload smoke` marker |")
     lines.append(
+        f"| HCOMM custom-op package payload-ready? | {package_status} | "
+        "`hcomm-custom-op-package-preflight` log |")
+    lines.append(
         f"| Storage to HBM fallback path ok? | {'yes' if storage_hbm_ok else 'no'} | "
         "`storage HBM smoke passed` marker |")
     lines.append(
@@ -1071,9 +1114,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     next_action = (
-        "implement custom-op/AICPU HCOMM payload scheduler"
-        if hccl_ok and p2p_ok and hcomm_channel_ok and hcomm_payload_unsupported
-        and storage_hbm_ok
+        "run strict Stage 3B.3E payload smoke with installed payload package"
+        if hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok
+        and package_payload_ready
+        else "build/install the Stage 3B.3E internal payload custom-op package"
+        if hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok
+        and hcomm_payload_unsupported and not package_payload_ready
         else "inspect first failed required matrix step"
     )
     lines.extend(["", f"next action: {next_action}", ""])
@@ -1107,6 +1153,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             required=False,
             timeout_seconds=args.step_timeout_sec,
         )
+    package_result = runner.run(
+        "hcomm-custom-op-package-preflight",
+        HcommCustomOpPackageCommand(args, require_payload=True),
+        required=False,
+        timeout_seconds=args.step_timeout_sec,
+    )
 
     matrix_args = copy.copy(args)
     matrix_args.run_hccl_smoke = False
@@ -1176,6 +1228,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
         strict_result.log_path if strict_result is not None else None,
+        package_result.log_path,
     )
     note = runner.run_dir / "ASCEND_FULL_MATRIX_SCOPE.txt"
     note.write_text(
@@ -1183,7 +1236,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "two-rank root-info smoke with HCCL collective, HCCL P2P fallback, "
         "HCOMM channel resource probe, and HCOMM payload readiness. It then "
         "runs --hcomm-require-payload-copy as an optional expected negative "
-        "until the custom-op/AICPU payload scheduler is implemented. The "
+        "until the custom-op/AICPU payload scheduler is implemented. Before "
+        "the smoke, it runs hcomm-custom-op-package-preflight to record "
+        "whether the installed package is canary-ready or payload-ready. The "
         "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
         "a local file slice into proxy HBM and sends it to rank1 compute HBM "
         "with HcclSend/HcclRecv. This validates storage integration plumbing, "

@@ -303,6 +303,13 @@ action is to rebuild the package with
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to debug HCOMM payload
 execution yet.
 
+`ascend-probe` records the same check as
+`hcomm-custom-op-package-preflight` when payload or notify-only smoke is
+requested. `ascend-full-matrix` runs the preflight in payload-required mode and
+adds the package state to `ASCEND_FULL_MATRIX_DECISION_TREE.md`: `not-ready`
+means rebuild/install the Stage 3B.3E package first, while `payload-ready`
+means the next meaningful test is strict payload smoke.
+
 Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
 toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the
 direct ACL route stops cleanly at `custom_op_package=missing` with

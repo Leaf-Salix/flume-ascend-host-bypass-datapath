@@ -137,6 +137,13 @@ canary-only 包或旧包，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，避免把空包或
 不完整包误判为 payload-ready。
 
+`ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
+`--run-hcomm-notify-only-smoke` 时会自动追加
+`hcomm-custom-op-package-preflight` 诊断步骤；`ascend-full-matrix` 会默认用
+payload-required 模式检查包体，并在
+`ASCEND_FULL_MATRIX_DECISION_TREE.md` 里标记 package 是 `not-ready`、
+`canary-ready` 还是 `payload-ready`。
+
 未安装 internal payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 
 ```bash
