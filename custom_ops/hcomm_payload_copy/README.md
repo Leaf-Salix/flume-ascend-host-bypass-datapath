@@ -299,7 +299,11 @@ HCOMM communicator by name. Payload-ready preflight also requires the AICPU SO
 to reference the HCOMM primitive symbols used by the payload path, including
 `HcommLocalCopyOnThread`, `HcommReadOnThread`, `HcommWriteOnThread`, HCOMM
 Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
-therefore not accepted as a real payload package.
+therefore not accepted as a real payload package. When the target host can load
+the tar-contained SO, preflight also calls the exported metadata functions and
+requires the current values: payload ABI v4, semantic v11, status schema v4,
+status word count 14, trace schema v2, trace word count 80, and
+comm-acquire marker 1.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and

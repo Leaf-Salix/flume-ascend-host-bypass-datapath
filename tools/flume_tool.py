@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import datetime as _dt
 import json
 import os
@@ -87,6 +88,25 @@ HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
+HCOMM_PAYLOAD_METADATA_EXPECTED = {
+    "payload_abi_version": (HCOMM_PAYLOAD_COPY_ABI_VERSION, 4),
+    "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
+    "payload_abi_version_v3": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, 1),
+    "payload_abi_version_v4": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, 1),
+    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 11),
+    "payload_semantic_version_v5": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, 1),
+    "payload_semantic_version_v6": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6, 1),
+    "payload_semantic_version_v7": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, 1),
+    "payload_semantic_version_v8": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8, 1),
+    "payload_semantic_version_v9": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9, 1),
+    "payload_semantic_version_v10": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10, 1),
+    "payload_semantic_version_v11": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, 1),
+    "payload_requires_comm_acquire": (HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, 1),
+    "payload_status_schema": (HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, 4),
+    "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 14),
+    "payload_trace_schema": (HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, 2),
+    "payload_trace_word_count": (HCOMM_PAYLOAD_TRACE_WORD_COUNT, 80),
+}
 
 
 def ResolveHcclInitMode(args: argparse.Namespace) -> str:
@@ -270,6 +290,54 @@ def InspectAicpuTarSymbols(
                                     output))
                for name in function_names}
     return ("present", symbols, "")
+
+
+def InspectAicpuTarFunctionValues(
+        tar_path: Optional[Path],
+        expected: dict[str, tuple[str, int]]
+) -> tuple[str, dict[str, tuple[str, Optional[int], int]], str]:
+    if tar_path is None or not tar_path.exists():
+        return ("not-checked", {}, "tar missing")
+    try:
+        with tarfile.open(tar_path, "r:*") as tar:
+            member = next((item for item in tar.getmembers()
+                           if Path(item.name).name == HCOMM_CUSTOM_OP_KERNEL_SO),
+                          None)
+            if member is None:
+                return ("not-checked", {}, "kernel so missing")
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                return ("unreadable", {}, "kernel so member is not a file")
+            with tempfile.TemporaryDirectory(prefix="flume-aicpu-values-") as tmp:
+                so_path = Path(tmp) / HCOMM_CUSTOM_OP_KERNEL_SO
+                so_path.write_bytes(extracted.read())
+                mode = getattr(os, "RTLD_LOCAL", 0)
+                mode |= getattr(os, "RTLD_LAZY", 0)
+                try:
+                    library = ctypes.CDLL(str(so_path), mode=mode)
+                except OSError as exc:
+                    return ("unreadable", {}, str(exc))
+                values: dict[str, tuple[str, Optional[int], int]] = {}
+                for label, (function_name, expected_value) in expected.items():
+                    try:
+                        func = getattr(library, function_name)
+                    except AttributeError:
+                        values[label] = ("missing", None, expected_value)
+                        continue
+                    func.argtypes = []
+                    func.restype = ctypes.c_uint
+                    try:
+                        value = int(func())
+                    except Exception as exc:  # pragma: no cover - platform ffi edge
+                        values[label] = (f"error:{exc}", None, expected_value)
+                        continue
+                    values[label] = (
+                        "match" if value == expected_value else "mismatch",
+                        value,
+                        expected_value)
+                return ("present", values, "")
+    except (OSError, tarfile.TarError) as exc:
+        return ("unreadable", {}, str(exc))
 
 
 def HcommCustomOpPackageCommand(args: argparse.Namespace,
@@ -5566,6 +5634,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_trace_schema_marker = False
     found_payload_trace_word_count_marker = False
     found_payload_primitive_deps_marker = False
+    found_payload_metadata_values_valid = False
+    found_payload_metadata_value_mismatch = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -5624,9 +5694,15 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_so_symbols={symbol_state}")
         if symbol_error:
             print(f"aicpu_tar_so_symbols_error={symbol_error}")
+        value_state, function_values, value_error = InspectAicpuTarFunctionValues(
+            tar_path, HCOMM_PAYLOAD_METADATA_EXPECTED)
+        print(f"aicpu_tar_so_function_values={value_state}")
+        if value_error:
+            print(f"aicpu_tar_so_function_values_error={value_error}")
 
         functions_present: dict[str, bool] = {}
         primitive_deps_present = False
+        metadata_values_valid = False
         legacy_payload_present = False
         if json_exists and json_path is not None:
             found_any_json = True
@@ -5839,6 +5915,24 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                           f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
                 print("payload_primitive_deps="
                       f"{'present' if primitive_deps_present else 'missing'}")
+            if value_state == "present":
+                metadata_values_valid = all(
+                    state == "match"
+                    for state, _value, _expected in function_values.values())
+                found_payload_metadata_values_valid = (
+                    found_payload_metadata_values_valid or
+                    metadata_values_valid)
+                found_payload_metadata_value_mismatch = (
+                    found_payload_metadata_value_mismatch or
+                    not metadata_values_valid)
+                for label, (state, value, expected_value) in function_values.items():
+                    function_name = HCOMM_PAYLOAD_METADATA_EXPECTED[label][0]
+                    value_text = "missing" if value is None else str(value)
+                    print(f"function_value.{label}.{function_name}="
+                          f"{value_text} expected={expected_value} "
+                          f"status={state}")
+                print("payload_metadata_values="
+                      f"{'match' if metadata_values_valid else 'mismatch'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -5886,6 +5980,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT, False) and
                     primitive_deps_present)
+                if value_state == "present":
+                    required_ok = required_ok and metadata_values_valid
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
@@ -6090,6 +6186,27 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "trace schema marker")
                 print("action=rebuild package with current Flume payload "
                       "kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  found_payload_status_schema_marker and
+                  found_payload_status_word_count_marker and
+                  found_payload_trace_schema_marker and
+                  found_payload_trace_word_count_marker and
+                  found_payload_metadata_value_mismatch and
+                  not found_payload_metadata_values_valid):
+                print("reason=payload kernel package metadata function returned "
+                      "unexpected value")
+                print("action=rebuild package with current Flume payload "
+                      "kernel and headers")
             elif (found_internal_payload_marker and
                   found_payload_abi_version_marker and
                   found_payload_semantic_marker and

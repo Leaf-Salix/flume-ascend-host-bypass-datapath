@@ -40,22 +40,22 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
     ]
-    if mode == "v4":
+    if mode in ("v4", "wrong_values"):
         lines.extend([
             "typedef unsigned long long ThreadHandle;",
             "typedef unsigned long long ChannelHandle;",
-            "int HcommAcquireComm(const char*);",
-            "int HcommReleaseComm(const char*);",
-            "int HcommBatchModeStart(const char*);",
-            "int HcommBatchModeEnd(const char*);",
-            "int HcommLocalCopyOnThread(ThreadHandle, void*, const void*, unsigned long long);",
-            "int HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, unsigned long long);",
-            "int HcommWriteOnThread(ThreadHandle, ChannelHandle, void*, const void*, unsigned long long);",
-            "int HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, unsigned int);",
-            "int HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, unsigned int, unsigned int);",
-            "int HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);",
-            "int HcommThreadNotifyRecordOnThread(ThreadHandle, ThreadHandle, unsigned int);",
-            "int HcommThreadNotifyWaitOnThread(ThreadHandle, unsigned int, unsigned int);",
+            "int HcommAcquireComm(const char* a) { (void)a; return 0; }",
+            "int HcommReleaseComm(const char* a) { (void)a; return 0; }",
+            "int HcommBatchModeStart(const char* a) { (void)a; return 0; }",
+            "int HcommBatchModeEnd(const char* a) { (void)a; return 0; }",
+            "int HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, unsigned long long d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
+            "int HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
+            "int HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
+            "int HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
+            "int HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, unsigned int c, unsigned int d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
+            "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
+            "int HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
+            "int HcommThreadNotifyWaitOnThread(ThreadHandle a, unsigned int b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {",
             "  char a[8] = {0};",
             "  char b[8] = {0};",
@@ -107,10 +107,13 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyAbiVersion4(void) { return 1; }"
         )
+    semantic_value = "10" if mode == "wrong_values" else "11"
+    status_schema_value = "3" if mode == "wrong_values" else "4"
+    status_word_count_value = "8" if mode == "wrong_values" else "14"
     if mode not in ("legacy", "stale_v2"):
         lines.append(
             "unsigned int FlumeHcommPayloadCopySemanticVersion(void) "
-            "{ return 8; }"
+            f"{{ return {semantic_value}; }}"
         )
     if mode not in ("legacy", "stale_v2", "stale_semantic"):
         lines.append(
@@ -170,11 +173,11 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
                     "stale_v4_no_status_schema"):
         lines.append(
             "unsigned int FlumeHcommPayloadStatusSchemaVersion(void) "
-            "{ return 2; }"
+            f"{{ return {status_schema_value}; }}"
         )
         lines.append(
             "unsigned int FlumeHcommPayloadStatusWordCount(void) "
-            "{ return 8; }"
+            f"{{ return {status_word_count_value}; }}"
         )
     if mode not in ("legacy", "stale_v2", "stale_v3",
                     "stale_v8_no_trace_schema"):
@@ -803,6 +806,10 @@ def main() -> int:
         assert "function_so.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
         assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
+        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=11 expected=11 status=match" in v4.stdout
+        assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=4 expected=4 status=match" in v4.stdout
+        assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=14 expected=14 status=match" in v4.stdout
+        assert "payload_metadata_values=match" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
@@ -811,6 +818,21 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
+
+        wrong_values_json, wrong_values_tar = write_package(
+            tmp, mode="wrong_values")
+        wrong_values = run_preflight(repo, wrong_values_json, wrong_values_tar)
+        if wrong_values.returncode == 0:
+            print(wrong_values.stdout)
+            print(wrong_values.stderr, file=sys.stderr)
+            raise AssertionError("package with wrong metadata values passed")
+        assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
+        assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
+        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=10 expected=11 status=mismatch" in wrong_values.stdout
+        assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=3 expected=4 status=mismatch" in wrong_values.stdout
+        assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=14 status=mismatch" in wrong_values.stdout
+        assert "payload_metadata_values=mismatch" in wrong_values.stdout
+        assert "reason=payload kernel package metadata function returned unexpected value" in wrong_values.stdout
 
         installed_json = (
             tmp / "runtime" / "opp" / "vendors" / "flume" / "aicpu" /
