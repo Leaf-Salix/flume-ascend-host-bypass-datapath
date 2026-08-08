@@ -1894,6 +1894,34 @@ void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
   desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
 }
 
+void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
+                              const CommState& state,
+                              uint32_t peer_rank,
+                              const HcommChannelResourceInfo& resource_info,
+                              void* user_buffer,
+                              uint64_t bytes,
+                              flume_hcomm_payload_copy_desc_v1* desc) {
+  flume_hcomm_payload_copy_desc_init(desc);
+  desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
+                   FLUME_HCOMM_NOTIFY_ROLE_SEND :
+                   FLUME_HCOMM_NOTIFY_ROLE_RECV;
+  desc->local_rank = state.rank;
+  desc->peer_rank = peer_rank;
+  desc->rank_size = state.rank_size;
+  desc->ready_notify_idx = 0;
+  desc->done_notify_idx = 1;
+  desc->bytes = bytes;
+  desc->aicpu_thread = resource_info.aicpu_ts_thread;
+  desc->channel_handle = resource_info.channel_handle;
+  desc->user_buffer = reinterpret_cast<uint64_t>(user_buffer);
+  desc->local_hccl_buffer =
+      reinterpret_cast<uint64_t>(resource_info.local_buffer);
+  desc->remote_hccl_buffer =
+      reinterpret_cast<uint64_t>(resource_info.remote_buffer);
+  desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
+  desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
+}
+
 bool IsUnsupportedHcclLaunchResult(HcclResult result) {
   return result == HCCL_E_NOT_SUPPORT || result == HCCL_E_NOT_FOUND ||
          result == HCCL_E_UNAVAIL;
@@ -2072,7 +2100,179 @@ std::string MakeDirectAclrtCanaryBlockedDetail(
          " package_vendor=" + decision.package.vendor;
 }
 
+std::string MakeDirectAclrtPayloadBlockedDetail(
+    const HcommLauncherDecision& decision,
+    const std::string& reason) {
+  return std::string("stage3b3e_payload_copy=unsupported "
+                     "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                     "stage3b3e_payload_descriptor_handoff=blocked "
+                     "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+                     "reason=\"") +
+         reason + "\" custom_op_package=" +
+         (decision.package.installed ? "present" : "missing") +
+         " package_vendor=" + decision.package.vendor;
+}
+
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+std::string TryLaunchHcommPayloadCopyDirectAclrt(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    void* user_buffer,
+    uint64_t bytes,
+    const HcommChannelResourceInfo& resource_info,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  if (status == nullptr) {
+    return "stage3b3e_payload_copy=failed "
+           "stage3b3e_direct_aclrt_payload_loader=failed "
+           "reason=\"status pointer null\"";
+  }
+  if (!decision.package.installed) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(decision,
+                                               "custom_op_package missing");
+  }
+  if (acl_stream == nullptr || user_buffer == nullptr || bytes == 0) {
+    *status = FLUME_ERR_INVALID_ARGUMENT;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "invalid stream, buffer, or byte count");
+  }
+  if (resource_info.aicpu_ts_thread == 0 || resource_info.channel_handle == 0) {
+    *status = FLUME_ERR_UNSUPPORTED;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "missing AICPU_TS thread or HCOMM channel handle");
+  }
+  if (bytes > resource_info.usable_buffer_bytes) {
+    *status = FLUME_ERR_INVALID_ARGUMENT;
+    return MakeDirectAclrtPayloadBlockedDetail(
+        decision, "payload bytes exceed usable HCCL buffer size");
+  }
+
+  flume_hcomm_payload_copy_desc_v1 desc = {};
+  FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
+                           bytes, &desc);
+
+  aclrtBinHandle bin_handle = nullptr;
+  aclrtBinaryLoadOption option = {};
+  option.type = ACL_RT_BINARY_LOAD_OPT_CPU_KERNEL_MODE;
+  option.value.cpuKernelMode = 0;
+  aclrtBinaryLoadOptions load_options = {};
+  load_options.options = &option;
+  load_options.numOpt = 1;
+  aclError acl_ret =
+      aclrtBinaryLoadFromFile(decision.package.json_path.c_str(), &load_options,
+                              &bin_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=failed "
+                       "api=aclrtBinaryLoadFromFile error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" custom_op_package=present package_vendor=" +
+           decision.package.vendor;
+  }
+
+  aclrtFuncHandle func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
+      &func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           " custom_op_package=present package_vendor=" +
+           decision.package.vendor;
+  }
+
+  aclrtArgsHandle args_handle = nullptr;
+  acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsInit error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtParamHandle param_handle = nullptr;
+  acl_ret =
+      aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsAppend error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  acl_ret = aclrtKernelArgsFinalize(args_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "api=aclrtKernelArgsFinalize error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = desc.timeout_sec;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  acl_ret = aclrtLaunchKernelWithConfig(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
+      nullptr);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=failed "
+                       "api=aclrtLaunchKernelWithConfig error=\"") +
+           AclErrorMessage(acl_ret) + "\" kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
+
+  acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=failed "
+                       "api=aclrtSynchronizeStream error=\"") +
+           AclErrorMessage(acl_ret) + "\" kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+  }
+
+  (void)aclrtBinaryUnLoad(bin_handle);
+  *status = FLUME_OK;
+  return std::string("stage3b3e_payload_copy=passed "
+                     "stage3b3e_direct_aclrt_payload_loader=passed "
+                     "stage3b3e_payload_descriptor_handoff=passed "
+                     "stage3b3e_direct_aclrt_payload_launch=passed "
+                     "stage3b3e_payload_sync=passed kernel_func=") +
+         FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
+}
+
 std::string TryLaunchHcommDirectAclrtCanary(
     const CommState& state,
     uint32_t peer_rank,
@@ -2342,6 +2542,35 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
          FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
 }
 #else
+std::string TryLaunchHcommPayloadCopyDirectAclrt(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    void* acl_stream,
+    void* user_buffer,
+    uint64_t bytes,
+    const HcommChannelResourceInfo& resource_info,
+    const HcommLauncherDecision& decision,
+    int* status) {
+  (void)role;
+  (void)state;
+  (void)peer_rank;
+  (void)acl_stream;
+  (void)user_buffer;
+  (void)bytes;
+  (void)resource_info;
+  if (status != nullptr) {
+    *status = FLUME_ERR_UNSUPPORTED;
+  }
+#if FLUME_BUILD_HCOMM_CUSTOM_OP
+  return MakeDirectAclrtPayloadBlockedDetail(
+      decision, "ACL runtime custom-op launch APIs unavailable");
+#else
+  return MakeDirectAclrtPayloadBlockedDetail(decision,
+                                             "custom-op build disabled");
+#endif
+}
+
 std::string TryLaunchHcommDirectAclrtCanary(
     const CommState& state,
     uint32_t peer_rank,
@@ -3900,6 +4129,7 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
   HcommProbeOptions options;
+  options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
@@ -3913,23 +4143,25 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
   std::string plan_detail = MakeHcommPayloadPlanDetail(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, bytes,
       detail);
-#if FLUME_HAVE_HCOMM_PRIMITIVES
+  int launch_status = FLUME_ERR_BACKEND;
+  HcommLauncherDecision launcher = DecideHcommLauncherBackend();
+  std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
+      flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, acl_stream,
+      static_cast<uint8_t*>(src->ptr) + src_offset, bytes, resource_info,
+      launcher, &launch_status);
   *out = MakeIo(
-      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload send reached ChannelReady/PrimitiveReady, "
-                  "but custom-op launch is not implemented; fallback=") +
-          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; " + plan_detail);
+      launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
+      0,
+      std::string(launch_status == FLUME_OK ?
+                      "HCOMM payload send completed via custom-op/AICPU; "
+                      "fallback=none; " :
+                      "HCOMM payload send custom-op/AICPU path unavailable; "
+                      "fallback=") +
+          (launch_status == FLUME_OK ?
+               "" :
+               (FLUME_HAVE_HCCL_P2P ? "hccl-p2p; " : "none; ")) +
+          launch_detail + "; " + plan_detail);
   return FLUME_OK;
-#else
-  *out = MakeIo(
-      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload primitives are unavailable in this build; "
-                  "fallback=") +
-          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; " + plan_detail);
-  return FLUME_OK;
-#endif
 #else
   (void)acl_stream;
   *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
@@ -3988,6 +4220,7 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
   HcommProbeOptions options;
+  options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
@@ -4001,23 +4234,25 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
   std::string plan_detail = MakeHcommPayloadPlanDetail(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, bytes,
       detail);
-#if FLUME_HAVE_HCOMM_PRIMITIVES
+  int launch_status = FLUME_ERR_BACKEND;
+  HcommLauncherDecision launcher = DecideHcommLauncherBackend();
+  std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
+      flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, acl_stream,
+      static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes, resource_info,
+      launcher, &launch_status);
   *out = MakeIo(
-      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload recv reached ChannelReady/PrimitiveReady, "
-                  "but custom-op launch is not implemented; fallback=") +
-          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; " + plan_detail);
+      launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
+      0,
+      std::string(launch_status == FLUME_OK ?
+                      "HCOMM payload recv completed via custom-op/AICPU; "
+                      "fallback=none; " :
+                      "HCOMM payload recv custom-op/AICPU path unavailable; "
+                      "fallback=") +
+          (launch_status == FLUME_OK ?
+               "" :
+               (FLUME_HAVE_HCCL_P2P ? "hccl-p2p; " : "none; ")) +
+          launch_detail + "; " + plan_detail);
   return FLUME_OK;
-#else
-  *out = MakeIo(
-      FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload primitives are unavailable in this build; "
-                  "fallback=") +
-          (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none") +
-          "; " + plan_detail);
-  return FLUME_OK;
-#endif
 #else
   (void)acl_stream;
   *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,

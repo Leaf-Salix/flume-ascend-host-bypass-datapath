@@ -1348,9 +1348,44 @@ void RankMain(RankContext* ctx) {
       options.engine = ctx->hcomm_engine;
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export = ctx->hcomm_require_thread_export ? 1U : 0U;
-      if (!CheckFlume(flume_hcomm_payload_probe_ex(client, peer_rank, &options,
-                                                   stream, &hcomm_payload_io),
-                      "flume_hcomm_payload_probe", &error)) {
+      if (ctx->hcomm_require_payload_copy) {
+        if (ctx->rank == 1) {
+          auto* host = static_cast<float*>(host_buf);
+          for (uint64_t i = 0; i < ctx->count; ++i) {
+            host[i] = -1.0F;
+          }
+          if (!CheckAcl(aclrtMemcpy(
+                            reduce_recv, one_rank_bytes, host,
+                            one_rank_bytes, ACL_MEMCPY_HOST_TO_DEVICE),
+                        "aclrtMemcpy hcomm payload recv clear H2D", &error)) {
+            goto cleanup;
+          }
+        }
+        if (ctx->rank == 0) {
+          if (!CheckFlume(flume_hcomm_payload_send_async(
+                                client, reduce_send_buf,
+                                ctx->a3_symmetric ?
+                                    layout.reduce_send_offset : 0,
+                                ctx->count, FLUME_DTYPE_FP32, peer_rank,
+                                stream, &hcomm_payload_io),
+                          "flume_hcomm_payload_send_async", &error)) {
+            goto cleanup;
+          }
+        } else {
+          if (!CheckFlume(flume_hcomm_payload_recv_async(
+                                client, reduce_recv_buf,
+                                ctx->a3_symmetric ?
+                                    layout.reduce_recv_offset : 0,
+                                ctx->count, FLUME_DTYPE_FP32, peer_rank,
+                                stream, &hcomm_payload_io),
+                          "flume_hcomm_payload_recv_async", &error)) {
+            goto cleanup;
+          }
+        }
+      } else if (!CheckFlume(flume_hcomm_payload_probe_ex(
+                                 client, peer_rank, &options, stream,
+                                 &hcomm_payload_io),
+                             "flume_hcomm_payload_probe", &error)) {
         goto cleanup;
       }
       int wait_ret = flume_wait(hcomm_payload_io, -1);
@@ -1373,6 +1408,22 @@ void RankMain(RankContext* ctx) {
           error += detail;
         }
         goto cleanup;
+      }
+      if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy &&
+          ctx->rank == 1) {
+        auto* host = static_cast<float*>(host_buf);
+        if (!CheckAcl(aclrtMemcpy(host, one_rank_bytes, reduce_recv,
+                                  one_rank_bytes, ACL_MEMCPY_DEVICE_TO_HOST),
+                      "aclrtMemcpy hcomm payload recv D2H", &error)) {
+          goto cleanup;
+        }
+        for (uint64_t i = 0; i < ctx->count; ++i) {
+          float expected = static_cast<float>(1 + i);
+          if (host[i] != expected) {
+            error = "HCOMM payload copy verification failed";
+            goto cleanup;
+          }
+        }
       }
       std::ostringstream line;
       line << "rank " << ctx->rank

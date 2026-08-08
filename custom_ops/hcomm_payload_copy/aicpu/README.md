@@ -20,7 +20,25 @@ The older Stage 3B.3A notify-only experiment is:
 
 It is preserved behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`.
 
-It consumes `HcclP2pKernelParam`, decodes
+The Stage 3B.3E payload-copy experiment is also behind that option:
+
+- `payload_copy_kernel.cc`
+- exported function: `FlumeHcommPayloadCopyDirectAclrtKernel`
+
+It consumes `flume_hcomm_payload_copy_desc_v1`, then runs a pair-copy plan
+instead of a collective:
+
+```text
+send rank: HcommLocalCopyOnThread(src_hbm -> local_hccl_buffer)
+           HcommChannelNotifyRecordOnThread(ready)
+           HcommChannelNotifyWaitOnThread(done)
+
+recv rank: HcommChannelNotifyWaitOnThread(ready)
+           HcommReadOnThread(remote_hccl_buffer -> dst_hbm)
+           HcommChannelNotifyRecordOnThread(done)
+```
+
+The notify-only kernel consumes `HcclP2pKernelParam`, decodes
 `flume_hcomm_notify_only_desc_v1` from `opParams`, then runs:
 
 ```text

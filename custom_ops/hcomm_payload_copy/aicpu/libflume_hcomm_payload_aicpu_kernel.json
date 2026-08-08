@@ -19,5 +19,12 @@
       "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
       "functionName": "FlumeHcommCanaryDirectAclrtKernel"
     }
+  },
+  "FlumeHcommPayloadCopyDirectAclrtKernel": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyDirectAclrtKernel"
+    }
   }
 }

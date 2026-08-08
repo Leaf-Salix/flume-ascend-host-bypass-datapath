@@ -21,7 +21,14 @@ Current status:
   compiles this canary without `pkg_inc`, `hccl_launch.h`,
   `hcomm_primitives.h`, or `hccl_res_expt.h`. The older notify-only kernel is
   preserved behind `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`.
-- Payload copy is still not implemented in this custom-op path.
+- Stage 3B.3E adds the first true HCOMM pair-copy kernel:
+  `FlumeHcommPayloadCopyDirectAclrtKernel`. It is also behind
+  `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` because the kernel itself must
+  call `HcommLocalCopyOnThread`, `HcommReadOnThread`, and Channel Notify
+  primitives.
+- Payload copy now has an experimental kernel path, but it is not part of the
+  default no-internal-header canary build and still requires remote validation
+  with the internal HCOMM kernel package enabled.
 
 Target data-plane plan:
 
@@ -109,6 +116,20 @@ AICPU/custom-op kernel:
   record a canary token
 ```
 
+Stage 3B.3E payload-copy path:
+
+```text
+send rank kernel:
+  HcommLocalCopyOnThread(src_hbm -> local HCCL Buffer)
+  HcommChannelNotifyRecordOnThread(ready)
+  HcommChannelNotifyWaitOnThread(done)
+
+recv rank kernel:
+  HcommChannelNotifyWaitOnThread(ready)
+  HcommReadOnThread(remote HCCL Buffer -> dst_hbm)
+  HcommChannelNotifyRecordOnThread(done)
+```
+
 Expected markers:
 
 - success: `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`
@@ -119,6 +140,8 @@ Expected markers:
 - direct ACL launch: `stage3b3c_direct_aclrt_launch=passed|not-attempted|failed`
 - no-internal canary:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
+- payload copy:
+  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
 The AICPU kernel must still be packaged and deployed through the CANN/HCCL

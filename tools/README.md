@@ -82,18 +82,20 @@ python3 tools/flume_tool.py --build-dir build-hcomm-strict --run-hcomm-channel-p
 python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-该模式会追加 `--hcomm-payload-smoke`。它不是完整 payload copy；当前 Stage 2.5 骨架会复用 HCOMM Channel resource probe，再检查 `HcommLocalCopyOnThread` / `HcommReadOnThread` / Notify / Drain 这类 primitive 是否被当前 CANN 头文件暴露。CANN 8.5 上的预期结果是清晰的 readiness/unsupported 诊断：
+该模式会追加 `--hcomm-payload-smoke`。默认模式仍是 readiness probe：它会复用 HCOMM Channel resource probe，并报告当前 CANN/包状态是否足够进入 payload scheduler。未安装 payload kernel 时，预期结果是清晰的 readiness/unsupported 诊断：
 
 ```text
-hcomm payload smoke unsupported ... primitives=available fallback=hccl-p2p
-detail="HCOMM payload primitive symbols are available, but Flume Stage 3B has not implemented custom-op launch yet; fallback=hccl-p2p; stage3b_plan=pair-copy ..."
+hcomm payload smoke unsupported ... fallback=hccl-p2p
+detail="... stage3b_plan=pair-copy ..."
 ```
 
-这表示：HCOMM primitive 符号存在、Channel 前置资源可探测，Flume 也已经生成 pair-copy primitive 编排计划，但还没有实现真正的 custom-op/AICPU launch。默认情况下这不会被当作 CANN 环境失败。只有在未来已经实现真实 HCOMM payload copy 后，才应该追加严格模式：
+这表示：Channel 前置资源可探测，Flume 也已经生成 pair-copy primitive 编排计划，但当前环境还没有完成 payload scheduler。默认情况下这不会被当作 CANN 环境失败。要验证真正 HCOMM payload copy，追加严格模式：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
+
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。成功 marker 是 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
 当前代码下严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 

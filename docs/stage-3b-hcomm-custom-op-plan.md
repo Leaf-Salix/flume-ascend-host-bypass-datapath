@@ -41,7 +41,8 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
-| 3B.3 | execute HCOMM pair-copy primitives | `hcomm_payload_scheduler=custom-op-aicpu` and checksum pass | primitive call failure / stream sync failure |
+| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | `stage3b3e_payload_copy=passed` and checksum pass | payload kernel missing / primitive call failure / stream sync failure |
+| 3B.3 | stabilize HCOMM pair-copy scheduler as default payload backend | `hcomm_payload_scheduler=custom-op-aicpu` | environment-specific fallback remains required |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
 ## Stage 3B.1: Custom-Op Launch Readiness
@@ -238,6 +239,45 @@ stage3b3d_direct_aclrt_canary=passed
 This success marker means the public direct ACL custom-op canary path works. It
 does not mean `HcommChannelNotifyRecordOnThread`, `HcommChannelNotifyWaitOnThread`,
 or payload copy has executed.
+
+Stage 3B.3E wires the same direct ACL launch surface to the actual pair-copy
+primitive plan. Host code still does not call HCOMM primitives and does not
+reimplement HCCL collective behavior; it packages a byte-copy descriptor and
+launches the Flume custom-op kernel:
+
+```text
+send rank:
+  flume_hcomm_payload_send_async(src_hbm)
+  -> package flume_hcomm_payload_copy_desc_v1
+  -> FlumeHcommPayloadCopyDirectAclrtKernel
+  -> HcommLocalCopyOnThread(src_hbm -> local_hccl_buffer)
+  -> HcommChannelNotifyRecordOnThread(ready)
+  -> HcommChannelNotifyWaitOnThread(done)
+
+recv rank:
+  flume_hcomm_payload_recv_async(dst_hbm)
+  -> package flume_hcomm_payload_copy_desc_v1
+  -> FlumeHcommPayloadCopyDirectAclrtKernel
+  -> HcommChannelNotifyWaitOnThread(ready)
+  -> HcommReadOnThread(remote_hccl_buffer -> dst_hbm)
+  -> HcommChannelNotifyRecordOnThread(done)
+```
+
+The strict smoke path `--run-hcomm-payload-smoke --hcomm-require-payload-copy`
+now calls `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`
+instead of only running readiness probe. A passing result must include:
+
+```text
+stage3b3e_payload_copy=passed
+stage3b3e_direct_aclrt_payload_loader=passed
+stage3b3e_payload_descriptor_handoff=passed
+stage3b3e_direct_aclrt_payload_launch=passed
+stage3b3e_payload_sync=passed
+fallback=none
+```
+
+This is the first marker that should be treated as a real HCOMM payload-copy
+attempt. `stage3b3d_direct_aclrt_canary=passed` remains only a launcher canary.
 
 Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
 toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the

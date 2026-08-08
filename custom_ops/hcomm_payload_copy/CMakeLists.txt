@@ -5,7 +5,7 @@ find_package(AICPU REQUIRED)
 project(flume_hcomm_payload_copy LANGUAGES CXX AICPU ASC)
 
 option(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY
-  "Build the experimental notify-only AICPU kernel that depends on HCCL/HCOMM internal headers."
+  "Build the experimental HCOMM AICPU kernels that depend on HCCL/HCOMM internal headers."
   OFF)
 
 set(FLUME_HCOMM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -75,6 +75,7 @@ if(KERNEL_MODE)
   if(FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY)
     target_sources(flume_hcomm_payload_aicpu_kernel PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/notify_only_kernel.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/payload_copy_kernel.cc
     )
     target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
       ${FLUME_HCOMM_PAYLOAD_INTERNAL_INCLUDE_LIST}
