@@ -38,6 +38,9 @@ extern int calls[32];
 extern int call_count;
 extern char batch_start_tag[64];
 extern char batch_end_tag[64];
+extern uint32_t* status_probe_words;
+extern int status_probe_call;
+extern uint32_t status_observed_at_probe;
 
 void RecordCall(int call);
 

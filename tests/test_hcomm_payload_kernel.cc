@@ -22,8 +22,14 @@ int calls[32] = {};
 int call_count = 0;
 char batch_start_tag[64] = {};
 char batch_end_tag[64] = {};
+uint32_t* status_probe_words = nullptr;
+int status_probe_call = 0;
+uint32_t status_observed_at_probe = 0xFFFFFFFFU;
 
 void RecordCall(int call) {
+  if (status_probe_words != nullptr && call == status_probe_call) {
+    status_observed_at_probe = status_probe_words[0];
+  }
   if (call_count < static_cast<int>(sizeof(calls) / sizeof(calls[0]))) {
     calls[call_count++] = call;
   }
@@ -44,6 +50,9 @@ void Reset() {
   std::memset(calls, 0, sizeof(calls));
   std::memset(batch_start_tag, 0, sizeof(batch_start_tag));
   std::memset(batch_end_tag, 0, sizeof(batch_end_tag));
+  status_probe_words = nullptr;
+  status_probe_call = 0;
+  status_observed_at_probe = 0xFFFFFFFFU;
   call_count = 0;
 }
 
@@ -147,6 +156,19 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(batch_end_tag, "") == 0);
 
   Reset();
+  reset_status();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  status_probe_words = status;
+  status_probe_call = kLocalCopy;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status_observed_at_probe ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+
+  Reset();
   std::memset(user, 0, sizeof(user));
   std::memset(local, 0, sizeof(local));
   for (uint8_t i = 0; i < 16; ++i) {
@@ -169,6 +191,20 @@ int main() {
   const int recv_calls[] = {kAcquireComm, kBatchStart, kNotifyWait,
                             kRead, kNotifyRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(recv_calls, 7));
+
+  Reset();
+  std::memset(user, 0, sizeof(user));
+  reset_status();
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  status_probe_words = status;
+  status_probe_call = kRead;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status_observed_at_probe ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
 
   Reset();
   std::memset(user, 0, sizeof(user));
