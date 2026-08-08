@@ -12,43 +12,78 @@ constexpr unsigned int kFlumeKernelSuccess = 0;
 constexpr unsigned int kFlumeKernelInvalidArgument = 1;
 constexpr unsigned int kFlumeKernelHcommError = 2;
 
+bool HasNotifyDescHeader(const flume_hcomm_notify_only_desc_v1& desc) {
+  return desc.magic == FLUME_HCOMM_NOTIFY_ONLY_MAGIC &&
+         desc.version == FLUME_HCOMM_NOTIFY_ONLY_VERSION &&
+         desc.size == sizeof(flume_hcomm_notify_only_desc_v1);
+}
+
+void StoreNotifyStatus(const flume_hcomm_notify_only_desc_v1& desc,
+                       unsigned int status) {
+  if (!HasNotifyDescHeader(desc) || desc.status_word == 0) {
+    return;
+  }
+  auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
+  status_words[0] = status;
+}
+
+void StoreNotifyHcommRet(const flume_hcomm_notify_only_desc_v1& desc,
+                         int32_t ret) {
+  if (!HasNotifyDescHeader(desc) || desc.status_word == 0) {
+    return;
+  }
+  auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
+  status_words[1] = static_cast<unsigned int>(ret);
+}
+
 unsigned int RunNotifyOnlyDirectAcl(
     const flume_hcomm_notify_only_desc_v1& desc) {
-  if (desc.magic != FLUME_HCOMM_NOTIFY_ONLY_MAGIC ||
-      desc.version != FLUME_HCOMM_NOTIFY_ONLY_VERSION ||
-      desc.size != sizeof(flume_hcomm_notify_only_desc_v1) ||
-      desc.rank_size != 2 || desc.local_rank == desc.peer_rank ||
+  if (!HasNotifyDescHeader(desc) || desc.rank_size != 2 ||
+      desc.local_rank == desc.peer_rank ||
       desc.ready_notify_idx == desc.done_notify_idx ||
       desc.channel_handle == 0 || desc.aicpu_thread == 0) {
+    StoreNotifyStatus(desc, FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT);
     return kFlumeKernelInvalidArgument;
   }
+  StoreNotifyStatus(desc, FLUME_HCOMM_NOTIFY_STATUS_HCOMM_ERROR);
 
   ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
   ChannelHandle channel = static_cast<ChannelHandle>(desc.channel_handle);
   if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
-    if (HcommChannelNotifyRecordOnThread(
-            thread, channel, desc.ready_notify_idx) != 0) {
+    int32_t ret = HcommChannelNotifyRecordOnThread(
+        thread, channel, desc.ready_notify_idx);
+    if (ret != 0) {
+      StoreNotifyHcommRet(desc, ret);
       return kFlumeKernelHcommError;
     }
-    if (HcommChannelNotifyWaitOnThread(
-            thread, channel, desc.done_notify_idx, desc.timeout_sec) != 0) {
+    ret = HcommChannelNotifyWaitOnThread(
+        thread, channel, desc.done_notify_idx, desc.timeout_sec);
+    if (ret != 0) {
+      StoreNotifyHcommRet(desc, ret);
       return kFlumeKernelHcommError;
     }
+    StoreNotifyStatus(desc, FLUME_HCOMM_NOTIFY_STATUS_SUCCESS);
     return kFlumeKernelSuccess;
   }
 
   if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
-    if (HcommChannelNotifyWaitOnThread(
-            thread, channel, desc.ready_notify_idx, desc.timeout_sec) != 0) {
+    int32_t ret = HcommChannelNotifyWaitOnThread(
+        thread, channel, desc.ready_notify_idx, desc.timeout_sec);
+    if (ret != 0) {
+      StoreNotifyHcommRet(desc, ret);
       return kFlumeKernelHcommError;
     }
-    if (HcommChannelNotifyRecordOnThread(
-            thread, channel, desc.done_notify_idx) != 0) {
+    ret = HcommChannelNotifyRecordOnThread(
+        thread, channel, desc.done_notify_idx);
+    if (ret != 0) {
+      StoreNotifyHcommRet(desc, ret);
       return kFlumeKernelHcommError;
     }
+    StoreNotifyStatus(desc, FLUME_HCOMM_NOTIFY_STATUS_SUCCESS);
     return kFlumeKernelSuccess;
   }
 
+  StoreNotifyStatus(desc, FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT);
   return kFlumeKernelInvalidArgument;
 }
 

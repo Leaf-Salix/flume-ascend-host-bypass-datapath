@@ -13,6 +13,8 @@ int main() {
                 "payload descriptor must stay 64-bit aligned");
   static_assert(sizeof(flume_hcomm_notify_only_desc_v1) == 160,
                 "notify descriptor ABI size changed");
+  static_assert(offsetof(flume_hcomm_notify_only_desc_v1, status_word) == 96,
+                "notify status word offset changed");
   static_assert(sizeof(flume_hcomm_canary_desc_v1) == 96,
                 "canary descriptor ABI size changed");
   static_assert(offsetof(flume_hcomm_canary_desc_v1, status_word) == 32,
@@ -67,6 +69,12 @@ int main() {
                 "payload batch-end status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED == 12,
                 "payload thread-notify record status changed");
+  static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
+                "notify success status changed");
+  static_assert(FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT == 1,
+                "notify invalid-argument status changed");
+  static_assert(FLUME_HCOMM_NOTIFY_STATUS_HCOMM_ERROR == 2,
+                "notify hcomm-error status changed");
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
       "FlumeHcommPayloadCopyDirectAclrtKernelV2") == 0);
@@ -105,5 +113,6 @@ int main() {
   flume_hcomm_notify_only_desc_init(&notify);
   FLUME_TEST_CHECK(notify.magic == FLUME_HCOMM_NOTIFY_ONLY_MAGIC);
   FLUME_TEST_CHECK(notify.size == sizeof(flume_hcomm_notify_only_desc_v1));
+  FLUME_TEST_CHECK(notify.status_word == 0);
   return 0;
 }

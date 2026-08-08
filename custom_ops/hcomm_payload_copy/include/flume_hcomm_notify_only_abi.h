@@ -13,6 +13,9 @@ extern "C" {
 #define FLUME_HCOMM_NOTIFY_ONLY_KERNEL_FUNC "FlumeHcommNotifyOnlyAicpuKernel"
 #define FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC \
   "FlumeHcommNotifyOnlyDirectAclrtKernel"
+#define FLUME_HCOMM_NOTIFY_STATUS_SUCCESS 0U
+#define FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT 1U
+#define FLUME_HCOMM_NOTIFY_STATUS_HCOMM_ERROR 2U
 #define FLUME_HCOMM_CANARY_MAGIC 0x4643414eU
 #define FLUME_HCOMM_CANARY_VERSION 1U
 #define FLUME_HCOMM_CANARY_TOKEN 0x43414e59U
@@ -68,7 +71,8 @@ typedef struct {
   uint64_t remote_hccl_buffer;
   uint64_t local_hccl_buffer_bytes;
   uint64_t remote_hccl_buffer_bytes;
-  uint64_t reserved1[8];
+  uint64_t status_word;
+  uint64_t reserved1[7];
 } flume_hcomm_notify_only_desc_v1;
 
 typedef struct {

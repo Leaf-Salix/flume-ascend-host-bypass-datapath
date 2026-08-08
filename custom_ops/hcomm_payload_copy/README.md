@@ -146,6 +146,7 @@ Expected markers:
 - direct ACL loader: `stage3b3c_direct_aclrt_loader=passed|unsupported|failed`
 - direct ACL handoff: `stage3b3c_descriptor_handoff=passed|blocked|failed`
 - direct ACL launch: `stage3b3c_direct_aclrt_launch=passed|not-attempted|failed`
+- direct ACL notify status: `notify_kernel_status=success notify_status_word=0`
 - no-internal canary:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - payload copy:

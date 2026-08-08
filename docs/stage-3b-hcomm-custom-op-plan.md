@@ -37,7 +37,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.1 | no-op custom-op/AICPU launch readiness | `hcomm custom-op launch smoke passed` | `custom-op/AICPU scheduler build disabled` or `custom-op/AICPU scheduler launch missing` |
 | 3B.2 | package HCOMM resource descriptor and prepare custom-op handoff | `stage3b2_resource_descriptor=host-packaged` | `custom-op/AICPU descriptor handoff is missing` |
 | 3B.2-complete / 3B.3-prep | consume descriptor and run notify-only channel sync | `stage3b2_kernel_consume=passed` and `stage3b2_notify_only_plan=channel-notify` | `stage3b2_kernel_consume=missing` |
-| 3B.3A | true notify-only AICPU launch | `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed` | public launch API or custom-op package missing |
+| 3B.3A | true notify-only AICPU launch | `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed notify_kernel_status=success` | public launch API or custom-op package missing |
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
@@ -375,6 +375,11 @@ direct ACL route stops cleanly at `custom_op_package=missing` with
 `stage3b3c_direct_aclrt_loader=unsupported`,
 `stage3b3c_descriptor_handoff=blocked`, and
 `stage3b3c_direct_aclrt_launch=not-attempted`.
+When the direct ACL notify-only kernel is installed and executes successfully,
+the status-word proof adds `notify_kernel_status=success` and
+`notify_status_word=0`. If launch/sync pass but this status is not success,
+the custom-op route is alive and the next debugging target is the in-kernel
+HCOMM Notify sequence.
 
 A separate no-install toolkit package inspection found the same public-launch
 limitation in a newer CANN 9.0 package: public `hccl_launch.h` /

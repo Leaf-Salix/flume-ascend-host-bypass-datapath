@@ -2218,6 +2218,21 @@ std::string PayloadKernelStatusName(uint32_t status) {
   }
 }
 
+std::string NotifyKernelStatusName(uint32_t status) {
+  switch (status) {
+    case 0xFFFFFFFFU:
+      return "not-written";
+    case FLUME_HCOMM_NOTIFY_STATUS_SUCCESS:
+      return "success";
+    case FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT:
+      return "invalid-argument";
+    case FLUME_HCOMM_NOTIFY_STATUS_HCOMM_ERROR:
+      return "hcomm-error";
+    default:
+      return std::string("unknown-") + std::to_string(status);
+  }
+}
+
 std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
   return std::string(" package_vendor=") + decision.package.vendor +
          " package_source=" + decision.package.source;
@@ -2834,9 +2849,36 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
+  void* notify_status_dev = nullptr;
+  uint32_t notify_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+  acl_ret = aclrtMalloc(&notify_status_dev, sizeof(notify_status_words),
+                        ACL_MEM_MALLOC_HUGE_FIRST);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=failed "
+                       "api=aclrtMalloc(notify_status) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+  acl_ret = aclrtMemcpy(notify_status_dev, sizeof(notify_status_words),
+                        notify_status_words, sizeof(notify_status_words),
+                        ACL_MEMCPY_HOST_TO_DEVICE);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(notify_status_dev);
+    (void)aclrtBinaryUnLoad(bin_handle);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3c_direct_aclrt_loader=passed "
+                       "stage3b3c_descriptor_handoff=failed "
+                       "api=aclrtMemcpy(notify_status_h2d) error=\"") +
+           AclErrorMessage(acl_ret) + "\"";
+  }
+  desc.status_word = reinterpret_cast<uint64_t>(notify_status_dev);
+
   aclrtArgsHandle args_handle = nullptr;
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(notify_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
@@ -2849,6 +2891,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
   acl_ret =
       aclrtKernelArgsAppend(args_handle, &desc, sizeof(desc), &param_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(notify_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
@@ -2859,6 +2902,7 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
 
   acl_ret = aclrtKernelArgsFinalize(args_handle);
   if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(notify_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
@@ -2877,15 +2921,65 @@ std::string TryLaunchHcommNotifyOnlyDirectAclrt(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
   if (acl_ret == ACL_SUCCESS) {
+    acl_ret = aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtFree(notify_status_dev);
+      (void)aclrtBinaryUnLoad(bin_handle);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3c_direct_aclrt_loader=passed "
+                         "stage3b3c_descriptor_handoff=passed "
+                         "stage3b3c_direct_aclrt_launch=passed "
+                         "stage3b3c_direct_aclrt_sync=failed "
+                         "api=aclrtSynchronizeStream error=\"") +
+             AclErrorMessage(acl_ret) + "\" kernel_func=" +
+             FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+    acl_ret = aclrtMemcpy(notify_status_words, sizeof(notify_status_words),
+                          notify_status_dev, sizeof(notify_status_words),
+                          ACL_MEMCPY_DEVICE_TO_HOST);
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtFree(notify_status_dev);
+      (void)aclrtBinaryUnLoad(bin_handle);
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3c_direct_aclrt_loader=passed "
+                         "stage3b3c_descriptor_handoff=passed "
+                         "stage3b3c_direct_aclrt_launch=passed "
+                         "stage3b3c_direct_aclrt_sync=failed "
+                         "api=aclrtMemcpy(notify_status_d2h) error=\"") +
+             AclErrorMessage(acl_ret) + "\" kernel_func=" +
+             FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
+    (void)aclrtFree(notify_status_dev);
     (void)aclrtBinaryUnLoad(bin_handle);
+    const uint32_t notify_status = notify_status_words[0];
+    const uint32_t notify_hcomm_ret = notify_status_words[1];
+    if (notify_status != 0) {
+      *status = FLUME_ERR_BACKEND;
+      return std::string("stage3b3c_direct_aclrt_loader=passed "
+                         "stage3b3c_descriptor_handoff=passed "
+                         "stage3b3c_direct_aclrt_launch=passed "
+                         "stage3b3c_direct_aclrt_sync=passed "
+                         "stage3b2_kernel_consume=failed "
+                         "notify_kernel_status=") +
+             NotifyKernelStatusName(notify_status) +
+             " notify_status_word=" +
+             std::to_string(notify_status) +
+             " notify_kernel_hcomm_ret=" +
+             std::to_string(notify_hcomm_ret) + " kernel_func=" +
+             FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
+    }
     *status = FLUME_OK;
     return std::string("stage3b3c_direct_aclrt_loader=passed "
                        "stage3b3c_descriptor_handoff=passed "
                        "stage3b3c_direct_aclrt_launch=passed "
-                       "stage3b2_kernel_consume=passed kernel_func=") +
+                       "stage3b3c_direct_aclrt_sync=passed "
+                       "stage3b2_kernel_consume=passed "
+                       "notify_kernel_status=success "
+                       "notify_status_word=0 kernel_func=") +
            FLUME_HCOMM_NOTIFY_ONLY_DIRECT_ACLRT_KERNEL_FUNC;
   }
 
+  (void)aclrtFree(notify_status_dev);
   (void)aclrtBinaryUnLoad(bin_handle);
   *status = FLUME_ERR_BACKEND;
   return std::string("stage3b3c_direct_aclrt_loader=passed "
