@@ -343,6 +343,8 @@ int main() {
   auto fence = &HcommChannelFenceOnThread;
   auto batch_start = &HcommBatchModeStart;
   auto batch_end = &HcommBatchModeEnd;
+  auto acquire_comm = &HcommAcquireComm;
+  auto release_comm = &HcommReleaseComm;
   auto thread_notify_wait = &HcommThreadNotifyWaitOnThread;
   auto thread_notify_record = &HcommThreadNotifyRecordOnThread;
   (void)thread;
@@ -355,6 +357,8 @@ int main() {
   (void)fence;
   (void)batch_start;
   (void)batch_end;
+  (void)acquire_comm;
+  (void)release_comm;
   (void)thread_notify_wait;
   (void)thread_notify_record;
   return 0;
