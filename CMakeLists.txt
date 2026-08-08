@@ -315,6 +315,10 @@ int main() {
   auto notify_record = &HcommChannelNotifyRecordOnThread;
   auto notify_wait = &HcommChannelNotifyWaitOnThread;
   auto drain = &HcommChannelDrainOnThread;
+  auto batch_start = &HcommBatchModeStart;
+  auto batch_end = &HcommBatchModeEnd;
+  auto thread_notify_wait = &HcommThreadNotifyWaitOnThread;
+  auto thread_notify_record = &HcommThreadNotifyRecordOnThread;
   (void)thread;
   (void)channel;
   (void)ptr;
@@ -323,6 +327,10 @@ int main() {
   (void)notify_record;
   (void)notify_wait;
   (void)drain;
+  (void)batch_start;
+  (void)batch_end;
+  (void)thread_notify_wait;
+  (void)thread_notify_record;
   return 0;
 }
 " FLUME_HAVE_HCOMM_PRIMITIVES)
