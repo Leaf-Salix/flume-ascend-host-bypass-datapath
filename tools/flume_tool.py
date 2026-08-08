@@ -29,7 +29,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
     "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
     "canary_direct_aclrt": "FlumeHcommCanaryDirectAclrtKernel",
-    "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernel",
+    "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
 }
 
 

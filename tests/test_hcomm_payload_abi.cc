@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "flume_hcomm_notify_only_abi.h"
 
@@ -61,6 +62,12 @@ int main() {
                 "payload batch-end status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED == 12,
                 "payload thread-notify record status changed");
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
+      "FlumeHcommPayloadCopyDirectAclrtKernelV2") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_LEGACY,
+      "FlumeHcommPayloadCopyDirectAclrtKernel") == 0);
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);

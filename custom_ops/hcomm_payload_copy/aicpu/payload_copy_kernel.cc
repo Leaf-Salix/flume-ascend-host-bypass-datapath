@@ -176,10 +176,14 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
 
 }  // namespace
 
-extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
   if (param == nullptr) {
     return kFlumePayloadInvalidArgument;
   }
   auto* desc = static_cast<flume_hcomm_payload_copy_desc_v1*>(param);
   return RunPayloadCopy(*desc);
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
+  return FlumeHcommPayloadCopyDirectAclrtKernelV2(param);
 }
