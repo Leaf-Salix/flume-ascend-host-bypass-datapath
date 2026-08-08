@@ -6380,6 +6380,18 @@ def parse_args() -> argparse.Namespace:
                               "batch tag; non-empty tags test alternate CANN "
                               "tag caching compatibility without disabling "
                               "batch mode."))
+    parser.add_argument("--auto-run-hcomm-payload-candidate-matrix",
+                        action="store_true",
+                        help=("Shortcut for the focused strict-positive "
+                              "gates: when the default HCOMM payload copy "
+                              "fails, automatically run all built-in "
+                              "candidate/diagnostic variants that can help "
+                              "identify a passing primitive path or isolate "
+                              "the first failing HCOMM primitive. This expands "
+                              "to channel-handle, write-path, channel-fence, "
+                              "no-batch, tagged-batch, direct-output, and "
+                              "no-comm-acquire runs; it does not weaken the "
+                              "strict-positive evidence gate."))
     parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
@@ -6613,6 +6625,14 @@ def parse_args() -> argparse.Namespace:
                                 "and AICPU package"))
 
     args = parser.parse_args()
+    if args.auto_run_hcomm_payload_candidate_matrix:
+        args.auto_run_hcomm_payload_channel_handle_candidate = True
+        args.auto_run_hcomm_payload_write_path_candidate = True
+        args.auto_run_hcomm_payload_channel_fence_diagnostic = True
+        args.auto_run_hcomm_payload_nobatch_diagnostic = True
+        args.auto_run_hcomm_payload_tagged_diagnostic = True
+        args.auto_run_hcomm_payload_direct_output_diagnostic = True
+        args.auto_run_hcomm_payload_no_comm_acquire_diagnostic = True
     args.hccl_host_ifname = args.hccl_host_ifname.strip()
     args.hccl_host_ip = args.hccl_host_ip.strip()
     if args.hccl_smoke_timeout_sec < 0:

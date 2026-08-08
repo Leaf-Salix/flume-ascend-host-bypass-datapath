@@ -598,13 +598,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
-  --auto-run-hcomm-payload-channel-handle-candidate \
-  --auto-run-hcomm-payload-write-path-candidate \
-  --auto-run-hcomm-payload-channel-fence-diagnostic \
-  --auto-run-hcomm-payload-nobatch-diagnostic \
-  --auto-run-hcomm-payload-tagged-diagnostic \
-  --auto-run-hcomm-payload-direct-output-diagnostic \
-  --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
+  --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
 ```
@@ -618,6 +612,11 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 `payload_kernel_hcomm_ret=0`、`payload_status_schema=v4`、`payload_status_word_count=14`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`、`payload_data_flow=passed`、`payload_host_data=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_result=success`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`, `payload_semantic_v11=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
+`--auto-run-hcomm-payload-candidate-matrix` 是远端调试推荐开关：默认
+strict-positive 失败后，它会自动尝试 channel-handle、write-path、
+channel-fence、no-batch、tagged-batch、direct-output 和 no-comm-acquire
+组合。只有产生完整 checksum/trace/`fallback=none` 证据的候选才能让最终
+gate 通过；诊断候选只用于定位失败 primitive，不会放宽成功标准。
 
 Stage 3B.4 storage-over-HCOMM focused gate：
 
@@ -628,13 +627,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
-  --auto-run-hcomm-payload-channel-handle-candidate \
-  --auto-run-hcomm-payload-write-path-candidate \
-  --auto-run-hcomm-payload-channel-fence-diagnostic \
-  --auto-run-hcomm-payload-nobatch-diagnostic \
-  --auto-run-hcomm-payload-tagged-diagnostic \
-  --auto-run-hcomm-payload-direct-output-diagnostic \
-  --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
+  --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-storage-strict-positive
 ```

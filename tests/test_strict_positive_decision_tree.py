@@ -651,6 +651,25 @@ def main() -> int:
         assert "--hcomm-require-payload-copy" in smoke_command
         assert "--hcomm-payload-batch-tag=flume-payload-v1" in smoke_command
 
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--hccl-devices", "0,1",
+                "--auto-run-hcomm-payload-candidate-matrix",
+                "hcomm-payload-strict-positive",
+            ]
+            matrix_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert matrix_args.auto_run_hcomm_payload_channel_handle_candidate
+        assert matrix_args.auto_run_hcomm_payload_write_path_candidate
+        assert matrix_args.auto_run_hcomm_payload_channel_fence_diagnostic
+        assert matrix_args.auto_run_hcomm_payload_nobatch_diagnostic
+        assert matrix_args.auto_run_hcomm_payload_tagged_diagnostic
+        assert matrix_args.auto_run_hcomm_payload_direct_output_diagnostic
+        assert matrix_args.auto_run_hcomm_payload_no_comm_acquire_diagnostic
+
         strict_pass = write(tmp / "strict-pass.log", strict_log(True))
         pass_dir = tmp / "pass"
         pass_dir.mkdir()
