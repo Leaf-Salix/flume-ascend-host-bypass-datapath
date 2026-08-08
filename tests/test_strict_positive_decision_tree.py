@@ -222,6 +222,41 @@ def missing_aicpu_tar_package_log() -> str:
     ])
 
 
+def multi_candidate_payload_package_log() -> str:
+    return "\n".join([
+        "root=/tmp/old-cann",
+        "vendor=flume",
+        "required=canary_direct_aclrt",
+        "status=PASS",
+        "",
+        "root=/tmp/current-cann",
+        "vendor=flume",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "status=PASS",
+        "",
+        "status=PASS",
+        "",
+    ])
+
+
+def multi_candidate_canary_only_package_log() -> str:
+    return "\n".join([
+        "root=/tmp/stale-cann",
+        "vendor=flume",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "status=FAIL",
+        "",
+        "root=/tmp/canary-cann",
+        "vendor=flume",
+        "required=canary_direct_aclrt",
+        "status=PASS",
+        "",
+        "status=FAIL",
+        "reason=payload kernel package is missing or incomplete",
+        "",
+    ])
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: test_strict_positive_decision_tree.py <repo-root>",
@@ -400,6 +435,34 @@ def main() -> int:
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "| HCOMM custom-op package reason | custom-op AICPU tar missing |" in text
         assert "matching AICPU tar are both present" in text
+
+        multi_payload_package = write(
+            tmp / "package-multi-candidate-payload.log",
+            multi_candidate_payload_package_log())
+        multi_payload_dir = tmp / "multi-candidate-payload"
+        multi_payload_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            multi_payload_dir, smoke, None, multi_payload_package)
+        text = tree.read_text(encoding="utf-8")
+        assert flume_tool.PackageTextPayloadReady(
+            multi_candidate_payload_package_log())
+        assert flume_tool.PackageTextCanaryReady(
+            multi_candidate_payload_package_log())
+        assert "| HCOMM custom-op package payload-ready? | payload-ready |" in text
+
+        multi_canary_package = write(
+            tmp / "package-multi-candidate-canary-only.log",
+            multi_candidate_canary_only_package_log())
+        multi_canary_dir = tmp / "multi-candidate-canary-only"
+        multi_canary_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            multi_canary_dir, smoke, None, multi_canary_package)
+        text = tree.read_text(encoding="utf-8")
+        assert not flume_tool.PackageTextPayloadReady(
+            multi_candidate_canary_only_package_log())
+        assert flume_tool.PackageTextCanaryReady(
+            multi_candidate_canary_only_package_log())
+        assert "| HCOMM custom-op package payload-ready? | canary-ready |" in text
 
         hcomm_storage_smoke = write(tmp / "smoke-hcomm-storage.log",
                                     smoke_with_hcomm_storage_path())

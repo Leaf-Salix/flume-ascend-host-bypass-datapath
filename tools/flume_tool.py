@@ -257,39 +257,49 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
     return command
 
 
+def PackageRequirementBlocks(package_text: str) -> list[tuple[set[str], str]]:
+    blocks: list[tuple[set[str], str]] = []
+    current_required: Optional[set[str]] = None
+    for raw_line in package_text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("required="):
+            required = line.split("=", 1)[1].split(",")
+            current_required = {item.strip() for item in required
+                                if item.strip()}
+            continue
+        if line.startswith("status=") and current_required is not None:
+            blocks.append((current_required, line.split("=", 1)[1].strip()))
+            current_required = None
+    return blocks
+
+
 def PackageTextPayloadReady(package_text: str) -> bool:
-    required_match = re.search(r"^required=([^\n]+)$", package_text,
-                               re.MULTILINE)
-    required = required_match.group(1).split(",") if required_match else []
-    required_set = {item.strip() for item in required if item.strip()}
-    return (
-        "status=PASS" in package_text and
-        "canary_direct_aclrt" in required_set and
-        "payload_direct_aclrt" in required_set and
-        "payload_abi_v4" in required_set and
-        "payload_semantic" in required_set and
-        "payload_requires_comm_acquire" in required_set and
-        "payload_status_schema" in required_set and
-        "payload_status_word_count" in required_set and
-        "build_mode_internal" in required_set)
+    payload_required = {
+        "canary_direct_aclrt",
+        "payload_direct_aclrt",
+        "payload_abi_v4",
+        "payload_semantic",
+        "payload_requires_comm_acquire",
+        "payload_status_schema",
+        "payload_status_word_count",
+        "build_mode_internal",
+    }
+    return any(status == "PASS" and payload_required.issubset(required_set)
+               for required_set, status in PackageRequirementBlocks(
+                   package_text))
 
 
 def PackageTextLooksPayloadRequired(package_text: str) -> bool:
-    required_match = re.search(r"^required=([^\n]+)$", package_text,
-                               re.MULTILINE)
-    required = required_match.group(1).split(",") if required_match else []
-    required_set = {item.strip() for item in required if item.strip()}
-    return "payload_direct_aclrt" in required_set
+    return any("payload_direct_aclrt" in required_set
+               for required_set, _status in PackageRequirementBlocks(
+                   package_text))
 
 
 def PackageTextCanaryReady(package_text: str) -> bool:
-    required_match = re.search(r"^required=([^\n]+)$", package_text,
-                               re.MULTILINE)
-    required = required_match.group(1).split(",") if required_match else []
-    required_set = {item.strip() for item in required if item.strip()}
-    return ("status=PASS" in package_text and
-            "canary_direct_aclrt" in required_set and
-            not PackageTextLooksPayloadRequired(package_text))
+    return any(
+        status == "PASS" and "canary_direct_aclrt" in required_set and
+        "payload_direct_aclrt" not in required_set
+        for required_set, status in PackageRequirementBlocks(package_text))
 
 
 def PackageTextReason(package_text: str) -> str:
