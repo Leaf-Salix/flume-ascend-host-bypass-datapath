@@ -461,6 +461,20 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_no_batch.read_text(encoding="utf-8"))[0]
+        no_batch_passed, no_batch_rank0, no_batch_rank1 = (
+            flume_tool.StrictPayloadNoBatchDiagnosticPassed(
+                strict_no_batch.read_text(encoding="utf-8")))
+        assert no_batch_passed
+        assert no_batch_rank0
+        assert no_batch_rank1
+        default_failure = write(
+            tmp / "strict-default-failure-for-nobatch.log",
+            strict_log_with_rank1_remote_read_failure())
+        no_batch_note = flume_tool.WriteHcommPayloadNoBatchDiagnostic(
+            no_batch_dir, default_failure, strict_no_batch)
+        no_batch_text = no_batch_note.read_text(encoding="utf-8")
+        assert "no_batch_payload_copy_and_verify: `passed`" in no_batch_text
+        assert "remaining issue is likely HcommBatchModeStart/End" in no_batch_text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
                                  strict_log(False))

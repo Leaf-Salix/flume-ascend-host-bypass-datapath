@@ -1597,6 +1597,143 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
 
 
+def MarkerValueFromLine(line: str, name: str) -> str:
+    match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", line)
+    return match.group(1) if match else "missing"
+
+
+def MarkerValue(text: str, name: str) -> str:
+    match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", text)
+    return match.group(1) if match else "missing"
+
+
+def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
+    rank_lines = ExtractStrictPayloadRankLines(text)
+    no_batch_markers = tuple(
+        "payload_batch_mode=off" if item == "payload_batch_mode=on" else item
+        for item in STRICT_PAYLOAD_RANK_MARKERS)
+    rank0_ok = bool(rank_lines[0]) and all(
+        marker in rank_lines[0] for marker in no_batch_markers) and (
+            "payload_role=send" in rank_lines[0])
+    rank1_ok = (bool(rank_lines[1]) and
+                all(marker in rank_lines[1]
+                    for marker in no_batch_markers) and
+                "payload_role=recv" in rank_lines[1] and
+                "payload_verify=passed" in rank_lines[1])
+    source = MarkerValueFromLine(rank_lines[0], "payload_source_checksum")
+    payload = MarkerValueFromLine(rank_lines[1], "payload_checksum")
+    expected = MarkerValueFromLine(rank_lines[1], "payload_expected_checksum")
+    checksum_ok = (
+        source != "missing" and source == payload and payload == expected)
+    return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
+
+
+def WriteHcommPayloadNoBatchDiagnostic(
+        run_dir: Path,
+        default_log: Optional[Path],
+        no_batch_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md"
+    try:
+        default_text = (default_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if default_log is not None else "")
+    except OSError as exc:
+        default_text = f"failed to read default log: {exc}"
+    try:
+        no_batch_text = (no_batch_log.read_text(encoding="utf-8",
+                                                errors="replace")
+                         if no_batch_log is not None else "")
+    except OSError as exc:
+        no_batch_text = f"failed to read no-batch log: {exc}"
+
+    default_rank_lines = ExtractStrictPayloadRankLines(default_text)
+    no_batch_rank_lines = ExtractStrictPayloadRankLines(no_batch_text)
+    no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
+        StrictPayloadNoBatchDiagnosticPassed(no_batch_text))
+    default_failure_step = MarkerValue(default_text, "payload_failure_step")
+    no_batch_failure_step = MarkerValue(no_batch_text, "payload_failure_step")
+    no_batch_kernel = MarkerValue(no_batch_text, "payload_kernel_status")
+    no_batch_hcomm_ret = MarkerValue(no_batch_text, "payload_kernel_hcomm_ret")
+    no_batch_batch_mode = MarkerValue(no_batch_text, "payload_batch_mode")
+
+    if no_batch_ok:
+        decision = (
+            "no-batch HCOMM payload copy and checksum verification passed; "
+            "the remaining issue is likely HcommBatchModeStart/End submit or "
+            "ordering in the batch-enabled strict path")
+        next_action = (
+            "inspect default strict-positive batch-start/batch-end failure "
+            "and HCOMM batch mode compatibility for the selected engine")
+    elif no_batch_failure_step != "missing":
+        decision = (
+            "no-batch diagnostic reached the payload kernel but failed inside "
+            f"`{no_batch_failure_step}`")
+        next_action = StrictPayloadFailureAction(1, no_batch_failure_step)
+    elif no_batch_kernel != "missing":
+        decision = (
+            "no-batch diagnostic launched but did not produce complete rank "
+            "evidence")
+        next_action = "inspect no-batch rank logs and payload kernel status"
+    else:
+        decision = "no-batch diagnostic did not reach payload kernel evidence"
+        next_action = "inspect direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload No-Batch Diagnostic",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- no_batch_log: `{no_batch_log}`",
+        f"- default_failure_step: `{default_failure_step}`",
+        f"- no_batch_kernel_status: `{no_batch_kernel}`",
+        f"- no_batch_failure_step: `{no_batch_failure_step}`",
+        f"- no_batch_hcomm_ret: `{no_batch_hcomm_ret}`",
+        f"- no_batch_batch_mode: `{no_batch_batch_mode}`",
+        f"- no_batch_rank0_evidence: `{'passed' if no_batch_rank0_ok else 'missing'}`",
+        f"- no_batch_rank1_evidence: `{'passed' if no_batch_rank1_ok else 'missing'}`",
+        f"- no_batch_payload_copy_and_verify: `{'passed' if no_batch_ok else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "The no-batch path is diagnostic only. It intentionally cannot satisfy "
+        "the final strict-positive gate, which still requires "
+        "`payload_batch_mode=on`.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- default_rank0: `{default_rank_lines[0]}`",
+        f"- default_rank1: `{default_rank_lines[1]}`",
+        f"- no_batch_rank0: `{no_batch_rank_lines[0]}`",
+        f"- no_batch_rank1: `{no_batch_rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload no-batch diagnostic -> {note}")
+    return note
+
+
+def RunHcommPayloadNoBatchDiagnostic(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = list(base_command)
+    if "--hcomm-payload-disable-batch" not in command:
+        command.append("--hcomm-payload-disable-batch")
+    result = runner.run(
+        "hcomm-payload-nobatch-diagnostic",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadNoBatchDiagnostic(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
@@ -2289,6 +2426,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         )
         if strict_result.returncode != 0:
             WriteHcclSmokeDiagnostics(runner.run_dir, strict_result.log_path)
+            if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                    package_payload_ready and
+                    "--hcomm-payload-disable-batch" not in strict_command):
+                RunHcommPayloadNoBatchDiagnostic(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path)
 
     if args.collect_cann_compat_label:
         runner.run(
@@ -2431,6 +2574,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             strict_result = result
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                        not args.hcomm_payload_disable_batch and
+                        "--hcomm-payload-disable-batch" not in spec.command):
+                    RunHcommPayloadNoBatchDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
 
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
@@ -3624,6 +3773,15 @@ def parse_args() -> argparse.Namespace:
                               "satisfy the strict-positive success gate; the "
                               "final path remains the default batch-enabled "
                               "mode."))
+    parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the batch-enabled strict payload gate fails, "
+                              "automatically rerun the same smoke with "
+                              "--hcomm-payload-disable-batch and write "
+                              "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. This "
+                              "collects A/B evidence only and does not turn "
+                              "the strict-positive gate green."))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",

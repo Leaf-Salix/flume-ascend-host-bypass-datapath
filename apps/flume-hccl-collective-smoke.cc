@@ -1564,7 +1564,8 @@ void RankMain(RankContext* ctx) {
             "payload_status_word_count=8",
             "payload_echo=passed",
             "payload_role=",
-            "payload_batch_mode=on",
+            ctx->hcomm_payload_disable_batch ? "payload_batch_mode=off" :
+                                               "payload_batch_mode=on",
             "payload_thread_notify_order=",
             "fallback=none",
         };
@@ -1622,6 +1623,14 @@ void RankMain(RankContext* ctx) {
         hcomm_payload_verify_passed = true;
       }
       log_hcomm_payload_line();
+      if (wait_ret == FLUME_OK && ctx->hcomm_require_payload_copy &&
+          ctx->hcomm_payload_disable_batch) {
+        error = "HCOMM payload no-batch diagnostic completed but cannot "
+                "satisfy strict-positive; rerun without "
+                "--hcomm-payload-disable-batch for the final batch-enabled "
+                "gate";
+        goto cleanup;
+      }
     }
   }
 
