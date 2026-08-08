@@ -1725,6 +1725,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
     "payload_trace_primitive_path=",
+    "payload_trace_transfer_mode=",
     "payload_trace_result=success",
     "payload_role=",
     "payload_batch_mode=on",
@@ -1884,6 +1885,10 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
                                            "payload_trace_primitive_path")
     rank1_trace_path = MarkerValueFromLine(rank_lines[1],
                                            "payload_trace_primitive_path")
+    rank0_trace_transfer_mode = MarkerValueFromLine(
+        rank_lines[0], "payload_trace_transfer_mode")
+    rank1_trace_transfer_mode = MarkerValueFromLine(
+        rank_lines[1], "payload_trace_transfer_mode")
     rank1_recv_path = MarkerValueFromLine(rank_lines[1], "payload_recv_path")
     binding_ok = (
         rank0_binding == rank1_binding and
@@ -1894,6 +1899,9 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     transfer_ok = (
         rank0_transfer_mode == rank1_transfer_mode and
         rank0_transfer_mode in ("read", "write"))
+    trace_transfer_ok = (
+        rank0_trace_transfer_mode == rank1_trace_transfer_mode and
+        rank0_trace_transfer_mode == rank0_transfer_mode)
     if rank0_transfer_mode == "write":
         rank0_trace_ok = rank0_trace_path == "send-write"
         rank1_trace_ok = rank1_trace_path == "recv-write-local-copy"
@@ -1930,7 +1938,7 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     data_flow_ok, _data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
     host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
-            transfer_ok and recv_path_ok and
+            transfer_ok and trace_transfer_ok and recv_path_ok and
             checksum_ok and data_flow_ok and host_data_ok,
             rank0_ok, rank1_ok)
 
@@ -3890,6 +3898,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_trace=passed` + "
         "`payload_trace_ret_order=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
+        "`payload_trace_transfer_mode=read|write` matching descriptor mode + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on|off` + "
         "payload comm binding `comm-name|channel-handle` + "
@@ -4296,6 +4305,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_ret_order=passed,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
             "|send-write|recv-write-local-copy,"
+            "payload_trace_transfer_mode=read|write,"
             "payload_trace_result=success,payload_desc_batch_tag=,"
             "payload_transfer_mode=read|write,payload_recv_path=,"
             "payload_semantic_v6=present,"
@@ -4749,6 +4759,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_trace_order=passed, payload_trace_ret_order=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-* or "
         "send-write|recv-write-local-copy, "
+        "payload_trace_transfer_mode=read|write matching descriptor mode, "
         "payload_trace_result=success, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "
         "or explicit payload_comm_binding=channel-handle, "

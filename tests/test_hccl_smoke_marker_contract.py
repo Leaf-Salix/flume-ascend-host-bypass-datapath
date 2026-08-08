@@ -28,6 +28,7 @@ REQUIRED_MARKERS = (
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
+    "payload_trace_transfer_mode=",
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
 )

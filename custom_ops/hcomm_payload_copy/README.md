@@ -344,7 +344,7 @@ Strict-positive success must include
 `payload_trace=passed`, `payload_trace_schema=v2`, `payload_trace_word_count=80`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_ret_order=passed`,
 `payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`,
-`payload_transfer_mode=read|write`, `payload_trace_result=success`,
+`payload_transfer_mode=read|write`, `payload_trace_transfer_mode=read|write`, `payload_trace_result=success`,
 `payload_comm_binding=comm-name` plus `payload_comm_acquire=default`, or
 explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,

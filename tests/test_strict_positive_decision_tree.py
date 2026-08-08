@@ -92,6 +92,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_transfer_mode=read "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -119,6 +120,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=recv-read-local-copy "
+        "payload_trace_transfer_mode=read "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -152,6 +154,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_transfer_mode=read "
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -174,6 +177,8 @@ def strict_write_path_log(include_verify: bool) -> str:
     text = strict_log(include_verify)
     text = text.replace("payload_transfer_mode=read",
                         "payload_transfer_mode=write")
+    text = text.replace("payload_trace_transfer_mode=read",
+                        "payload_trace_transfer_mode=write")
     text = text.replace("payload_trace_primitive_path=send-local-copy",
                         "payload_trace_primitive_path=send-write")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
@@ -195,6 +200,12 @@ def strict_write_path_with_direct_output_log() -> str:
 def strict_log_with_nonzero_hcomm_ret() -> str:
     return strict_log(True).replace(
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
+
+
+def strict_log_with_trace_transfer_mismatch() -> str:
+    return strict_log(True).replace(
+        "payload_trace_transfer_mode=read", "payload_trace_transfer_mode=write",
+        1)
 
 
 def strict_log_with_kernel_local_copy_failure() -> str:
@@ -722,6 +733,19 @@ def main() -> int:
         assert "| payload host data | host-received-expected-mismatch |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_host_data_mismatch())[0]
+        strict_trace_transfer_mismatch = write(
+            tmp / "strict-trace-transfer-mismatch.log",
+            strict_log_with_trace_transfer_mismatch())
+        trace_transfer_mismatch_dir = tmp / "trace-transfer-mismatch"
+        trace_transfer_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            trace_transfer_mismatch_dir, smoke, strict_trace_transfer_mismatch,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "transfer=rank0:write/rank1:read" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_trace_transfer_mismatch())[0]
         strict_channel_handle = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
