@@ -2065,7 +2065,7 @@ bool JsonLooksPayloadReady(const std::string& json_text,
                            std::string* reason) {
   const char* required[] = {
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
-      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC,
@@ -2344,6 +2344,11 @@ std::string PayloadKernelStatusName(uint32_t status) {
   }
 }
 
+uint64_t PayloadEchoBytes(const uint32_t* status_words) {
+  return static_cast<uint64_t>(status_words[4]) |
+         (static_cast<uint64_t>(status_words[5]) << 32U);
+}
+
 std::string NotifyKernelStatusName(uint32_t status) {
   switch (status) {
     case 0xFFFFFFFFU:
@@ -2508,7 +2513,10 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 #endif
 
   void* kernel_status_dev = nullptr;
-  uint32_t kernel_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+  uint32_t kernel_status_words[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT];
+  for (uint32_t& word : kernel_status_words) {
+    word = 0xFFFFFFFFU;
+  }
   aclError acl_ret = aclrtMalloc(&kernel_status_dev,
                                  sizeof(kernel_status_words),
                                  ACL_MEM_MALLOC_HUGE_FIRST);
@@ -2537,6 +2545,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
                            bytes, comm_name, &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
+  desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
+  desc.status_schema_version = FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
 
   aclrtBinHandle bin_handle = nullptr;
   aclrtBinaryLoadOption option = {};
@@ -2559,7 +2569,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   aclrtFuncHandle abi_func_handle = nullptr;
   acl_ret = aclrtBinaryGetFunction(
-      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC,
       &abi_func_handle);
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
@@ -2571,8 +2581,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) +
            "\" stage3b3e_payload_descriptor_handoff=blocked "
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
-           "payload_abi=v3-missing kernel_func=" +
-           FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC +
+           "payload_abi=v4-missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -2743,7 +2753,10 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     if (notify_ret != 0) {
       aclError sync_ret = SyncAclStreamForHcomm(
           static_cast<aclrtStream>(acl_stream), desc.timeout_sec);
-      uint32_t observed_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+      uint32_t observed_status_words[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT];
+      for (uint32_t& word : observed_status_words) {
+        word = 0xFFFFFFFFU;
+      }
       aclError status_ret = aclrtMemcpy(
           observed_status_words, sizeof(observed_status_words),
           kernel_status_dev, sizeof(observed_status_words),
@@ -2811,6 +2824,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   (void)aclrtFree(kernel_status_dev);
   const uint32_t kernel_status = kernel_status_words[0];
   const uint32_t kernel_hcomm_ret = kernel_status_words[1];
+  const uint64_t echo_bytes = PayloadEchoBytes(kernel_status_words);
   if (kernel_status != 0) {
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
@@ -2840,6 +2854,44 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadCompletionDetail(resource_info);
   }
+  const uint32_t expected_role =
+      role == flume::hcomm_payload::PayloadRole::kSend ?
+          FLUME_HCOMM_NOTIFY_ROLE_SEND :
+          FLUME_HCOMM_NOTIFY_ROLE_RECV;
+  const uint32_t expected_completion_mode =
+      resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
+          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
+          FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
+  if (kernel_status_words[2] != expected_role ||
+      kernel_status_words[3] != peer_rank || echo_bytes != bytes ||
+      kernel_status_words[6] != state.rank ||
+      kernel_status_words[7] != expected_completion_mode) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=passed "
+                       "payload_batch_mode=on payload_kernel_status=success "
+                       "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+                       "payload_echo=failed payload_echo_role=") +
+           std::to_string(kernel_status_words[2]) +
+           " payload_echo_peer_rank=" +
+           std::to_string(kernel_status_words[3]) +
+           " payload_echo_bytes=" + std::to_string(echo_bytes) +
+           " payload_echo_local_rank=" +
+           std::to_string(kernel_status_words[6]) +
+           " payload_echo_completion_mode=" +
+           std::to_string(kernel_status_words[7]) +
+           " expected_role=" + std::to_string(expected_role) +
+           " expected_peer_rank=" + std::to_string(peer_rank) +
+           " expected_bytes=" + std::to_string(bytes) +
+           " expected_local_rank=" + std::to_string(state.rank) +
+           " expected_completion_mode=" +
+           std::to_string(expected_completion_mode) +
+           " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           HcommPayloadCompletionDetail(resource_info);
+  }
   *status = FLUME_OK;
   return std::string("stage3b3e_payload_copy=passed "
                      "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -2850,6 +2902,15 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_status_word=0 "
                      "payload_kernel_hcomm_ret=") +
          std::to_string(kernel_hcomm_ret) + " " +
+         "payload_echo=passed payload_echo_role=" +
+         std::to_string(kernel_status_words[2]) +
+         " payload_echo_peer_rank=" +
+         std::to_string(kernel_status_words[3]) +
+         " payload_echo_bytes=" + std::to_string(echo_bytes) +
+         " payload_echo_local_rank=" +
+         std::to_string(kernel_status_words[6]) +
+         " payload_echo_completion_mode=" +
+         std::to_string(kernel_status_words[7]) + " " +
          "kernel_func=" +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
          HcommPayloadCompletionDetail(resource_info);

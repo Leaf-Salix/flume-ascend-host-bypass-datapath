@@ -32,7 +32,8 @@ bool HasCommName(const flume_hcomm_payload_copy_desc_v1& desc) {
 
 void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
                         unsigned int status) {
-  if (!HasPayloadDescHeader(desc) || desc.status_word == 0) {
+  if (!HasPayloadDescHeader(desc) || desc.status_word == 0 ||
+      desc.status_word_count < 1U) {
     return;
   }
   auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
@@ -41,11 +42,26 @@ void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
 
 void StorePayloadPrimitiveRet(const flume_hcomm_payload_copy_desc_v1& desc,
                               int32_t ret) {
-  if (!HasPayloadDescHeader(desc) || desc.status_word == 0) {
+  if (!HasPayloadDescHeader(desc) || desc.status_word == 0 ||
+      desc.status_word_count < 2U) {
     return;
   }
   auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
   status_words[1] = static_cast<unsigned int>(ret);
+}
+
+void StorePayloadEcho(const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (!HasPayloadDescHeader(desc) || desc.status_word == 0 ||
+      desc.status_word_count < FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT) {
+    return;
+  }
+  auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
+  status_words[2] = desc.role;
+  status_words[3] = desc.peer_rank;
+  status_words[4] = static_cast<unsigned int>(desc.bytes & 0xFFFFFFFFU);
+  status_words[5] = static_cast<unsigned int>(desc.bytes >> 32U);
+  status_words[6] = desc.local_rank;
+  status_words[7] = desc.completion_mode;
 }
 
 bool CanRecordPayloadCompletionNotify(
@@ -85,6 +101,10 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          desc.remote_hccl_buffer != 0 &&
          desc.bytes <= desc.local_hccl_buffer_bytes &&
          desc.bytes <= desc.remote_hccl_buffer_bytes &&
+         desc.status_word != 0 &&
+         desc.status_word_count >= FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT &&
+         desc.status_schema_version ==
+             FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION &&
          HasCommName(desc) &&
          (desc.thread_notify_mode !=
               FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU ||
@@ -161,6 +181,7 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     return kFlumePayloadInvalidArgument;
   }
   StorePayloadStatus(desc, kFlumePayloadHcommError);
+  StorePayloadEcho(desc);
 
   ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
   const bool use_thread_notify =
@@ -245,12 +266,16 @@ extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void* param) {
   return RunPayloadCopy(*desc);
 }
 
-extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void* param) {
   return FlumeHcommPayloadCopyDirectAclrtKernelV3(param);
 }
 
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
+  return FlumeHcommPayloadCopyDirectAclrtKernelV4(param);
+}
+
 extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
-  return FlumeHcommPayloadCopyDirectAclrtKernelV2(param);
+  return FlumeHcommPayloadCopyDirectAclrtKernelV4(param);
 }
 
 extern "C" unsigned int FlumeHcommPayloadBuildModeInternalPayload() {
@@ -266,7 +291,11 @@ extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion2() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion3() {
-  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 3U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION >= 3U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion4() {
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {

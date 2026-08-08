@@ -41,7 +41,7 @@ Stage 4 再解决 storage/RDMA 如何直接进入 NPU-visible memory。
 | 3B.3B | route launch capability across public HCCL and direct ACL paths | `stage3b3b_launcher_router=selected:<backend>` | `selected:unsupported` with precise missing reasons |
 | 3B.3C | direct ACL custom-op loader / descriptor ABI / launch readiness | `stage3b3c_direct_aclrt_launch=passed` | `custom_op_package=missing` or direct ABI handoff blocked |
 | 3B.3D | no-internal-header direct ACL custom-op canary | `stage3b3d_direct_aclrt_canary=passed` | canary package missing or direct ACL launch unavailable |
-| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
+| 3B.3E | execute HCOMM pair-copy primitives through direct ACL custom-op | two ranks passed, `stage3b3e_payload_copy=passed`, payload launch/sync passed, `payload_kernel_status=success`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`, `payload_echo=passed`, `payload_verify=passed`, `fallback=none` | payload kernel missing / primitive call failure / stream sync failure |
 | 3B.3 | stabilize HCOMM pair-copy scheduler as default payload backend | `hcomm_payload_scheduler=custom-op-aicpu` | environment-specific fallback remains required |
 | 3B.4 | wire scheduler into storage HBM path | `storage_hbm=hcomm-payload-staging` | fallback remains `hccl-p2p` |
 
@@ -292,6 +292,7 @@ payload_batch_mode=on
 payload_kernel_status=success
 payload_status_word=0
 payload_kernel_hcomm_ret=0
+payload_echo=passed
 payload_verify=passed
 payload_checksum=<fnv32>
 payload_thread_notify=host-aicpu|unavailable
@@ -344,7 +345,7 @@ python3 tools/flume_tool.py \
 ```
 
 The first command verifies the canary package; the second verifies that the
-installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV3` and that the
+installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV4` and that the
 AICPU package tar is readable and contains
 `libflume_hcomm_payload_aicpu_kernel.so`. When `readelf` or `nm` is available,
 the preflight also verifies that the SO inside the tar exports the required
@@ -356,10 +357,10 @@ execution yet. On CANN packages that do not expose `hccl/hccl_launch.h`, keep
 package does not need that legacy public-HCCL-launch entrypoint.
 
 The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
-as a compatibility wrapper, but Flume's payload-ready preflight requires the V3
-entrypoint so that stale packages do not silently skip the two-word status
-diagnostic ABI and the HCCL comm-name handoff. It also requires the SO symbol
-`FlumeHcommPayloadCopyAbiVersion3`, and the same function must be declared in
+as a compatibility wrapper, but Flume's payload-ready preflight requires the V4
+entrypoint so that stale packages do not silently skip the extended status
+diagnostic ABI, descriptor echo words, and the HCCL comm-name handoff. It also requires the SO symbol
+`FlumeHcommPayloadCopyAbiVersion4`, and the same function must be declared in
 the JSON so the runtime loader can verify the package before descriptor
 handoff. This marks the current payload descriptor semantic ABI after the
 kernel descriptor gained `comm_name` for `HcommAcquireComm` /
@@ -371,8 +372,8 @@ the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
 package refresh problem, not as evidence that HCOMM payload primitives failed.
-When the V3 entrypoint and internal-payload marker exist but
-`FlumeHcommPayloadCopyAbiVersion3` is missing, rebuild the package with current
+When the V4 entrypoint and internal-payload marker exist but
+`FlumeHcommPayloadCopyAbiVersion4` is missing, rebuild the package with current
 Flume headers before running strict smoke.
 When `FlumeHcommPayloadCopyRequiresCommAcquire` is missing, rebuild from the
 current Flume tree before running strict smoke; that package predates the
@@ -443,7 +444,7 @@ package. Runtime readiness still depends on that package and is proven only by
 strict payload smoke passing on both ranks with `stage3b3e_payload_copy=passed`,
 direct ACL payload launch/sync passed, `payload_kernel_status=success`,
 `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
-`payload_verify=passed`, and `fallback=none`. `thread_export=off` changes the
+`payload_echo=passed`, `payload_verify=passed`, and `fallback=none`. `thread_export=off` changes the
 completion marker to `payload_completion=stream-sync+status-word`; it does not
 by itself block the direct ACL payload candidate.
 

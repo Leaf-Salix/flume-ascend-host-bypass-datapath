@@ -30,10 +30,12 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
     "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
     "canary_direct_aclrt": "FlumeHcommCanaryDirectAclrtKernel",
-    "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV3",
+    "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernelV4",
     "payload_direct_aclrt_v2": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
+    "payload_direct_aclrt_v3": "FlumeHcommPayloadCopyDirectAclrtKernelV3",
     "payload_abi_v2": "FlumeHcommPayloadCopyAbiVersion2",
     "payload_abi_v3": "FlumeHcommPayloadCopyAbiVersion3",
+    "payload_abi_v4": "FlumeHcommPayloadCopyAbiVersion4",
     "payload_semantic": "FlumeHcommPayloadCopySemanticVersion",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
@@ -44,6 +46,7 @@ HCOMM_PAYLOAD_BUILD_MODE_INTERNAL = "FlumeHcommPayloadBuildModeInternalPayload"
 HCOMM_PAYLOAD_COPY_ABI_VERSION = "FlumeHcommPayloadCopyAbiVersion"
 HCOMM_PAYLOAD_COPY_ABI_VERSION_V2 = "FlumeHcommPayloadCopyAbiVersion2"
 HCOMM_PAYLOAD_COPY_ABI_VERSION_V3 = "FlumeHcommPayloadCopyAbiVersion3"
+HCOMM_PAYLOAD_COPY_ABI_VERSION_V4 = "FlumeHcommPayloadCopyAbiVersion4"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION = "FlumeHcommPayloadCopySemanticVersion"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
@@ -259,7 +262,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "status=PASS" in package_text and
         "canary_direct_aclrt" in required_set and
         "payload_direct_aclrt" in required_set and
-        "payload_abi_v3" in required_set and
+        "payload_abi_v4" in required_set and
         "payload_semantic" in required_set and
         "payload_requires_comm_acquire" in required_set and
         "build_mode_internal" in required_set)
@@ -282,13 +285,13 @@ def PackageTextNextAction(package_text: str) -> str:
     reason = PackageTextReason(package_text)
     if "stale legacy entrypoint" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload package with the "
-                "current V3 payload entrypoint")
+                "current V4 payload entrypoint")
     if "canary-only" in reason:
         return ("rebuild/reinstall custom-op package in payload mode; "
                 "installed package is canary/stub-only")
     if "ABI version marker" in reason:
         return ("rebuild/reinstall payload custom-op package with current "
-                "Flume V3 ABI headers")
+                "Flume V4 ABI headers")
     if "semantic marker" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package has stale semantics")
@@ -1306,6 +1309,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_kernel_status=success",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
+    "payload_echo=passed",
     "fallback=none",
 )
 
@@ -1407,6 +1411,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_kernel = marker_value(strict, "payload_kernel_status")
     strict_status_word = marker_value(strict, "payload_status_word")
     strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
+    strict_echo = marker_value(strict, "payload_echo")
     strict_semantic = marker_value(strict, "payload_semantic")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
@@ -1457,8 +1462,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`stage3b3e_direct_aclrt_payload_loader=passed` + "
         "`stage3b3e_payload_descriptor_handoff=passed` + "
         "`payload_kernel_status=success` + `payload_status_word=0` + "
-        "`payload_kernel_hcomm_ret=0` + `payload_verify=passed` + "
-        "`fallback=none` |")
+        "`payload_kernel_hcomm_ret=0` + `payload_echo=passed` + "
+        "`payload_verify=passed` + `fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_log is not None:
@@ -1466,7 +1471,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v3 + semantic + comm-acquire + internal markers + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + internal markers + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
@@ -1475,6 +1480,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
+            f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -1582,7 +1588,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_direct_aclrt_payload_launch=passed,"
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
             "payload_status_word=0,payload_kernel_hcomm_ret=0,"
-            "payload_verify=passed,fallback=none")
+            "payload_echo=passed,payload_verify=passed,fallback=none")
     return runner.record_static("hcomm-payload-strict-evidence", lines,
                                 returncode=0 if passed else 1,
                                 required=required)
@@ -2147,7 +2153,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     required_functions = ["canary_direct_aclrt"]
     if args.require_hcomm_payload_kernel:
         required_functions.append("payload_direct_aclrt")
-        required_functions.append("payload_abi_v3")
+        required_functions.append("payload_abi_v4")
         required_functions.append("payload_semantic")
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("build_mode_internal")
@@ -2159,6 +2165,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_internal_payload_marker = False
     found_payload_abi_version_marker = False
     found_payload_abi_v2_marker = False
+    found_payload_abi_v3_marker = False
     found_payload_semantic_marker = False
     found_payload_requires_comm_acquire_marker = False
     print("HCOMM custom-op package inspection")
@@ -2199,6 +2206,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_ABI_VERSION,
             HCOMM_PAYLOAD_COPY_ABI_VERSION_V2,
             HCOMM_PAYLOAD_COPY_ABI_VERSION_V3,
+            HCOMM_PAYLOAD_COPY_ABI_VERSION_V4,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
         ]
@@ -2242,11 +2250,15 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                                         False))
                 found_payload_abi_version_marker = (
                     found_payload_abi_version_marker or
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V3,
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V4,
                                         False))
                 found_payload_abi_v2_marker = (
                     found_payload_abi_v2_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V2,
+                                        False))
+                found_payload_abi_v3_marker = (
+                    found_payload_abi_v3_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V3,
                                         False))
                 found_payload_semantic_marker = (
                     found_payload_semantic_marker or
@@ -2274,6 +2286,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_abi_version_v3."
                       f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V3}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, False) else 'missing'}")
+                print("function_so.payload_abi_version_v4."
+                      f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V4}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, False) else 'missing'}")
                 print("function_so.payload_semantic_version."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False) else 'missing'}")
@@ -2308,14 +2323,14 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 required_ok = (
                     required_ok and
                     symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) and
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False))
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
             print("required_payload_abi_version_symbol="
-                  f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V3}")
+                  f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V4}")
             print("required_payload_semantic_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION}")
             print("required_payload_comm_acquire_symbol="
@@ -2334,24 +2349,30 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             if found_legacy_payload:
                 print("reason=payload kernel package uses stale legacy "
                       "entrypoint")
-                print("action=rebuild package with current Flume V3 payload "
+                print("action=rebuild package with current Flume V4 payload "
                       "entrypoint")
             elif found_canary_only_marker and not found_internal_payload_marker:
-                print("reason=payload kernel package is canary-only; V3 "
+                print("reason=payload kernel package is canary-only; V4 "
                       "payload entrypoint is a compatibility stub")
                 print("action=rebuild package with "
                       "FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON")
             elif (found_internal_payload_marker and
                   not found_payload_abi_version_marker):
                 if found_payload_abi_v2_marker:
+                    if found_payload_abi_v3_marker:
+                        print("reason=payload kernel package is stale ABI v3; "
+                              "missing current payload ABI version marker")
+                        print("action=rebuild package with current Flume V4 "
+                              "headers")
+                        return 1
                     print("reason=payload kernel package is stale ABI v2; "
                           "missing current payload ABI version marker")
-                    print("action=rebuild package with current Flume V3 "
+                    print("action=rebuild package with current Flume V4 "
                           "headers")
                     return 1
                 print("reason=payload kernel package is missing the payload "
                       "ABI version marker")
-                print("action=rebuild package with current Flume V3 headers")
+                print("action=rebuild package with current Flume V4 headers")
             elif (found_internal_payload_marker and
                   found_payload_abi_version_marker and
                   not found_payload_semantic_marker):

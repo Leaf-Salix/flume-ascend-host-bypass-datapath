@@ -22,11 +22,11 @@ int main() {
   static_assert(
       offsetof(flume_hcomm_canary_desc_v1, observed_token_word) == 40,
       "canary observed token word offset changed");
-  static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 304,
+  static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 336,
                 "payload descriptor ABI size changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 3,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 3,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 4,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -46,10 +46,20 @@ int main() {
       "payload host/AICPU thread notify offset changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, comm_name) == 176,
                 "payload comm name offset changed");
+  static_assert(
+      offsetof(flume_hcomm_payload_copy_desc_v1, status_word_count) == 304,
+      "payload status word count offset changed");
+  static_assert(
+      offsetof(flume_hcomm_payload_copy_desc_v1, status_schema_version) == 308,
+      "payload status schema offset changed");
   static_assert(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES == 48,
                 "payload batch tag capacity changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES == 128,
                 "payload comm name capacity changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT == 8,
+                "payload status word count changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION == 2,
+                "payload status schema version changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE == 0,
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
@@ -99,14 +109,17 @@ int main() {
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_HCOMM_ERROR == 2,
                 "notify hcomm-error status changed");
   FLUME_TEST_CHECK(std::strcmp(
-      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
-      "FlumeHcommPayloadCopyDirectAclrtKernelV3") == 0);
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_LEGACY,
+      "FlumeHcommPayloadCopyDirectAclrtKernel") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_V2,
       "FlumeHcommPayloadCopyDirectAclrtKernelV2") == 0);
   FLUME_TEST_CHECK(std::strcmp(
-      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_LEGACY,
-      "FlumeHcommPayloadCopyDirectAclrtKernel") == 0);
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC_V3,
+      "FlumeHcommPayloadCopyDirectAclrtKernelV3") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
+      "FlumeHcommPayloadCopyDirectAclrtKernelV4") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY_FUNC,
       "FlumeHcommPayloadBuildModeCanaryOnly") == 0);
@@ -122,6 +135,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V3_FUNC,
       "FlumeHcommPayloadCopyAbiVersion3") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC,
+      "FlumeHcommPayloadCopyAbiVersion4") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
       "FlumeHcommPayloadCopySemanticVersion") == 0);
@@ -145,6 +161,10 @@ int main() {
   FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');
   FLUME_TEST_CHECK(payload.cpu_thread_on_aicpu == 0);
   FLUME_TEST_CHECK(payload.comm_name[0] == '\0');
+  FLUME_TEST_CHECK(payload.status_word_count ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT);
+  FLUME_TEST_CHECK(payload.status_schema_version ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
 
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);

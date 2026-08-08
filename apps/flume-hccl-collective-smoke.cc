@@ -1461,6 +1461,7 @@ void RankMain(RankContext* ctx) {
             "payload_kernel_status=success",
             "payload_status_word=0",
             "payload_kernel_hcomm_ret=0",
+            "payload_echo=passed",
             "fallback=none",
         };
         if (!DetailContainsMarkers(detail, required_markers,

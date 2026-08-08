@@ -98,6 +98,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_COPY_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion2() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion3() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion4() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
@@ -105,18 +106,30 @@ int main() {
   uint8_t user[64] = {};
   uint8_t local[64] = {};
   uint8_t remote[64] = {};
-  uint32_t status[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+  uint32_t status[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT];
+  auto reset_status = [&status]() {
+    for (uint32_t& word : status) {
+      word = 0xFFFFFFFFU;
+    }
+  };
 
   for (uint8_t i = 0; i < 16; ++i) {
     user[i] = static_cast<uint8_t>(i + 1);
   }
   Reset();
+  reset_status();
   auto send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                             status);
-  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&send_desc) ==
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(status[2] == FLUME_HCOMM_NOTIFY_ROLE_SEND);
+  FLUME_TEST_CHECK(status[3] == 1U);
+  FLUME_TEST_CHECK(status[4] == 16U);
+  FLUME_TEST_CHECK(status[5] == 0U);
+  FLUME_TEST_CHECK(status[6] == 0U);
+  FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
   const int send_calls[] = {kAcquireComm, kBatchStart, kLocalCopy,
                             kNotifyRecord, kNotifyWait, kBatchEnd,
@@ -129,14 +142,19 @@ int main() {
   for (uint8_t i = 0; i < 16; ++i) {
     remote[i] = static_cast<uint8_t>(0x80U + i);
   }
-  status[0] = 0xFFFFFFFFU;
-  status[1] = 0xFFFFFFFFU;
+  reset_status();
   auto recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
                             status);
-  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&recv_desc) ==
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(status[2] == FLUME_HCOMM_NOTIFY_ROLE_RECV);
+  FLUME_TEST_CHECK(status[3] == 0U);
+  FLUME_TEST_CHECK(status[4] == 16U);
+  FLUME_TEST_CHECK(status[5] == 0U);
+  FLUME_TEST_CHECK(status[6] == 1U);
+  FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
   const int recv_calls[] = {kAcquireComm, kBatchStart, kNotifyWait,
                             kRead, kNotifyRecord, kBatchEnd, kReleaseComm};

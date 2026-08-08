@@ -209,7 +209,7 @@ bash build.sh \
 ```
 
 `--install-custom-op-package` only installs after the build artifact preflight
-passes. If the JSON, AICPU tar, V3 payload entrypoint, or internal-payload build
+passes. If the JSON, AICPU tar, V4 payload entrypoint, or internal-payload build
 marker is missing, the helper stops before touching the target CANN/OPP install.
 
 The internal payload package is the one required for
@@ -221,13 +221,13 @@ actually exposes `hccl/hccl_launch.h` and you specifically want to test the
 older public-HCCL-launch notify-only entrypoint.
 The package preflight treats the build as payload-ready only when the AICPU SO
 exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
-export the V3 payload function as a compatibility stub, but it is not accepted
+export the V4 payload function as a compatibility stub, but it is not accepted
 as a real payload package. Current payload-ready packages also export
-`FlumeHcommPayloadCopyAbiVersion3` and
+`FlumeHcommPayloadCopyAbiVersion4` and
 `FlumeHcommPayloadCopySemanticVersion`, and
 `FlumeHcommPayloadCopyRequiresCommAcquire`, which mark the descriptor ABI with
-HCCL comm-name handoff, the success-status semantics where the second status
-word is written as `payload_kernel_hcomm_ret=0`, and the requirement that the
+HCCL comm-name handoff, descriptor echo words, the success-status semantics
+where the second status word is written as `payload_kernel_hcomm_ret=0`, and the requirement that the
 kernel acquires/releases the HCOMM communicator by name.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
@@ -261,4 +261,4 @@ Strict-positive success must include
 `stage3b3e_payload_copy=passed`, `stage3b3e_direct_aclrt_payload_launch=passed`,
 `stage3b3e_payload_sync=passed`, `payload_kernel_status=success`,
 `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
-`payload_verify=passed`, and `fallback=none` on both ranks.
+`payload_echo=passed`, `payload_verify=passed`, and `fallback=none` on both ranks.

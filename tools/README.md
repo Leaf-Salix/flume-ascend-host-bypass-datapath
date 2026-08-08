@@ -95,7 +95,7 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_echo=passed`、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
 已有日志也可以离线复核 strict-positive 门禁：
 
@@ -103,7 +103,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestamp>
 ```
 
-该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、status word 0、kernel HCOMM ret 0、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、status word 0、kernel HCOMM ret 0、`payload_echo=passed`、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-drain`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用 `HcommChannelDrainOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。
 成功日志还会包含 `payload_batch_mode=on` 和
@@ -169,7 +169,7 @@ source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`�
 逻辑失败。`--install-custom-op-package` 会执行生成的 `.run --install` 并在
 安装后再跑一次 installed-package preflight；它是显式 opt-in，因为会修改目标
 CANN/OPP 安装状态。安装前必须先通过 build artifact preflight；如果 JSON、
-AICPU tar、V3 payload entrypoint 或 internal-payload marker 不完整，工具会拒绝安装。
+AICPU tar、V4 payload entrypoint 或 internal-payload marker 不完整，工具会拒绝安装。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 
@@ -194,7 +194,7 @@ python3 tools/flume_tool.py \
 canary-only 包或 payload 包不完整；如果同时出现
 `reason.payload_direct_aclrt=legacy-entrypoint-present`，说明当前安装的是
 旧 payload 包。当前 payload-ready 要求 JSON 声明
-`FlumeHcommPayloadCopyDirectAclrtKernelV3`、`FlumeHcommPayloadCopyAbiVersion3`
+`FlumeHcommPayloadCopyDirectAclrtKernelV4`、`FlumeHcommPayloadCopyAbiVersion4`
 、`FlumeHcommPayloadCopySemanticVersion` 和
 `FlumeHcommPayloadCopyRequiresCommAcquire`，旧包只声明
 `FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic marker 时会被明确判为
@@ -203,15 +203,15 @@ strict payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
 `readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
 `FlumeHcommCanaryDirectAclrtKernel`、
-`FlumeHcommPayloadCopyDirectAclrtKernelV3` 和
+`FlumeHcommPayloadCopyDirectAclrtKernelV4` 和
 `FlumeHcommPayloadBuildModeInternalPayload`，并要求
-`FlumeHcommPayloadCopyAbiVersion3` 和
+`FlumeHcommPayloadCopyAbiVersion4` 和
 `FlumeHcommPayloadCopySemanticVersion` 以及
 `FlumeHcommPayloadCopyRequiresCommAcquire` 同时出现在 JSON 和 SO 里，作为当前
 descriptor ABI、payload success-status 与 HCOMM comm acquire/release 语义
 marker。默认 canary-only
-包可能为了 JSON/SO 兼容导出 V3 stub；没有 internal build-mode marker、
-ABI v3 marker、semantic marker 或 comm-acquire marker 时不会被判为
+包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
+ABI v4 marker、semantic marker 或 comm-acquire marker 时不会被判为
 payload-ready，避免把空包、坏包、stub 包、旧 ABI 包、旧语义包、缺 HCOMM
 comm acquire/release 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 
@@ -376,7 +376,7 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
 
-HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持，也不阻止 direct ACL payload route 使用 `stream-sync+status-word` completion。`hcomm_primitives=off` 是 host-side primitive probe 结果；direct ACL payload 路径的 primitive 调用发生在已安装 custom-op package 内部，因此 package-ready + strict smoke 才是最终证据。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL payload scheduler 候选路径；真正成功仍以 strict payload smoke 同时输出两 rank passed、`stage3b3e_payload_copy=passed`、direct ACL payload launch/sync passed、`payload_kernel_status=success`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_verify=passed` 和 `fallback=none` 为准。
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持，也不阻止 direct ACL payload route 使用 `stream-sync+status-word` completion。`hcomm_primitives=off` 是 host-side primitive probe 结果；direct ACL payload 路径的 primitive 调用发生在已安装 custom-op package 内部，因此 package-ready + strict smoke 才是最终证据。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL payload scheduler 候选路径；真正成功仍以 strict payload smoke 同时输出两 rank passed、`stage3b3e_payload_copy=passed`、direct ACL payload launch/sync passed、`payload_kernel_status=success`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_echo=passed`、`payload_verify=passed` 和 `fallback=none` 为准。
 
 完整两卡矩阵建议用：
 
@@ -417,7 +417,7 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 `hcomm payload smoke passed`，以及 `stage3b3e_payload_copy=passed`、
 `stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、
 `payload_kernel_status=success`、`payload_status_word=0`、
-`payload_kernel_hcomm_ret=0`、`payload_verify=passed` 和 `fallback=none`。
+`payload_kernel_hcomm_ret=0`、`payload_echo=passed`、`payload_verify=passed` 和 `fallback=none`。
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
 

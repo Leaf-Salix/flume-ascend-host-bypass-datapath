@@ -41,6 +41,13 @@
       "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV3"
     }
   },
+  "FlumeHcommPayloadCopyDirectAclrtKernelV4": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV4"
+    }
+  },
   "FlumeHcommPayloadCopyAbiVersion2": {
     "opInfo": {
       "opKernelLib": "AICPUKernel",
@@ -53,6 +60,13 @@
       "opKernelLib": "AICPUKernel",
       "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
       "functionName": "FlumeHcommPayloadCopyAbiVersion3"
+    }
+  },
+  "FlumeHcommPayloadCopyAbiVersion4": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyAbiVersion4"
     }
   },
   "FlumeHcommPayloadCopySemanticVersion": {

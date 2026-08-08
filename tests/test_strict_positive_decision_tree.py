@@ -37,7 +37,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 fallback=none\"",
+        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none\"",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -45,7 +45,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 fallback=none\"",
+        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none\"",
         "",
     ])
 
@@ -60,7 +60,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 fallback=none payload_verify=passed\"",
+        "payload_kernel_hcomm_ret=0 payload_echo=passed fallback=none "
+        "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
         "payload_verify=passed detail=\"fallback=none\"",
         "",
@@ -107,14 +108,14 @@ def strict_log_with_canary_build_mode() -> str:
 
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
-            "payload_abi_v3,payload_semantic,payload_requires_comm_acquire,"
+            "payload_abi_v4,payload_semantic,payload_requires_comm_acquire,"
             "build_mode_internal\n"
             "status=PASS\n")
 
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -125,19 +126,19 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
-        "reason=payload kernel package is canary-only; V3 payload entrypoint is a compatibility stub",
+        "reason=payload kernel package is canary-only; V4 payload entrypoint is a compatibility stub",
         "",
     ])
 
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
-        "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",
         "",
@@ -173,6 +174,7 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
         assert "`payload_kernel_hcomm_ret=0`" in text
+        assert "`payload_echo=passed`" in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
@@ -254,7 +256,7 @@ def main() -> int:
             abi_missing_dir, smoke, None, abi_missing_package)
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
-        assert "current Flume V3 ABI headers" in text
+        assert "current Flume V4 ABI headers" in text
 
         strict_canary_mode = write(tmp / "strict-canary-mode.log",
                                    strict_log_with_canary_build_mode())
@@ -311,6 +313,7 @@ def main() -> int:
         evidence_text = evidence_logs[-1].read_text(encoding="utf-8")
         assert "strict_positive_evidence=failed" in evidence_text
         assert "payload_kernel_hcomm_ret=0" in evidence_text
+        assert "payload_echo=passed" in evidence_text
 
     return 0
 

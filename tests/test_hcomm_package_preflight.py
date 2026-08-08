@@ -39,9 +39,11 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "{ (void)p; return 0; }",
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
+        "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) "
+        "{ (void)p; return 0; }",
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void *p) "
-        "{ (void)p; return FlumeHcommPayloadCopyDirectAclrtKernelV3(p); }",
-        "unsigned int FlumeHcommPayloadCopyAbiVersion(void) { return 3; }",
+        "{ (void)p; return FlumeHcommPayloadCopyDirectAclrtKernelV4(p); }",
+        "unsigned int FlumeHcommPayloadCopyAbiVersion(void) { return 4; }",
     ]
     if mode == "canary":
         lines.append(
@@ -61,12 +63,17 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyAbiVersion3(void) { return 1; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_v3"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopyAbiVersion4(void) { return 1; }"
+        )
     if mode not in ("legacy", "stale_v2"):
         lines.append(
             "unsigned int FlumeHcommPayloadCopySemanticVersion(void) "
             "{ return 3; }"
         )
-    if mode not in ("legacy", "stale_v2", "stale_v3_no_comm_acquire",
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v4_no_comm_acquire",
                     "canary"):
         lines.append(
             "unsigned int FlumeHcommPayloadCopyRequiresCommAcquire(void) "
@@ -114,6 +121,13 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV3",
             }
         },
+        "FlumeHcommPayloadCopyDirectAclrtKernelV4": {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV4",
+            }
+        },
     }
     if mode != "legacy":
         payload["FlumeHcommPayloadCopyAbiVersion2"] = {
@@ -131,6 +145,14 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopyAbiVersion3",
             }
         }
+    if mode not in ("legacy", "stale_v2", "stale_v3"):
+        payload["FlumeHcommPayloadCopyAbiVersion4"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopyAbiVersion4",
+            }
+        }
     if mode not in ("legacy", "stale_v2"):
         payload["FlumeHcommPayloadCopySemanticVersion"] = {
             "opInfo": {
@@ -139,7 +161,8 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopySemanticVersion",
             }
         }
-    if mode not in ("legacy", "stale_v2", "stale_v3_no_comm_acquire",
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v4_no_comm_acquire",
                     "canary"):
         payload["FlumeHcommPayloadCopyRequiresCommAcquire"] = {
             "opInfo": {
@@ -210,7 +233,7 @@ def main() -> int:
         static_canary = json.loads(static_canary_json_path.read_text(
             encoding="utf-8"))
         for label in ("canary_direct_aclrt", "payload_direct_aclrt",
-                      "payload_abi_v2", "payload_abi_v3",
+                      "payload_abi_v2", "payload_abi_v3", "payload_abi_v4",
                       "payload_semantic"):
             assert flume_tool.JsonDeclaresFunction(
                 static_canary, flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS[label],
@@ -230,6 +253,8 @@ def main() -> int:
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=missing" in legacy.stdout
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in legacy.stdout
         assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in legacy.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in legacy.stdout
+        assert "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in legacy.stdout
         assert "reason=payload kernel package is missing the payload ABI version marker" in legacy.stdout
 
         canary_json, canary_tar = write_package(tmp, mode="canary")
@@ -242,6 +267,8 @@ def main() -> int:
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in canary.stdout
         assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=present" in canary.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=present" in canary.stdout
+        assert "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=present" in canary.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in canary.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in canary.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
@@ -259,10 +286,11 @@ def main() -> int:
         assert "function.canary_direct_aclrt.FlumeHcommCanaryDirectAclrtKernel=missing" in wrong_so.stdout
         assert (
             "function.payload_direct_aclrt."
-            "FlumeHcommPayloadCopyDirectAclrtKernelV3=missing"
+            "FlumeHcommPayloadCopyDirectAclrtKernelV4=missing"
         ) in wrong_so.stdout
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=missing" in wrong_so.stdout
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in wrong_so.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in wrong_so.stdout
         assert "status=FAIL" in wrong_so.stdout
 
         stale_v2_json, stale_v2_tar = write_package(tmp, mode="stale_v2")
@@ -273,39 +301,52 @@ def main() -> int:
             raise AssertionError("stale ABI v2 package without semantic marker passed")
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in stale_v2.stdout
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in stale_v2.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in stale_v2.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in stale_v2.stdout
-        assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in stale_v2.stdout
+        assert "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in stale_v2.stdout
         assert "reason=payload kernel package is stale ABI v2" in stale_v2.stdout
 
-        stale_v3_json, stale_v3_tar = write_package(
-            tmp, mode="stale_v3_no_comm_acquire")
+        stale_v3_json, stale_v3_tar = write_package(tmp, mode="stale_v3")
         stale_v3 = run_preflight(repo, stale_v3_json, stale_v3_tar)
         if stale_v3.returncode == 0:
             print(stale_v3.stdout)
             print(stale_v3.stderr, file=sys.stderr)
-            raise AssertionError("stale V3 package without comm-acquire marker passed")
+            raise AssertionError("stale ABI v3 package passed")
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in stale_v3.stdout
-        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in stale_v3.stdout
-        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v3.stdout
-        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v3.stdout
-        assert "reason=payload kernel package is missing the payload comm-acquire marker" in stale_v3.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=missing" in stale_v3.stdout
+        assert "reason=payload kernel package is stale ABI v3" in stale_v3.stdout
 
-        v3_json, v3_tar = write_package(tmp, mode="v3")
-        v3 = run_preflight(repo, v3_json, v3_tar)
-        if v3.returncode != 0:
-            print(v3.stdout)
-            print(v3.stderr, file=sys.stderr)
-            raise AssertionError("ABI v3 package did not pass")
-        assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v3.stdout
-        assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v3.stdout
-        assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in v3.stdout
-        assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=present" in v3.stdout
-        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in v3.stdout
-        assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v3.stdout
-        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v3.stdout
-        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v3.stdout
-        assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v3.stdout
-        assert "status=PASS" in v3.stdout
+        stale_v4_json, stale_v4_tar = write_package(
+            tmp, mode="stale_v4_no_comm_acquire")
+        stale_v4 = run_preflight(repo, stale_v4_json, stale_v4_tar)
+        if stale_v4.returncode == 0:
+            print(stale_v4.stdout)
+            print(stale_v4.stderr, file=sys.stderr)
+            raise AssertionError("stale V4 package without comm-acquire marker passed")
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=present" in stale_v4.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in stale_v4.stdout
+        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v4.stdout
+        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v4.stdout
+        assert "reason=payload kernel package is missing the payload comm-acquire marker" in stale_v4.stdout
+
+        v4_json, v4_tar = write_package(tmp, mode="v4")
+        v4 = run_preflight(repo, v4_json, v4_tar)
+        if v4.returncode != 0:
+            print(v4.stdout)
+            print(v4.stderr, file=sys.stderr)
+            raise AssertionError("ABI v4 package did not pass")
+        assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v4.stdout
+        assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v4.stdout
+        assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in v4.stdout
+        assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=present" in v4.stdout
+        assert "function.payload_abi_v4.FlumeHcommPayloadCopyAbiVersion4=present" in v4.stdout
+        assert "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=present" in v4.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in v4.stdout
+        assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v4.stdout
+        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
+        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
+        assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
+        assert "status=PASS" in v4.stdout
 
         installed_json = (
             tmp / "runtime" / "opp" / "vendors" / "flume" / "aicpu" /
@@ -314,9 +355,9 @@ def main() -> int:
         installed_tar = installed_json.parents[1] / "kernel" / AICPU_TAR
         installed_json.parent.mkdir(parents=True)
         installed_tar.parent.mkdir(parents=True)
-        installed_json.write_text(v3_json.read_text(encoding="utf-8"),
+        installed_json.write_text(v4_json.read_text(encoding="utf-8"),
                                   encoding="utf-8")
-        installed_tar.write_bytes(v3_tar.read_bytes())
+        installed_tar.write_bytes(v4_tar.read_bytes())
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(installed_json)))
         assert ok, message
@@ -357,7 +398,7 @@ def main() -> int:
         assert "status=PASS" in inferred_tar_preflight.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
-            SimpleNamespace(custom_op_json=str(v3_json)))
+            SimpleNamespace(custom_op_json=str(v4_json)))
         assert not ok
         assert (
             "strict-positive runtime launches use "
