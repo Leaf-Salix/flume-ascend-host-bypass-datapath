@@ -281,6 +281,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_direct_aclrt",
         "payload_abi_v4",
         "payload_semantic",
+        "payload_semantic_v5",
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
@@ -1674,6 +1675,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_desc_thread_notify = marker_value(
         strict, "payload_desc_thread_notify_mode")
     strict_semantic = marker_value(strict, "payload_semantic")
+    strict_semantic_v5 = marker_value(strict, "payload_semantic_v5")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
@@ -1776,6 +1778,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
+            f"| payload semantic v5 marker | {strict_semantic_v5} | `payload_semantic_v5=missing` means the package predates the current recv local-buffer scheduler |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
             f"| fallback | {strict_fallback} | expected `none` for real HCOMM payload copy |",
@@ -1797,6 +1800,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 next_action = (
                     "rebuild/reinstall custom-op package in payload mode; "
                     "installed package is canary/stub-only")
+            elif strict_semantic_v5 == "missing":
+                next_action = (
+                    "rebuild/reinstall payload custom-op package with current "
+                    "Flume semantic v5 kernel")
             elif strict_semantic == "missing":
                 next_action = (
                     "rebuild/reinstall payload custom-op package; semantic "

@@ -213,6 +213,20 @@ def strict_log_with_missing_semantic() -> str:
     ])
 
 
+def strict_log_with_missing_semantic_v5() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
+        "rank 0 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=unsupported "
+        "stage3b3e_direct_aclrt_payload_loader=unsupported "
+        "payload_semantic_v5=missing "
+        "stage3b3e_payload_descriptor_handoff=blocked "
+        "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+        "fallback=none\"",
+        "",
+    ])
+
+
 def strict_log_with_canary_build_mode() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -554,6 +568,18 @@ def main() -> int:
                 "missing the payload semantic marker |") in text
         assert "| payload semantic marker | missing |" in text
         assert "installed package has stale semantics" in text
+
+        strict_missing_semantic_v5 = write(
+            tmp / "strict-missing-semantic-v5.log",
+            strict_log_with_missing_semantic_v5())
+        stale_semantic_v5_dir = tmp / "stale-semantic-v5-runtime"
+        stale_semantic_v5_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            stale_semantic_v5_dir, smoke, strict_missing_semantic_v5, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| payload semantic v5 marker | missing |" in text
+        assert ("rebuild/reinstall payload custom-op package with current "
+                "Flume semantic v5 kernel") in text
 
         canary_package = write(tmp / "package-canary-only.log",
                                canary_only_package_log())
