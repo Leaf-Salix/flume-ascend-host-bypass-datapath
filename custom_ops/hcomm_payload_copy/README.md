@@ -31,7 +31,9 @@ Current status:
 - The legacy public HCCL-launch notify-only entrypoint that consumes
   `HcclP2pKernelParam` is optional and guarded by
   `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`; keep it off on CANN
-  packages that do not expose `hccl_launch.h`.
+  packages that do not expose `hccl_launch.h`. When it is off, the package
+  still exports a stub with the same function name so the static JSON and SO
+  remain loader-compatible; direct ACL payload smoke does not use that stub.
 
 Target data-plane plan:
 
