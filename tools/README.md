@@ -179,7 +179,7 @@ python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run
 python3 tools/flume_tool.py --build-dir build-stage3b-customop --build-hcomm-custom-op --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `stage3b3b_launcher_router=selected:unsupported`，并列出 `public_hccl_launch`、`direct_aclrt`、`thread_export`、`hcomm_primitives` 和 `custom_op_package` 状态。如果当前 CANN 暴露 direct ACL runtime launch API，还会追加 `stage3b3c_direct_aclrt_loader`、`stage3b3c_descriptor_handoff` 和 `stage3b3c_direct_aclrt_launch`，用于区分 custom-op 包缺失、函数解析失败、descriptor ABI 失败和真实 launch 失败。Stage 3B.3D 还会追加 `stage3b3d_no_internal_headers=on` 和 `stage3b3d_direct_aclrt_canary_*` marker，用于验证不依赖 HCCL/HCOMM 内部头的 direct ACL custom-op canary 路径。
+当前预期仍是 unsupported，但 detail 应从默认的 `custom-op/AICPU scheduler build disabled` 变成 `stage3b3b_launcher_router=selected:unsupported`，并列出 `public_hccl_launch`、`direct_aclrt`、`thread_export`、`hcomm_primitives` 和 `custom_op_package` 状态。`thread_export=off` 只表示不能使用 host/AICPU thread notify completion 增强；direct ACL payload candidate 仍可用 `stream-sync+status-word` 作为完成证明。如果当前 CANN 暴露 direct ACL runtime launch API，还会追加 `stage3b3c_direct_aclrt_loader`、`stage3b3c_descriptor_handoff` 和 `stage3b3c_direct_aclrt_launch`，用于区分 custom-op 包缺失、函数解析失败、descriptor ABI 失败和真实 launch 失败。Stage 3B.3D 还会追加 `stage3b3d_no_internal_headers=on` 和 `stage3b3d_direct_aclrt_canary_*` marker，用于验证不依赖 HCCL/HCOMM 内部头的 direct ACL custom-op canary 路径。
 
 也可以只跑 Stage 3B.1 no-op launch readiness，不跑 payload readiness：
 
@@ -316,7 +316,7 @@ RoCE 模式下优先选择同一 HCCN 平面/同一 IPv4 `/24` 前缀的卡，�
 
 如果 HCCL smoke 失败，工具会额外生成 `HCCL_SMOKE_DIAGNOSTICS.txt`，其中包含命令头、判读提示、关键 HCCL 信号、前若干条 error-like 日志和末尾日志。优先看这个摘要，再回到完整 smoke log。
 
-HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL + HCOMM primitive scheduler 候选路径；真正成功仍以 strict payload smoke 的 `stage3b3e_payload_copy=passed` / `fallback=none` 为准。
+HCCL smoke 日志会打印 `FLUME_BACKEND_CAPS ...`，用于快速判断当前 CANN/HCCL/HCOMM backend 能力，例如 `hcomm_default_engine=cpu-ts`、`hcomm_aicpu_thread_export=off`、`hcomm_payload_probe=on`、`hcomm_payload_scheduler=not-implemented`、`hcomm_payload_scheduler_candidate=on|off`、`hcomm_payload_direct_aclrt=on|off`、`hcomm_payload_thread_notify=on|off`、`hcomm_launcher_public_hccl=off`、`hcomm_launcher_direct_aclrt=on|off`、`hcomm_payload=not-implemented`。CANN 8.5 下 `hcomm_aicpu_thread_export=off` 是正常版本差异，不代表 HCOMM Channel resource path 不支持，也不阻止 direct ACL payload route 使用 `stream-sync+status-word` completion。`hcomm_payload_scheduler_candidate=on` 只表示当前 build 具备 direct ACL + HCOMM primitive scheduler 候选路径；真正成功仍以 strict payload smoke 的 `stage3b3e_payload_copy=passed` / `fallback=none` 为准。
 
 完整两卡矩阵建议用：
 

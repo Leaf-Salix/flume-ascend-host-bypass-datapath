@@ -2112,9 +2112,6 @@ HcommLauncherDecision DecideHcommLauncherBackend() {
   if (!decision.direct_aclrt_launch) {
     AppendMissing(&decision.missing, "ACL runtime custom-op launch APIs unavailable");
   }
-  if (!decision.thread_export) {
-    AppendMissing(&decision.missing, "HCOMM thread export unavailable");
-  }
   if (!decision.hcomm_primitives) {
     AppendMissing(&decision.missing, "HCOMM primitive APIs unavailable");
   }
@@ -2126,8 +2123,7 @@ HcommLauncherDecision DecideHcommLauncherBackend() {
       decision.package.installed) {
     decision.backend = HcommLauncherBackend::kPublicHcclLaunch;
   } else if (decision.custom_op_build && decision.direct_aclrt_launch &&
-             decision.thread_export && decision.hcomm_primitives &&
-             decision.package.installed) {
+             decision.hcomm_primitives && decision.package.installed) {
     decision.backend = HcommLauncherBackend::kDirectAclrtPending;
   }
   return decision;
@@ -2157,8 +2153,7 @@ std::string DescribeHcommLauncherDecision(
   }
   std::string direct_candidate =
       decision.custom_op_build && decision.direct_aclrt_launch &&
-              decision.thread_export && decision.hcomm_primitives &&
-              decision.package.installed ?
+              decision.hcomm_primitives && decision.package.installed ?
           "available" :
           "blocked";
   std::string direct_canary_candidate =

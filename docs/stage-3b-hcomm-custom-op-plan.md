@@ -304,6 +304,8 @@ completion before returning. On CANN builds without thread-export, Flume keeps
 the direct ACL route usable and reports `payload_thread_notify=unavailable`;
 the host-visible completion proof is then stream synchronization plus the
 device-visible `status_word`.
+Therefore, thread-export is an optional completion enhancement for the direct
+ACL payload route, not a hard scheduler-candidate requirement.
 
 Before running strict smoke, inspect the installed custom-op package:
 
@@ -395,7 +397,9 @@ means the Flume binary was built with the direct ACL custom-op launcher and
 HCOMM primitive headers needed to attempt the scheduler. Runtime readiness
 still depends on the installed custom-op package and is proven only by strict
 payload smoke passing with `stage3b3e_payload_copy=passed`,
-`payload_verify=passed`, and `fallback=none`.
+`payload_verify=passed`, and `fallback=none`. `thread_export=off` changes the
+completion marker to `payload_completion=stream-sync+status-word`; it does not
+by itself block the direct ACL payload candidate.
 
 ## Stage 3B.4: Storage HBM Integration
 
