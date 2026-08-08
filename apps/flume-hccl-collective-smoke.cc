@@ -1475,8 +1475,8 @@ void RankMain(RankContext* ctx) {
             "payload_failure_step=none",
             "payload_status_word=0",
             "payload_kernel_hcomm_ret=0",
-            "payload_status_schema=v",
-            "payload_status_word_count=",
+            "payload_status_schema=v2",
+            "payload_status_word_count=8",
             "payload_echo=passed",
             "fallback=none",
         };

@@ -100,6 +100,16 @@ def strict_log_with_missing_handoff() -> str:
         "stage3b3e_payload_descriptor_handoff=passed ", "")
 
 
+def strict_log_with_stale_status_schema() -> str:
+    return strict_log(True).replace(
+        "payload_status_schema=v2", "payload_status_schema=v1")
+
+
+def strict_log_with_wrong_status_word_count() -> str:
+    return strict_log(True).replace(
+        "payload_status_word_count=8", "payload_status_word_count=4")
+
+
 def strict_log_with_missing_semantic() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -293,6 +303,32 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| descriptor handoff | missing |" in text
         assert "inspect direct ACL payload descriptor handoff" in text
+
+        strict_stale_schema = write(tmp / "strict-stale-schema.log",
+                                    strict_log_with_stale_status_schema())
+        stale_schema_runtime_dir = tmp / "stale-schema-runtime"
+        stale_schema_runtime_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            stale_schema_runtime_dir, smoke, strict_stale_schema, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload status schema | v1 / 8 |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_stale_status_schema())[0]
+
+        strict_wrong_word_count = write(
+            tmp / "strict-wrong-status-word-count.log",
+            strict_log_with_wrong_status_word_count())
+        wrong_word_count_runtime_dir = tmp / "wrong-word-count-runtime"
+        wrong_word_count_runtime_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            wrong_word_count_runtime_dir, smoke, strict_wrong_word_count,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload status schema | v2 / 4 |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_wrong_status_word_count())[0]
 
         stale_package = write(tmp / "package-stale-semantic.log",
                               stale_semantic_package_log())

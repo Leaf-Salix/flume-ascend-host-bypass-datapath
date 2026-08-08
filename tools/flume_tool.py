@@ -1401,8 +1401,8 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_failure_step=none",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
-    "payload_status_schema=v",
-    "payload_status_word_count=",
+    "payload_status_schema=v2",
+    "payload_status_word_count=8",
     "payload_echo=passed",
     "fallback=none",
 )
@@ -1787,7 +1787,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
             "payload_failure_step=none,payload_status_word=0,"
             "payload_kernel_hcomm_ret=0,"
-            "payload_status_schema=v,payload_status_word_count=,"
+            "payload_status_schema=v2,payload_status_word_count=8,"
             "payload_echo=passed,payload_source_checksum=,"
             "payload_checksum=,payload_expected_checksum=,"
             "payload_verify=passed,fallback=none")
