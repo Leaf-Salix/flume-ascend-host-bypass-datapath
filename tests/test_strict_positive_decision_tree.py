@@ -35,7 +35,16 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_thread_notify_mode=0 "
             "payload_desc_completion_mode=0 "
             "payload_desc_timeout_sec=60 payload_desc_status_schema=v2 "
-            "payload_desc_status_word_count=8")
+            "payload_desc_status_word_count=8 "
+            "payload_desc_local_hccl_buffer_bytes=8192 "
+            "payload_desc_remote_hccl_buffer_bytes=8192")
+    resource = (" payload_resolved_engine=aicpu-ts "
+                "payload_resolved_protocol=hccs "
+                "payload_channel_desc=rank-graph "
+                "payload_channel_count=1 payload_notify_num=2 "
+                "payload_usable_hccl_buffer_bytes=8192 "
+                "payload_local_hccl_buffer_bytes=8192 "
+                "payload_remote_hccl_buffer_bytes=8192")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
@@ -53,7 +62,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed "
-        "payload_thread_notify_order=not-used" + desc + " fallback=none\" "
+        "payload_thread_notify_order=not-used" + desc + resource +
+        " fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
@@ -66,7 +76,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed "
         "payload_thread_notify_order=not-used" + recv_desc +
-        " fallback=none\" "
+        resource + " fallback=none\" "
         "payload_expected_checksum=1234",
         "",
     ])
@@ -421,7 +431,11 @@ def main() -> int:
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
-                "done=1, completion=0, thread_notify=0 |") in text
+                "done=1, completion=0, thread_notify=0, local_buffer=8192, "
+                "remote_buffer=8192 |") in text
+        assert ("| HCOMM resource fingerprint | engine=aicpu-ts, "
+                "protocol=hccs, channel_desc=rank-graph, channels=1, "
+                "notify_num=2, usable=8192, local=8192, remote=8192 |") in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",

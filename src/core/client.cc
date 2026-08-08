@@ -2505,7 +2505,11 @@ std::string PayloadDescriptorDetail(
          " payload_desc_status_schema=v" +
          std::to_string(desc.status_schema_version) +
          " payload_desc_status_word_count=" +
-         std::to_string(desc.status_word_count);
+         std::to_string(desc.status_word_count) +
+         " payload_desc_local_hccl_buffer_bytes=" +
+         std::to_string(desc.local_hccl_buffer_bytes) +
+         " payload_desc_remote_hccl_buffer_bytes=" +
+         std::to_string(desc.remote_hccl_buffer_bytes);
 }
 
 std::string PayloadEchoWordsDetail(const uint32_t* status_words) {
@@ -2602,6 +2606,20 @@ std::string HcommPayloadCompletionDetail(
   detail += resource_info.host_thread_notify_ready ?
       " payload_thread_notify_order=batch-end-before-host-notify" :
       " payload_thread_notify_order=not-used";
+  detail += std::string(" payload_resolved_engine=") +
+      FlumeHcommEngineName(resource_info.resolved_engine) +
+      " payload_resolved_protocol=" +
+      FlumeHcommProtocolName(resource_info.resolved_protocol) +
+      " payload_channel_desc=" + resource_info.channel_desc_source +
+      " payload_channel_count=" +
+      std::to_string(resource_info.channel_count) +
+      " payload_notify_num=" + std::to_string(resource_info.notify_num) +
+      " payload_usable_hccl_buffer_bytes=" +
+      std::to_string(resource_info.usable_buffer_bytes) +
+      " payload_local_hccl_buffer_bytes=" +
+      std::to_string(resource_info.local_buffer_bytes) +
+      " payload_remote_hccl_buffer_bytes=" +
+      std::to_string(resource_info.remote_buffer_bytes);
   return detail;
 }
 

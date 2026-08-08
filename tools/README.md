@@ -107,6 +107,9 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
 把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
 `output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
+它还会输出 host descriptor fingerprint 和 HCOMM resource fingerprint，
+用于核对 payload bytes、local/remote HCCL Buffer size、engine/protocol、
+Channel desc source、channel count 和 notify 数量是否符合预期。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on` 和
