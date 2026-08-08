@@ -81,6 +81,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_payload_descriptor_handoff=passed "
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
+        "payload_launch_api=host-args "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
@@ -116,6 +117,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_payload_descriptor_handoff=passed "
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
+        "payload_launch_api=host-args "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
@@ -671,6 +673,8 @@ def main() -> int:
             "hcomm_payload_scheduler_candidate=on\n"
             "hccl collective smoke passed p2p_copy=on\n"
             "hcomm channel probe passed\n"
+            "hcomm canary smoke passed canary_launch_api=host-args\n"
+            "hcomm notify-only smoke passed notify_launch_api=host-args\n"
             "storage HBM smoke passed\n")
         package = write(
             tmp / "package.log",
@@ -736,6 +740,10 @@ def main() -> int:
         assert "`payload_pattern=strict-v1`" in text
         assert "| payload data flow | passed |" in text
         assert "| payload host data | passed |" in text
+        assert ("| Direct ACL custom-op launch ABI observed? | "
+                "canary=host-args, notify=host-args, payload=host-args |"
+                in text)
+        assert "| direct ACL payload launch ABI | host-args |" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text

@@ -3729,6 +3729,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
     strict_sync = marker_state(strict, "stage3b3e_payload_sync")
+    canary_launch_api = marker_value(combined, "canary_launch_api")
+    notify_launch_api = marker_value(combined, "notify_launch_api")
+    payload_launch_api = marker_value(strict, "payload_launch_api")
     strict_resource_acquire = marker_value(strict, "payload_resource_acquire")
     strict_resource_step = marker_value(strict, "payload_resource_step")
     strict_resource_status = marker_value(strict, "payload_resource_status")
@@ -3941,6 +3944,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"{'yes' if scheduler_candidate else 'no'} | "
         "`hcomm_payload_scheduler_candidate` in caps |")
     lines.append(
+        f"| Direct ACL custom-op launch ABI observed? | "
+        f"canary={canary_launch_api}, notify={notify_launch_api}, "
+        f"payload={payload_launch_api} | "
+        "`canary_launch_api`, `notify_launch_api`, and `payload_launch_api`; "
+        "host-args indicates `aclrtLaunchKernelWithHostArgs`, args-handle "
+        "indicates legacy `aclrtKernelArgs*` handoff |")
+    lines.append(
         f"| Storage to HBM path ok? | {'yes' if storage_hbm_ok else 'no'} | "
         f"`storage_hbm={storage_hbm_path}` marker |")
     lines.append(
@@ -4012,6 +4022,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
             f"| descriptor handoff | {strict_handoff} | `stage3b3e_payload_descriptor_handoff` |",
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
+            f"| direct ACL payload launch ABI | {payload_launch_api} | `payload_launch_api`; expected `host-args` when CANN exposes `aclrtLaunchKernelWithHostArgs`, otherwise `args-handle` fallback |",
             f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
