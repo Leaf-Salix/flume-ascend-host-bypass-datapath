@@ -43,7 +43,7 @@ extern "C" {
   "FlumeHcommPayloadCopyAbiVersion3"
 #define FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC \
   "FlumeHcommPayloadCopyAbiVersion4"
-#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION 8U
+#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION 9U
 #define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC \
   "FlumeHcommPayloadCopySemanticVersion"
 #define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC \
@@ -54,6 +54,8 @@ extern "C" {
   "FlumeHcommPayloadCopySemanticVersion7"
 #define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC \
   "FlumeHcommPayloadCopySemanticVersion8"
+#define FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC \
+  "FlumeHcommPayloadCopySemanticVersion9"
 #define FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC \
   "FlumeHcommPayloadCopyRequiresCommAcquire"
 #define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC \
@@ -67,8 +69,8 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG "flume_hcomm_payload"
 #define FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES 128U
-#define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT 8U
-#define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION 2U
+#define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT 10U
+#define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION 3U
 #define FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT 16U
 #define FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY 32U
 #define FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT \
@@ -207,6 +209,63 @@ typedef struct {
   uint32_t status_schema_version;
   uint64_t reserved2[3];
 } flume_hcomm_payload_copy_desc_v1;
+
+static inline uint64_t flume_hcomm_payload_hash_u64(uint64_t hash,
+                                                    uint64_t value) {
+  hash ^= value;
+  hash *= UINT64_C(1099511628211);
+  return hash;
+}
+
+static inline uint64_t flume_hcomm_payload_hash_bytes(
+    uint64_t hash, const char* data, uint32_t len) {
+  uint32_t i = 0;
+  for (; i < len; ++i) {
+    hash ^= (uint64_t)(uint8_t)data[i];
+    hash *= UINT64_C(1099511628211);
+  }
+  return hash;
+}
+
+static inline uint64_t flume_hcomm_payload_copy_desc_fingerprint(
+    const flume_hcomm_payload_copy_desc_v1* desc) {
+  if (desc == 0) {
+    return 0;
+  }
+  uint64_t hash = UINT64_C(1469598103934665603);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->magic);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->version);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->size);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->role);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->local_rank);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->peer_rank);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->rank_size);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->ready_notify_idx);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->done_notify_idx);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->timeout_sec);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->thread_notify_mode);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->completion_mode);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->bytes);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->aicpu_thread);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->channel_handle);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->user_buffer);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->local_hccl_buffer);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->remote_hccl_buffer);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->local_hccl_buffer_bytes);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->remote_hccl_buffer_bytes);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->status_word);
+  hash = flume_hcomm_payload_hash_bytes(
+      hash, desc->batch_tag, FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->cpu_thread_on_aicpu);
+  hash = flume_hcomm_payload_hash_bytes(
+      hash, desc->comm_name, FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->status_word_count);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->status_schema_version);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->reserved2[0]);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->reserved2[1]);
+  hash = flume_hcomm_payload_hash_u64(hash, desc->reserved2[2]);
+  return hash;
+}
 
 static inline void flume_hcomm_notify_only_desc_init(
     flume_hcomm_notify_only_desc_v1* desc) {

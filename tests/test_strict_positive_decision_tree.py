@@ -34,8 +34,8 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_done_notify_idx=1 "
             "payload_desc_thread_notify_mode=0 "
             "payload_desc_completion_mode=0 "
-            "payload_desc_timeout_sec=60 payload_desc_status_schema=v2 "
-            "payload_desc_status_word_count=8 "
+            "payload_desc_timeout_sec=60 payload_desc_status_schema=v3 "
+            "payload_desc_status_word_count=10 "
             "payload_desc_batch_tag=default "
             "payload_recv_path=local-buffer "
             "payload_desc_local_hccl_buffer_bytes=8192 "
@@ -54,7 +54,7 @@ def strict_log(include_verify: bool) -> str:
 	                       "payload_semantic_v5=present "
 	                       "payload_semantic_v6=present "
 	                       "payload_semantic_v7=present "
-	                       "payload_semantic_v8=present")
+	                       "payload_semantic_v8=present payload_semantic_v9=present")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
@@ -72,8 +72,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
-        "payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed payload_role=send "
+        "payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         "payload_trace=passed payload_trace_schema=v2 "
         "payload_trace_word_count=80 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
@@ -96,8 +96,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
-        "payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed payload_role=recv "
+        "payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=recv "
         "payload_trace=passed payload_trace_schema=v2 "
         "payload_trace_word_count=80 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
@@ -126,8 +126,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
-        "payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed payload_role=send "
+        "payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         "payload_trace=passed payload_trace_schema=v2 "
         "payload_trace_word_count=80 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
@@ -140,7 +140,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_recv_path=local-buffer "
 	        "payload_semantic_v6=present "
 	        "payload_semantic_v7=present "
-	        "payload_semantic_v8=present "
+	        "payload_semantic_v8=present payload_semantic_v9=present "
         "payload_thread_notify_order=not-used fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
@@ -202,8 +202,8 @@ def strict_log_with_rank1_remote_read_failure() -> str:
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed payload_role=send "
+        "payload_kernel_hcomm_ret=0 payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         "fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke unsupported: fallback=none detail=\""
@@ -214,8 +214,8 @@ def strict_log_with_rank1_remote_read_failure() -> str:
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=remote-read-failed "
         "payload_failure_step=remote-read payload_status_word=9 "
-        "payload_kernel_hcomm_ret=88 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=observed "
+        "payload_kernel_hcomm_ret=88 payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=observed "
         "fallback=none\"",
         "",
     ])
@@ -259,8 +259,8 @@ def strict_log_with_rank1_pending_remote_read() -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
-        "payload_status_schema=v2 payload_status_word_count=8 "
-        "payload_echo=passed payload_role=send payload_batch_mode=on "
+        "payload_status_schema=v3 payload_status_word_count=10 "
+        "payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send payload_batch_mode=on "
         "fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke failed: fallback=none detail=\""
@@ -272,8 +272,8 @@ def strict_log_with_rank1_pending_remote_read() -> str:
         "payload_kernel_status=remote-read-failed "
         "payload_failure_step=remote-read payload_status_word=9 "
         "payload_kernel_hcomm_ret=4294967295 "
-        "payload_primitive_state=pending payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=observed fallback=none\"",
+        "payload_primitive_state=pending payload_status_schema=v3 "
+        "payload_status_word_count=10 payload_echo=observed fallback=none\"",
         "",
     ])
 
@@ -308,12 +308,12 @@ def strict_log_with_missing_handoff() -> str:
 
 def strict_log_with_stale_status_schema() -> str:
     return strict_log(True).replace(
-        "payload_status_schema=v2", "payload_status_schema=v1")
+        "payload_status_schema=v3", "payload_status_schema=v1")
 
 
 def strict_log_with_wrong_status_word_count() -> str:
     return strict_log(True).replace(
-        "payload_status_word_count=8", "payload_status_word_count=4")
+        "payload_status_word_count=10", "payload_status_word_count=4")
 
 
 def strict_log_with_missing_notify_order() -> str:
@@ -387,7 +387,8 @@ def payload_ready_package_log() -> str:
             "required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v4,payload_semantic,payload_semantic_v5,"
             "payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,"
-            "payload_requires_comm_acquire,payload_status_schema,"
+            "payload_semantic_v9,payload_requires_comm_acquire,"
+            "payload_status_schema,"
             "payload_status_word_count,payload_trace_schema,"
             "payload_trace_word_count,payload_primitive_deps,"
             "build_mode_internal\n"
@@ -434,7 +435,7 @@ def smoke_with_mixed_storage_path() -> str:
 
 def stale_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=missing",
         "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing",
         "status=FAIL",
@@ -445,7 +446,7 @@ def stale_status_schema_package_log() -> str:
 
 def old_pass_without_status_schema_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,build_mode_internal",
         "status=PASS",
         "",
     ])
@@ -453,7 +454,7 @@ def old_pass_without_status_schema_package_log() -> str:
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -464,7 +465,7 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
@@ -475,7 +476,7 @@ def canary_only_package_log() -> str:
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,build_mode_internal",
         "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",
@@ -485,7 +486,7 @@ def abi_missing_package_log() -> str:
 
 def missing_aicpu_tar_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
         "json=present",
         "aicpu_tar=missing",
         "aicpu_tar_readable=missing",
@@ -505,7 +506,7 @@ def multi_candidate_payload_package_log() -> str:
         "",
         "root=/tmp/current-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
         "status=PASS",
         "",
         "status=PASS",
@@ -517,7 +518,7 @@ def multi_candidate_canary_only_package_log() -> str:
     return "\n".join([
         "root=/tmp/stale-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
         "status=FAIL",
         "",
         "root=/tmp/canary-cann",
@@ -589,6 +590,7 @@ def main() -> int:
         assert "`payload_kernel_hcomm_ret=0`" in text
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
+        assert "`payload_descriptor_fingerprint=passed`" in text
         assert "`payload_pattern=strict-v1`" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
@@ -1036,7 +1038,7 @@ def main() -> int:
             stale_schema_runtime_dir, smoke, strict_stale_schema, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
-        assert "| payload status schema | v1 / 8 |" in text
+        assert "| payload status schema | v1 / 10 |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_stale_status_schema())[0]
 
@@ -1050,7 +1052,7 @@ def main() -> int:
             package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
-        assert "| payload status schema | v2 / 4 |" in text
+        assert "| payload status schema | v3 / 4 |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_wrong_status_word_count())[0]
 
@@ -1787,6 +1789,7 @@ def main() -> int:
         assert "strict_positive_evidence=failed" in evidence_text
         assert "payload_kernel_hcomm_ret=0" in evidence_text
         assert "payload_echo=passed" in evidence_text
+        assert "payload_descriptor_fingerprint=passed" in evidence_text
 
     return 0
 

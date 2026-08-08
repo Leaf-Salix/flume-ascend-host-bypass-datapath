@@ -17,6 +17,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion6() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion7() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion8() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion9() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusWordCount() ==

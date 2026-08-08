@@ -2695,6 +2695,11 @@ uint64_t PayloadEchoBytes(const uint32_t* status_words) {
          (static_cast<uint64_t>(status_words[5]) << 32U);
 }
 
+uint64_t PayloadEchoDescriptorFingerprint(const uint32_t* status_words) {
+  return static_cast<uint64_t>(status_words[8]) |
+         (static_cast<uint64_t>(status_words[9]) << 32U);
+}
+
 std::string PayloadStatusSchemaDetail() {
   return std::string(" payload_status_schema=v") +
          std::to_string(FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION) +
@@ -2758,6 +2763,8 @@ std::string PayloadDescriptorDetail(
          std::to_string(desc.status_schema_version) +
          " payload_desc_status_word_count=" +
          std::to_string(desc.status_word_count) +
+         " payload_desc_fingerprint=" +
+         std::to_string(flume_hcomm_payload_copy_desc_fingerprint(&desc)) +
          " payload_desc_batch_mode=" + (batch_disabled ? "off" : "on") +
          " payload_desc_batch_tag=" + batch_tag_state +
          " payload_recv_path=" +
@@ -2785,7 +2792,9 @@ std::string PayloadEchoWordsDetail(const uint32_t* status_words) {
          std::to_string(PayloadEchoBytes(status_words)) +
          " payload_echo_local_rank=" + std::to_string(status_words[6]) +
          " payload_echo_completion_mode=" +
-         std::to_string(status_words[7]);
+         std::to_string(status_words[7]) +
+         " payload_echo_desc_fingerprint=" +
+         std::to_string(PayloadEchoDescriptorFingerprint(status_words));
 }
 
 void InitPayloadTraceWords(uint32_t* trace_words) {
@@ -3275,7 +3284,7 @@ std::string HcommPayloadRuntimeDetail(
          HcommPayloadCompletionDetail(desc, resource_info) +
          " payload_semantic=present payload_semantic_v5=present "
          "payload_semantic_v6=present payload_semantic_v7=present "
-         "payload_semantic_v8=present "
+         "payload_semantic_v8=present payload_semantic_v9=present "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }
@@ -3558,6 +3567,29 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v6=present payload_semantic_v7=present "
            "payload_semantic_v8=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle semantic_v9_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC,
+      &semantic_v9_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_semantic=present payload_semantic_v5=present "
+           "payload_semantic_v6=present payload_semantic_v7=present "
+           "payload_semantic_v8=present payload_semantic_v9=missing "
+           "kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC +
            PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
@@ -4013,10 +4045,15 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
           FLUME_HCOMM_NOTIFY_ROLE_RECV;
   const uint32_t expected_completion_mode =
       desc.completion_mode;
+  const uint64_t expected_desc_fingerprint =
+      flume_hcomm_payload_copy_desc_fingerprint(&desc);
+  const uint64_t echo_desc_fingerprint =
+      PayloadEchoDescriptorFingerprint(kernel_status_words);
   if (kernel_status_words[2] != expected_role ||
       kernel_status_words[3] != peer_rank || echo_bytes != bytes ||
       kernel_status_words[6] != state.rank ||
-      kernel_status_words[7] != expected_completion_mode) {
+      kernel_status_words[7] != expected_completion_mode ||
+      echo_desc_fingerprint != expected_desc_fingerprint) {
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -4038,6 +4075,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " expected_local_rank=" + std::to_string(state.rank) +
            " expected_completion_mode=" +
            std::to_string(expected_completion_mode) +
+           " expected_desc_fingerprint=" +
+           std::to_string(expected_desc_fingerprint) +
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
@@ -4054,6 +4093,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_kernel_hcomm_ret=") +
          std::to_string(kernel_hcomm_ret) + " " +
          "payload_echo=passed payload_role=" + PayloadRoleName(role) +
+         " payload_descriptor_fingerprint=passed "
+         "payload_expected_desc_fingerprint=" +
+         std::to_string(expected_desc_fingerprint) +
          PayloadStatusSchemaDetail() +
          PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) +

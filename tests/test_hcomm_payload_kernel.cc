@@ -154,6 +154,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion6() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion7() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion8() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion9() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
@@ -200,6 +201,11 @@ int main() {
   FLUME_TEST_CHECK(status[5] == 0U);
   FLUME_TEST_CHECK(status[6] == 0U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
+  uint64_t send_fingerprint =
+      static_cast<uint64_t>(status[8]) |
+      (static_cast<uint64_t>(status[9]) << 32U);
+  FLUME_TEST_CHECK(send_fingerprint ==
+                   flume_hcomm_payload_copy_desc_fingerprint(&send_desc));
   FLUME_TEST_CHECK(trace[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
   FLUME_TEST_CHECK(trace[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
   FLUME_TEST_CHECK(trace[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
@@ -376,6 +382,11 @@ int main() {
   FLUME_TEST_CHECK(status[5] == 0U);
   FLUME_TEST_CHECK(status[6] == 1U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
+  uint64_t recv_fingerprint =
+      static_cast<uint64_t>(status[8]) |
+      (static_cast<uint64_t>(status[9]) << 32U);
+  FLUME_TEST_CHECK(recv_fingerprint ==
+                   flume_hcomm_payload_copy_desc_fingerprint(&recv_desc));
   FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
   FLUME_TEST_CHECK(std::memcmp(local, remote, 16) == 0);
   FLUME_TEST_CHECK(last_read_dst == local);

@@ -77,6 +77,10 @@ void StorePayloadEcho(const flume_hcomm_payload_copy_desc_v1& desc) {
   status_words[5] = static_cast<unsigned int>(desc.bytes >> 32U);
   status_words[6] = desc.local_rank;
   status_words[7] = desc.completion_mode;
+  const uint64_t fingerprint =
+      flume_hcomm_payload_copy_desc_fingerprint(&desc);
+  status_words[8] = static_cast<unsigned int>(fingerprint & 0xFFFFFFFFU);
+  status_words[9] = static_cast<unsigned int>(fingerprint >> 32U);
 }
 
 unsigned int* PayloadTraceWords(
@@ -543,7 +547,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion7() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion8() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 8U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 8U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion9() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 9U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
