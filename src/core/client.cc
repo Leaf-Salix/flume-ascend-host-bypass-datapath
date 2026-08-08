@@ -2544,6 +2544,13 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
         static_cast<ThreadHandle>(resource_info.cpu_ts_thread), 0,
         desc.timeout_sec);
     if (notify_ret != 0) {
+      aclError sync_ret =
+          aclrtSynchronizeStream(static_cast<aclrtStream>(acl_stream));
+      uint32_t observed_status_words[2] = {0xFFFFFFFFU, 0xFFFFFFFFU};
+      aclError status_ret = aclrtMemcpy(
+          observed_status_words, sizeof(observed_status_words),
+          kernel_status_dev, sizeof(observed_status_words),
+          ACL_MEMCPY_DEVICE_TO_HOST);
       (void)aclrtBinaryUnLoad(bin_handle);
       (void)aclrtFree(kernel_status_dev);
       *status = FLUME_ERR_BACKEND;
@@ -2554,7 +2561,15 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                          "stage3b3e_payload_sync=failed "
                          "payload_thread_notify=host-aicpu "
                          "api=HcommThreadNotifyWaitOnThread hcomm_ret=") +
-             std::to_string(notify_ret) + " kernel_func=" +
+             std::to_string(notify_ret) + " post_notify_stream_sync=\"" +
+             AclErrorMessage(sync_ret) + "\" payload_kernel_status=" +
+             PayloadKernelStatusName(observed_status_words[0]) +
+             " payload_status_word=" +
+             std::to_string(observed_status_words[0]) +
+             " payload_kernel_hcomm_ret=" +
+             std::to_string(observed_status_words[1]) +
+             " payload_status_read=\"" + AclErrorMessage(status_ret) +
+             "\" kernel_func=" +
              FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC;
     }
   }
