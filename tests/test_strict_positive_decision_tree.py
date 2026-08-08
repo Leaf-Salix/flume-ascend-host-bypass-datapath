@@ -36,7 +36,8 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_payload_descriptor_handoff=passed "
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
-        "payload_kernel_status=success payload_status_word=0 "
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed fallback=none\"",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
@@ -45,7 +46,8 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_payload_descriptor_handoff=passed "
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
-        "payload_kernel_status=success payload_status_word=0 "
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed fallback=none\"",
         "",
@@ -61,7 +63,8 @@ def strict_log_with_cross_line_false_positive() -> str:
         "stage3b3e_payload_descriptor_handoff=passed "
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
-        "payload_kernel_status=success payload_status_word=0 "
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed fallback=none "
         "payload_verify=passed\"",
@@ -74,6 +77,15 @@ def strict_log_with_cross_line_false_positive() -> str:
 def strict_log_with_nonzero_hcomm_ret() -> str:
     return strict_log(True).replace(
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
+
+
+def strict_log_with_kernel_local_copy_failure() -> str:
+    return strict_log(True).replace(
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 payload_kernel_hcomm_ret=0",
+        "payload_kernel_status=local-copy-failed "
+        "payload_failure_step=local-copy payload_status_word=5 "
+        "payload_kernel_hcomm_ret=91")
 
 
 def strict_log_with_missing_handoff() -> str:
@@ -199,6 +211,7 @@ def main() -> int:
         assert "`payload_kernel_hcomm_ret=0`" in text
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
+        assert "| kernel failure step | none |" in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
@@ -235,6 +248,20 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel HCOMM ret | 42 |" in text
         assert "inspect in-kernel HCOMM primitive return code: 42" in text
+
+        strict_local_copy_fail = write(
+            tmp / "strict-local-copy-fail.log",
+            strict_log_with_kernel_local_copy_failure())
+        local_copy_fail_dir = tmp / "local-copy-fail"
+        local_copy_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            local_copy_fail_dir, smoke, strict_local_copy_fail, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| kernel status | local-copy-failed |" in text
+        assert "| kernel failure step | local-copy |" in text
+        assert ("inspect in-kernel HCOMM primitive failure: "
+                "local-copy-failed at local-copy") in text
 
         strict_missing_handoff = write(tmp / "strict-missing-handoff.log",
                                        strict_log_with_missing_handoff())

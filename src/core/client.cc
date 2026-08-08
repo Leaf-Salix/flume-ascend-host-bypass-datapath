@@ -2346,6 +2346,47 @@ std::string PayloadKernelStatusName(uint32_t status) {
   }
 }
 
+std::string PayloadFailureStepName(uint32_t status) {
+  switch (status) {
+    case 0xFFFFFFFFU:
+      return "kernel-not-written";
+    case FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS:
+      return "none";
+    case FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT:
+      return "validate-descriptor";
+    case FLUME_HCOMM_PAYLOAD_STATUS_HCOMM_ERROR:
+      return "pre-dispatch";
+    case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED:
+      return "host-aicpu-thread-notify-wait";
+    case FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED:
+      return "batch-start";
+    case FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED:
+      return "local-copy";
+    case FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_RECORD_FAILED:
+      return "ready-notify-record";
+    case FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED:
+      return "done-notify-wait";
+    case FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED:
+      return "ready-notify-wait";
+    case FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED:
+      return "remote-read";
+    case FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED:
+      return "done-notify-record";
+    case FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED:
+      return "batch-end";
+    case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED:
+      return "host-aicpu-thread-notify-record";
+    case FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED:
+      return "channel-drain";
+    case FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED:
+      return "comm-acquire";
+    case FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED:
+      return "comm-release";
+    default:
+      return std::string("unknown-") + std::to_string(status);
+  }
+}
+
 uint64_t PayloadEchoBytes(const uint32_t* status_words) {
   return static_cast<uint64_t>(status_words[4]) |
          (static_cast<uint64_t>(status_words[5]) << 32U);
@@ -2837,6 +2878,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              AclStreamSyncApiName() +
              " payload_kernel_status=" +
              PayloadKernelStatusName(observed_status_words[0]) +
+             " payload_failure_step=" +
+             PayloadFailureStepName(observed_status_words[0]) +
              " payload_status_word=" +
              std::to_string(observed_status_words[0]) +
              " payload_kernel_hcomm_ret=" +
@@ -2873,6 +2916,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) + "\" payload_status_read=\"" +
            AclErrorMessage(status_ret) + "\" payload_kernel_status=" +
            PayloadKernelStatusName(observed_status_words[0]) +
+           " payload_failure_step=" +
+           PayloadFailureStepName(observed_status_words[0]) +
            " payload_status_word=" +
            std::to_string(observed_status_words[0]) +
            " payload_kernel_hcomm_ret=" +
@@ -2912,8 +2957,10 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=passed "
-                       "payload_batch_mode=on payload_kernel_status=") +
+           "payload_batch_mode=on payload_kernel_status=") +
            PayloadKernelStatusName(kernel_status) +
+           " payload_failure_step=" +
+           PayloadFailureStepName(kernel_status) +
            " payload_status_word=" +
            std::to_string(kernel_status) +
            " payload_kernel_hcomm_ret=" +
@@ -2930,8 +2977,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=passed "
-                       "payload_batch_mode=on payload_kernel_status=success "
-                       "payload_status_word=0 payload_kernel_hcomm_ret=") +
+                     "payload_batch_mode=on payload_kernel_status=success "
+                     "payload_failure_step=none "
+                     "payload_status_word=0 payload_kernel_hcomm_ret=") +
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
            PayloadEchoWordsDetail(kernel_status_words) + " kernel_func=" +
@@ -2956,8 +3004,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=passed "
-                       "payload_batch_mode=on payload_kernel_status=success "
-                       "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+                     "payload_batch_mode=on payload_kernel_status=success "
+                     "payload_failure_step=none "
+                     "payload_status_word=0 payload_kernel_hcomm_ret=0 "
                        "payload_echo=failed") +
            PayloadStatusSchemaDetail() +
            PayloadEchoWordsDetail(kernel_status_words) +
@@ -2977,6 +3026,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_direct_aclrt_payload_launch=passed "
                      "stage3b3e_payload_sync=passed "
                      "payload_batch_mode=on payload_kernel_status=success "
+                     "payload_failure_step=none "
                      "payload_status_word=0 "
                      "payload_kernel_hcomm_ret=") +
          std::to_string(kernel_hcomm_ret) + " " +

@@ -1431,6 +1431,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
     strict_sync = marker_state(strict, "stage3b3e_payload_sync")
     strict_kernel = marker_value(strict, "payload_kernel_status")
+    strict_failure_step = marker_value(strict, "payload_failure_step")
     strict_status_word = marker_value(strict, "payload_status_word")
     strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
     strict_status_schema = marker_value(strict, "payload_status_schema")
@@ -1503,6 +1504,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| direct ACL payload launch | {strict_launch} | `stage3b3e_direct_aclrt_payload_launch` |",
             f"| stream sync | {strict_sync} | `stage3b3e_payload_sync` |",
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
+            f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
@@ -1537,7 +1539,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
         elif strict_kernel not in ("success", "missing"):
-            next_action = f"inspect in-kernel HCOMM primitive failure: {strict_kernel}"
+            next_action = (
+                "inspect in-kernel HCOMM primitive failure: "
+                f"{strict_kernel} at {strict_failure_step}")
         elif strict_hcomm_ret not in ("0", "missing"):
             next_action = (
                 "inspect in-kernel HCOMM primitive return code: "
