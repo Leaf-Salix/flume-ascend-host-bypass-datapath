@@ -1240,6 +1240,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
 
 STRICT_PAYLOAD_RANK_MARKERS = (
     "stage3b3e_payload_copy=passed",
+    "stage3b3e_direct_aclrt_payload_loader=passed",
+    "stage3b3e_payload_descriptor_handoff=passed",
     "stage3b3e_direct_aclrt_payload_launch=passed",
     "stage3b3e_payload_sync=passed",
     "payload_kernel_status=success",
@@ -1389,6 +1391,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | "
         "`rank 0/1 passed` + `stage3b3e_payload_copy=passed` + "
+        "`stage3b3e_direct_aclrt_payload_loader=passed` + "
+        "`stage3b3e_payload_descriptor_handoff=passed` + "
         "`payload_kernel_status=success` + `payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + `payload_verify=passed` + "
         "`fallback=none` |")

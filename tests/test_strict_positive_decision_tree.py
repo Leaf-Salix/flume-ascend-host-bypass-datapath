@@ -72,6 +72,11 @@ def strict_log_with_nonzero_hcomm_ret() -> str:
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
 
 
+def strict_log_with_missing_handoff() -> str:
+    return strict_log(True).replace(
+        "stage3b3e_payload_descriptor_handoff=passed ", "")
+
+
 def strict_log_with_missing_semantic() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -182,6 +187,17 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel HCOMM ret | 42 |" in text
         assert "inspect in-kernel HCOMM primitive return code: 42" in text
+
+        strict_missing_handoff = write(tmp / "strict-missing-handoff.log",
+                                       strict_log_with_missing_handoff())
+        missing_handoff_dir = tmp / "missing-handoff"
+        missing_handoff_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_handoff_dir, smoke, strict_missing_handoff, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| descriptor handoff | missing |" in text
+        assert "inspect direct ACL payload descriptor handoff" in text
 
         stale_package = write(tmp / "package-stale-semantic.log",
                               stale_semantic_package_log())
