@@ -2398,6 +2398,29 @@ def CommandUsesWritePath(command: list[str]) -> bool:
     return "--hcomm-payload-write-path" in command
 
 
+def HasAcceptedPayloadCandidate(args: argparse.Namespace,
+                                command: list[str]) -> bool:
+    if (args.auto_run_hcomm_payload_channel_handle_candidate and
+            not CommandUsesChannelHandleBinding(command)):
+        return True
+    if (args.auto_run_hcomm_payload_write_path_candidate and
+            not CommandUsesWritePath(command)):
+        return True
+    if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+            not CommandUsesChannelFence(command)):
+        return True
+    if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+            not CommandUsesNoBatch(command)):
+        return True
+    if args.auto_run_hcomm_payload_tagged_diagnostic:
+        return True
+    if (args.auto_run_hcomm_payload_direct_output_diagnostic and
+            not CommandUsesDirectOutputRecv(command) and
+            not CommandUsesWritePath(command)):
+        return True
+    return False
+
+
 def PayloadCommandWithoutWritePath(command: list[str]) -> list[str]:
     return [
         item for item in command
@@ -4570,22 +4593,23 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     if smoke_spec is not None:
         strict_command = list(smoke_spec.command)
         strict_command.append("--hcomm-require-payload-copy")
-        allow_channel_candidate = (
-            args.auto_run_hcomm_payload_channel_handle_candidate and
+        allow_accepted_candidate = (
             package_payload_ready and
-            not CommandUsesChannelHandleBinding(strict_command))
+            HasAcceptedPayloadCandidate(args, strict_command))
         strict_result = runner.run(
             "hcomm-payload-strict-positive" if package_payload_ready
             else "hcomm-payload-strict-negative",
             strict_command,
-            required=package_payload_ready and not allow_channel_candidate,
+            required=package_payload_ready and not allow_accepted_candidate,
             timeout_seconds=args.hccl_smoke_timeout_sec,
             env_updates=smoke_spec.env_updates,
         )
         strict_tree_log = strict_result.log_path
         if strict_result.returncode != 0:
             WriteHcclSmokeDiagnostics(runner.run_dir, strict_result.log_path)
-            if allow_channel_candidate:
+            if (args.auto_run_hcomm_payload_channel_handle_candidate and
+                    package_payload_ready and
+                    not CommandUsesChannelHandleBinding(strict_command)):
                 candidate_log = RunHcommPayloadChannelHandleFallbackCandidates(
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path, args)
@@ -4770,13 +4794,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         step_name = ("hcomm-payload-strict-positive"
                      if spec.name == "hccl-collective-smoke"
                      else spec.name)
-        allow_channel_candidate = (
+        allow_accepted_candidate = (
             step_name == "hcomm-payload-strict-positive" and
-            args.auto_run_hcomm_payload_channel_handle_candidate and
-            not CommandUsesChannelHandleBinding(spec.command))
+            HasAcceptedPayloadCandidate(args, spec.command))
         result = runner.run(step_name, spec.command,
                             required=spec.required and
-                            not allow_channel_candidate,
+                            not allow_accepted_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
         if step_name == "hcomm-payload-strict-positive":
@@ -4784,7 +4807,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
-                if allow_channel_candidate:
+                if (args.auto_run_hcomm_payload_channel_handle_candidate and
+                        not CommandUsesChannelHandleBinding(spec.command)):
                     candidate_log = (
                         RunHcommPayloadChannelHandleFallbackCandidates(
                             runner, spec.command, spec.env_updates, timeout,
@@ -4976,13 +5000,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         step_name = ("hcomm-storage-strict-positive"
                      if spec.name == "hccl-collective-smoke"
                      else spec.name)
-        allow_channel_candidate = (
+        allow_accepted_candidate = (
             step_name == "hcomm-storage-strict-positive" and
-            args.auto_run_hcomm_payload_channel_handle_candidate and
-            not CommandUsesChannelHandleBinding(spec.command))
+            HasAcceptedPayloadCandidate(args, spec.command))
         result = runner.run(step_name, spec.command,
                             required=spec.required and
-                            not allow_channel_candidate,
+                            not allow_accepted_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
         if step_name == "hcomm-storage-strict-positive":
@@ -4990,7 +5013,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
-                if allow_channel_candidate:
+                if (args.auto_run_hcomm_payload_channel_handle_candidate and
+                        not CommandUsesChannelHandleBinding(spec.command)):
                     candidate_log = (
                         RunHcommPayloadChannelHandleFallbackCandidates(
                             runner, spec.command, spec.env_updates, timeout,

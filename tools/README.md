@@ -604,7 +604,9 @@ entrypoint 包误判成 payload copy 失败。
 strict-positive 失败后，它会自动尝试 channel-handle、write-path、
 channel-fence、no-batch、tagged-batch、direct-output 和 no-comm-acquire
 组合。只有产生完整 checksum/trace/`fallback=none` 证据的候选才能让最终
-gate 通过；诊断候选只用于定位失败 primitive，不会放宽成功标准。
+gate 通过；诊断候选只用于定位失败 primitive，不会放宽成功标准。启用任一
+可作为证据的候选时，默认 strict run 的失败不会单独决定 summary，最终
+summary 以 strict evidence gate 的选择结果为准。
 
 Stage 3B.4 storage-over-HCOMM focused gate：
 

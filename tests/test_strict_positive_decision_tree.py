@@ -721,6 +721,32 @@ def main() -> int:
         assert matrix_args.auto_run_hcomm_payload_tagged_diagnostic
         assert matrix_args.auto_run_hcomm_payload_direct_output_diagnostic
         assert matrix_args.auto_run_hcomm_payload_no_comm_acquire_diagnostic
+        assert flume_tool.HasAcceptedPayloadCandidate(
+            matrix_args, ["flume-hccl-collective-smoke"])
+        write_only_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": False,
+            "auto_run_hcomm_payload_write_path_candidate": True,
+            "auto_run_hcomm_payload_channel_fence_diagnostic": False,
+            "auto_run_hcomm_payload_nobatch_diagnostic": False,
+            "auto_run_hcomm_payload_tagged_diagnostic": False,
+            "auto_run_hcomm_payload_direct_output_diagnostic": False,
+        })()
+        assert flume_tool.HasAcceptedPayloadCandidate(
+            write_only_args, ["flume-hccl-collective-smoke"])
+        assert not flume_tool.HasAcceptedPayloadCandidate(
+            write_only_args,
+            ["flume-hccl-collective-smoke", "--hcomm-payload-write-path"])
+        no_comm_only_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": False,
+            "auto_run_hcomm_payload_write_path_candidate": False,
+            "auto_run_hcomm_payload_channel_fence_diagnostic": False,
+            "auto_run_hcomm_payload_nobatch_diagnostic": False,
+            "auto_run_hcomm_payload_tagged_diagnostic": False,
+            "auto_run_hcomm_payload_direct_output_diagnostic": False,
+            "auto_run_hcomm_payload_no_comm_acquire_diagnostic": True,
+        })()
+        assert not flume_tool.HasAcceptedPayloadCandidate(
+            no_comm_only_args, ["flume-hccl-collective-smoke"])
 
         strict_pass = write(tmp / "strict-pass.log", strict_log(True))
         pass_dir = tmp / "pass"
