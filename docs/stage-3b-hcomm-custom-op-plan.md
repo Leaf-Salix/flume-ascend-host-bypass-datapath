@@ -351,11 +351,16 @@ package does not need that legacy public-HCCL-launch entrypoint.
 The legacy `FlumeHcommPayloadCopyDirectAclrtKernel` entrypoint is still exported
 as a compatibility wrapper, but Flume's payload-ready preflight requires the V2
 entrypoint so that stale packages do not silently skip the two-word status
-diagnostic ABI. When the package JSON declares only the legacy entrypoint, the
-preflight reports
+diagnostic ABI. It also requires the SO symbol
+`FlumeHcommPayloadCopyAbiVersion2`, which marks the current payload descriptor
+semantic ABI after the `completion_mode` field became meaningful. When the
+package JSON declares only the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
 package refresh problem, not as evidence that HCOMM payload primitives failed.
+When the V2 entrypoint and internal-payload marker exist but
+`FlumeHcommPayloadCopyAbiVersion2` is missing, rebuild the package with current
+Flume headers before running strict smoke.
 
 `ascend-probe` records the same check as
 `hcomm-custom-op-package-preflight` when payload or notify-only smoke is

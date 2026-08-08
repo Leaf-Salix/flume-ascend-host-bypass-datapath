@@ -36,6 +36,7 @@ HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
 HCOMM_PAYLOAD_BUILD_MODE_INTERNAL = "FlumeHcommPayloadBuildModeInternalPayload"
 HCOMM_PAYLOAD_COPY_ABI_VERSION = "FlumeHcommPayloadCopyAbiVersion"
+HCOMM_PAYLOAD_COPY_ABI_VERSION_V2 = "FlumeHcommPayloadCopyAbiVersion2"
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
@@ -1764,6 +1765,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY,
             HCOMM_PAYLOAD_BUILD_MODE_INTERNAL,
             HCOMM_PAYLOAD_COPY_ABI_VERSION,
+            HCOMM_PAYLOAD_COPY_ABI_VERSION_V2,
         ]
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
@@ -1803,7 +1805,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                                         False))
                 found_payload_abi_version_marker = (
                     found_payload_abi_version_marker or
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False))
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V2,
+                                        False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
@@ -1816,6 +1819,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_abi_version."
                       f"{HCOMM_PAYLOAD_COPY_ABI_VERSION}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False) else 'missing'}")
+                print("function_so.payload_abi_version_v2."
+                      f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V2}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -1844,12 +1850,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 required_ok = (
                     required_ok and
                     symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) and
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION, False))
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, False))
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
             print("required_payload_abi_version_symbol="
-                  f"{HCOMM_PAYLOAD_COPY_ABI_VERSION}")
+                  f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V2}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok

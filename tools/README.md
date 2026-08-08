@@ -194,10 +194,11 @@ payload smoke。该检查还会确认 AICPU tar
 `readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
 `FlumeHcommCanaryDirectAclrtKernel`、
 `FlumeHcommPayloadCopyDirectAclrtKernelV2` 和
-`FlumeHcommPayloadBuildModeInternalPayload`。默认 canary-only 包可能为了
-JSON/SO 兼容导出 V2 stub；没有 internal build-mode marker 时不会被判为
-payload-ready，避免把空包、坏包、stub 包或 JSON/SO 不一致的包误判为可跑
-strict payload。
+`FlumeHcommPayloadBuildModeInternalPayload`，并要求
+`FlumeHcommPayloadCopyAbiVersion2` 作为当前 descriptor semantic ABI marker。
+默认 canary-only 包可能为了 JSON/SO 兼容导出 V2 stub；没有 internal
+build-mode marker 或 ABI v2 marker 时不会被判为 payload-ready，避免把空包、
+坏包、stub 包、旧 ABI 包或 JSON/SO 不一致的包误判为可跑 strict payload。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加

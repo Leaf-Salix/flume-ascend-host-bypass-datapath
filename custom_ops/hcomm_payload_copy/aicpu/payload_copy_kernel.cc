@@ -205,3 +205,7 @@ extern "C" unsigned int FlumeHcommPayloadBuildModeInternalPayload() {
 extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion() {
   return FLUME_HCOMM_PAYLOAD_COPY_VERSION;
 }
+
+extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion2() {
+  return FLUME_HCOMM_PAYLOAD_COPY_VERSION == 2U ? 1U : 0U;
+}

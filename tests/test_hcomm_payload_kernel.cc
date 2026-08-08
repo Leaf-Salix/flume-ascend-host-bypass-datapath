@@ -91,6 +91,7 @@ int main() {
 
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_VERSION);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion2() == 1U);
 
   uint8_t user[64] = {};
   uint8_t local[64] = {};
