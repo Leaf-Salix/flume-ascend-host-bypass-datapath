@@ -400,6 +400,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       "payload_desc_batch_tag=",
+      "payload_recv_path=",
+      "payload_semantic_v6=present",
       "payload_thread_notify_order=",
       "fallback=none",
   };
