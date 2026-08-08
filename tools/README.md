@@ -121,11 +121,21 @@ python3 tools/flume_tool.py hcomm-custom-op-package
 # 检查 Stage 3B.3E payload-copy kernel 是否也在包里
 python3 tools/flume_tool.py --require-hcomm-payload-kernel \
   hcomm-custom-op-package
+
+# 如未安装 run 包，也可以直接检查某个 CANN/OPP root 或 build 产物
+python3 tools/flume_tool.py --custom-op-root <cann-root-or-opp-root> \
+  --require-hcomm-payload-kernel hcomm-custom-op-package
+python3 tools/flume_tool.py \
+  --custom-op-json <path-to-libflume_hcomm_payload_aicpu_kernel.json> \
+  --custom-op-aicpu-tar <path-to-aicpu_flume_hcomm_payload.tar.gz> \
+  --require-hcomm-payload-kernel hcomm-custom-op-package
 ```
 
 如果第二条失败并出现 `payload_direct_aclrt ... missing`，说明当前安装的是
 canary-only 包或旧包，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`
-重新打包安装后再跑 strict payload smoke。
+重新打包安装后再跑 strict payload smoke。该检查还会确认 AICPU tar
+是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，避免把空包或
+不完整包误判为 payload-ready。
 
 未安装 internal payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 

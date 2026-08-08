@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUILD_JOBS = min(os.cpu_count() or 4, 32)
 HCOMM_CUSTOM_OP_JSON = "libflume_hcomm_payload_aicpu_kernel.json"
 HCOMM_CUSTOM_OP_TAR = "aicpu_flume_hcomm_payload.tar.gz"
+HCOMM_CUSTOM_OP_KERNEL_SO = "libflume_hcomm_payload_aicpu_kernel.so"
 HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
     "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
@@ -55,8 +57,13 @@ def UpdateChecksum32(checksum: int, data: bytes) -> int:
     return checksum
 
 
-def AscendHomeCandidates() -> list[Path]:
+def AscendHomeCandidates(extra_roots: Optional[Iterable[str]] = None) -> list[Path]:
     candidates: list[Path] = []
+    if extra_roots:
+        for value in extra_roots:
+            value = value.strip()
+            if value:
+                candidates.append(Path(value))
     for key in ("ASCEND_HOME_PATH", "ASCEND_CUSTOM_OPP_PATH", "ASCEND_OPP_PATH"):
         value = os.environ.get(key, "").strip()
         if value:
@@ -68,6 +75,8 @@ def AscendHomeCandidates() -> list[Path]:
     seen: set[str] = set()
     unique: list[Path] = []
     for path in candidates:
+        if path.name == "opp":
+            path = path.parent
         text = str(path)
         if text not in seen:
             seen.add(text)
@@ -75,15 +84,56 @@ def AscendHomeCandidates() -> list[Path]:
     return unique
 
 
-def HcommCustomOpPackageCandidates(vendors: list[str]) -> list[tuple[Path, str, Path, Path]]:
-    candidates: list[tuple[Path, str, Path, Path]] = []
-    for root in AscendHomeCandidates():
+def HcommCustomOpPackageCandidates(
+        vendors: list[str], extra_roots: Optional[Iterable[str]] = None,
+        explicit_json: str = "", explicit_tar: str = ""
+) -> list[tuple[Path, str, Optional[Path], Optional[Path]]]:
+    candidates: list[tuple[Path, str, Optional[Path], Optional[Path]]] = []
+    if explicit_json or explicit_tar:
+        candidates.append((
+            Path("<explicit>"),
+            "explicit",
+            Path(explicit_json) if explicit_json else None,
+            Path(explicit_tar) if explicit_tar else None,
+        ))
+    for root in AscendHomeCandidates(extra_roots):
         for vendor in vendors:
             base = root / "opp" / "vendors" / vendor
             json_path = base / "aicpu" / "config" / HCOMM_CUSTOM_OP_JSON
             tar_path = base / "aicpu" / "kernel" / HCOMM_CUSTOM_OP_TAR
             candidates.append((root, vendor, json_path, tar_path))
     return candidates
+
+
+def JsonDeclaresFunction(payload: object, function_name: str) -> bool:
+    if isinstance(payload, dict):
+        direct = payload.get(function_name)
+        if isinstance(direct, dict):
+            op_info = direct.get("opInfo", {})
+            if isinstance(op_info, dict) and (
+                    op_info.get("functionName") == function_name):
+                return True
+        if payload.get("functionName") == function_name:
+            return True
+        return any(JsonDeclaresFunction(value, function_name)
+                   for value in payload.values())
+    if isinstance(payload, list):
+        return any(JsonDeclaresFunction(item, function_name) for item in payload)
+    return False
+
+
+def InspectAicpuTar(tar_path: Optional[Path]) -> tuple[str, str, int, str]:
+    if tar_path is None or not tar_path.exists():
+        return ("missing", "missing", 0, "")
+    try:
+        with tarfile.open(tar_path, "r:*") as tar:
+            names = tar.getnames()
+    except (OSError, tarfile.TarError) as exc:
+        return ("unreadable", "unknown", 0, str(exc))
+    has_kernel_so = any(Path(name).name == HCOMM_CUSTOM_OP_KERNEL_SO
+                        for name in names)
+    return ("present", "present" if has_kernel_so else "missing",
+            len(names), "")
 
 
 @dataclass
@@ -1168,20 +1218,36 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
     print(f"vendors: {','.join(vendors)}")
+    if args.custom_op_root:
+        print(f"custom_op_root={args.custom_op_root}")
+    if args.custom_op_json:
+        print(f"custom_op_json={args.custom_op_json}")
+    if args.custom_op_aicpu_tar:
+        print(f"custom_op_aicpu_tar={args.custom_op_aicpu_tar}")
     print("")
 
-    for root, vendor, json_path, tar_path in HcommCustomOpPackageCandidates(vendors):
-        if not json_path.exists() and not tar_path.exists():
+    for root, vendor, json_path, tar_path in HcommCustomOpPackageCandidates(
+            vendors, [args.custom_op_root], args.custom_op_json,
+            args.custom_op_aicpu_tar):
+        json_exists = json_path is not None and json_path.exists()
+        tar_exists = tar_path is not None and tar_path.exists()
+        if not json_exists and not tar_exists:
             continue
         print(f"root={root}")
         print(f"vendor={vendor}")
-        print(f"json_path={json_path}")
-        print(f"aicpu_tar_path={tar_path}")
-        print(f"json={'present' if json_path.exists() else 'missing'}")
-        print(f"aicpu_tar={'present' if tar_path.exists() else 'missing'}")
+        print(f"json_path={json_path if json_path else '<unset>'}")
+        print(f"aicpu_tar_path={tar_path if tar_path else '<unset>'}")
+        print(f"json={'present' if json_exists else 'missing'}")
+        print(f"aicpu_tar={'present' if tar_exists else 'missing'}")
+        tar_state, tar_so_state, tar_members, tar_error = InspectAicpuTar(tar_path)
+        print(f"aicpu_tar_readable={tar_state}")
+        print(f"aicpu_tar_so.{HCOMM_CUSTOM_OP_KERNEL_SO}={tar_so_state}")
+        print(f"aicpu_tar_members={tar_members}")
+        if tar_error:
+            print(f"aicpu_tar_error={tar_error}")
 
         functions_present: dict[str, bool] = {}
-        if json_path.exists():
+        if json_exists and json_path is not None:
             found_any_json = True
             try:
                 payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -1189,12 +1255,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print(f"json_error={exc}")
                 payload = {}
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
-                entry = payload.get(function_name)
-                ok = isinstance(entry, dict)
-                if ok:
-                    op_info = entry.get("opInfo", {})
-                    ok = isinstance(op_info, dict) and (
-                        op_info.get("functionName") == function_name)
+                ok = JsonDeclaresFunction(payload, function_name)
                 functions_present[label] = ok
                 print(f"function.{label}.{function_name}="
                       f"{'present' if ok else 'missing'}")
@@ -1203,8 +1264,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 functions_present[label] = False
                 print(f"function.{label}.{function_name}=missing")
 
-        required_ok = tar_path.exists() and all(
-            functions_present.get(label, False) for label in required_functions)
+        required_ok = (
+            tar_state == "present" and tar_so_state == "present" and
+            all(functions_present.get(label, False)
+                for label in required_functions))
         print(f"required={','.join(required_functions)}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
@@ -1350,6 +1413,15 @@ def parse_args() -> argparse.Namespace:
                               "CANN/HCCL compatibility fixtures"))
     parser.add_argument("--custom-op-vendor", default="flume,cust",
                         help=("Comma-separated custom-op vendors to inspect in "
+                              "hcomm-custom-op-package"))
+    parser.add_argument("--custom-op-root", default="",
+                        help=("Additional CANN root or opp root to inspect in "
+                              "hcomm-custom-op-package"))
+    parser.add_argument("--custom-op-json", default="",
+                        help=("Explicit Flume custom-op JSON path to inspect in "
+                              "hcomm-custom-op-package"))
+    parser.add_argument("--custom-op-aicpu-tar", default="",
+                        help=("Explicit Flume AICPU package tar path to inspect in "
                               "hcomm-custom-op-package"))
     parser.add_argument("--require-hcomm-payload-kernel", action="store_true",
                         help=("Require the Stage 3B.3E payload-copy kernel "
