@@ -579,6 +579,14 @@ def main() -> int:
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle)[0]
+        channel_log = write(tmp / "strict-channel-handle.log",
+                            strict_channel_handle)
+        channel_note = flume_tool.WriteHcommPayloadChannelHandleCandidate(
+            tmp, None, channel_log)
+        channel_text = channel_note.read_text(encoding="utf-8")
+        assert "channel_payload_copy_and_verify: `passed`" in channel_text
+        assert "strict-positive evidence" in channel_text
+        assert "payload_comm_binding=channel-handle" in channel_text
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle",

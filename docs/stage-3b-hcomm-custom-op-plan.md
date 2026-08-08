@@ -377,6 +377,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --collect-cann-compat-label host-b-cann \
@@ -439,6 +440,11 @@ semantics for the selected CANN build. To test the same ChannelHandle-only
 behavior as a candidate backend rather than a diagnostic, run the strict smoke
 with `--hcomm-payload-comm-binding=channel-handle`; that path can satisfy the
 final gate only if both ranks pass with checksum match and `fallback=none`.
+For one-shot remote collection, add
+`--auto-run-hcomm-payload-channel-handle-candidate`; if the default
+`comm-name` run fails, the tool reruns the same strict smoke with
+`channel-handle` binding and writes
+`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md`.
 
 Before running strict smoke against an existing package, inspect it:
 
@@ -635,6 +641,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --collect-cann-compat-label host-b-cann \

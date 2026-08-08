@@ -1699,6 +1699,16 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
             rank0_ok, rank1_ok)
 
 
+def StrictPayloadLogPassed(log_path: Optional[Path]) -> bool:
+    if log_path is None:
+        return False
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return StrictPayloadRankEvidencePassed(text)[0]
+
+
 def StorageHbmRank1Passed(text: str) -> bool:
     return re.search(r"\brank 1 storage HBM smoke passed\b", text) is not None
 
@@ -2031,6 +2041,139 @@ def RunHcommPayloadNoCommAcquireDiagnostic(
     if result.returncode != 0:
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadNoCommAcquireDiagnostic(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def PayloadCommandWithoutCommBinding(command: list[str]) -> list[str]:
+    return [
+        item for item in command
+        if item != "--hcomm-payload-skip-comm-acquire" and
+        not item.startswith("--hcomm-payload-comm-binding=")
+    ]
+
+
+def CommandUsesChannelHandleBinding(command: list[str]) -> bool:
+    return "--hcomm-payload-comm-binding=channel-handle" in command
+
+
+def WriteHcommPayloadChannelHandleCandidate(
+        run_dir: Path,
+        default_log: Optional[Path],
+        channel_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md"
+    try:
+        default_text = (default_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if default_log is not None else "")
+    except OSError as exc:
+        default_text = f"failed to read default log: {exc}"
+    try:
+        channel_text = (channel_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if channel_log is not None else "")
+    except OSError as exc:
+        channel_text = f"failed to read channel-handle log: {exc}"
+
+    default_rank_lines = ExtractStrictPayloadRankLines(default_text)
+    channel_rank_lines = ExtractStrictPayloadRankLines(channel_text)
+    channel_ok, channel_rank0_ok, channel_rank1_ok = (
+        StrictPayloadRankEvidencePassed(channel_text))
+    default_rank0_failure_step = MarkerValueFromLine(
+        default_rank_lines[0], "payload_failure_step")
+    default_rank1_failure_step = MarkerValueFromLine(
+        default_rank_lines[1], "payload_failure_step")
+    default_failure_step = (
+        default_rank1_failure_step
+        if default_rank1_failure_step not in ("missing", "none") else
+        default_rank0_failure_step)
+    channel_rank0_failure_step = MarkerValueFromLine(
+        channel_rank_lines[0], "payload_failure_step")
+    channel_rank1_failure_step = MarkerValueFromLine(
+        channel_rank_lines[1], "payload_failure_step")
+    channel_failure_step = (
+        channel_rank1_failure_step
+        if channel_rank1_failure_step not in ("missing", "none") else
+        channel_rank0_failure_step)
+    channel_binding = MarkerValue(channel_text, "payload_comm_binding")
+    channel_acquire = MarkerValue(channel_text, "payload_comm_acquire")
+    channel_hcomm_ret = MarkerValue(channel_text, "payload_kernel_hcomm_ret")
+
+    if channel_ok and channel_binding == "channel-handle":
+        decision = (
+            "channel-handle HCOMM payload copy and checksum verification "
+            "passed; this run provides strict-positive evidence for the "
+            "ChannelHandle/ThreadHandle backend without in-kernel comm acquire")
+        next_action = (
+            "use --hcomm-payload-comm-binding=channel-handle for the current "
+            "CANN environment and proceed to the storage HCOMM strict gate")
+    elif channel_failure_step != "missing":
+        decision = (
+            "channel-handle candidate reached the payload kernel but failed "
+            f"inside `{channel_failure_step}`")
+        next_action = StrictPayloadFailureAction(1, channel_failure_step)
+    else:
+        decision = (
+            "channel-handle candidate did not produce complete payload "
+            "evidence")
+        next_action = "inspect direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload Channel-Handle Candidate",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- channel_handle_log: `{channel_log}`",
+        f"- default_failure_step: `{default_failure_step}`",
+        f"- default_rank0_failure_step: `{default_rank0_failure_step}`",
+        f"- default_rank1_failure_step: `{default_rank1_failure_step}`",
+        f"- channel_binding_marker: `{channel_binding}`",
+        f"- channel_acquire_marker: `{channel_acquire}`",
+        f"- channel_failure_step: `{channel_failure_step}`",
+        f"- channel_rank0_failure_step: `{channel_rank0_failure_step}`",
+        f"- channel_rank1_failure_step: `{channel_rank1_failure_step}`",
+        f"- channel_hcomm_ret: `{channel_hcomm_ret}`",
+        f"- channel_rank0_evidence: `{'passed' if channel_rank0_ok else 'missing'}`",
+        f"- channel_rank1_evidence: `{'passed' if channel_rank1_ok else 'missing'}`",
+        f"- channel_payload_copy_and_verify: `{'passed' if channel_ok else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "This is not the diagnostic-skip path. It is an explicit backend "
+        "candidate and can satisfy the strict-positive gate only when both "
+        "ranks pass with `payload_comm_binding=channel-handle`, checksum "
+        "match, complete trace evidence, and `fallback=none`.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- default_rank0: `{default_rank_lines[0]}`",
+        f"- default_rank1: `{default_rank_lines[1]}`",
+        f"- channel_rank0: `{channel_rank_lines[0]}`",
+        f"- channel_rank1: `{channel_rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload channel-handle candidate -> {note}")
+    return note
+
+
+def RunHcommPayloadChannelHandleCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = PayloadCommandWithoutCommBinding(base_command)
+    command.append("--hcomm-payload-comm-binding=channel-handle")
+    result = runner.run(
+        "hcomm-payload-channel-handle-candidate",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadChannelHandleCandidate(
         runner.run_dir, default_log, result.log_path)
     return result
 
@@ -3214,19 +3357,31 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
 
     strict_result: Optional[StepResult] = None
+    strict_tree_log: Optional[Path] = None
     if smoke_spec is not None:
         strict_command = list(smoke_spec.command)
         strict_command.append("--hcomm-require-payload-copy")
+        allow_channel_candidate = (
+            args.auto_run_hcomm_payload_channel_handle_candidate and
+            package_payload_ready and
+            not CommandUsesChannelHandleBinding(strict_command))
         strict_result = runner.run(
             "hcomm-payload-strict-positive" if package_payload_ready
             else "hcomm-payload-strict-negative",
             strict_command,
-            required=package_payload_ready,
+            required=package_payload_ready and not allow_channel_candidate,
             timeout_seconds=args.hccl_smoke_timeout_sec,
             env_updates=smoke_spec.env_updates,
         )
+        strict_tree_log = strict_result.log_path
         if strict_result.returncode != 0:
             WriteHcclSmokeDiagnostics(runner.run_dir, strict_result.log_path)
+            if allow_channel_candidate:
+                channel_result = RunHcommPayloadChannelHandleCandidate(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path)
+                if StrictPayloadLogPassed(channel_result.log_path):
+                    strict_tree_log = channel_result.log_path
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-disable-batch" not in strict_command):
@@ -3257,7 +3412,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
-        strict_result.log_path if strict_result is not None else None,
+        strict_tree_log,
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
@@ -3371,19 +3526,33 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     )
 
     strict_result: Optional[StepResult] = None
+    strict_tree_log: Optional[Path] = None
     for spec in command_specs:
         timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
                    else args.step_timeout_sec)
         step_name = ("hcomm-payload-strict-positive"
                      if spec.name == "hccl-collective-smoke"
                      else spec.name)
-        result = runner.run(step_name, spec.command, required=spec.required,
+        allow_channel_candidate = (
+            step_name == "hcomm-payload-strict-positive" and
+            args.auto_run_hcomm_payload_channel_handle_candidate and
+            not CommandUsesChannelHandleBinding(spec.command))
+        result = runner.run(step_name, spec.command,
+                            required=spec.required and
+                            not allow_channel_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
         if step_name == "hcomm-payload-strict-positive":
             strict_result = result
+            strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                if allow_channel_candidate:
+                    channel_result = RunHcommPayloadChannelHandleCandidate(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
+                    if StrictPayloadLogPassed(channel_result.log_path):
+                        strict_tree_log = channel_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3412,7 +3581,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        strict_result.log_path if strict_result is not None else None,
+        strict_tree_log,
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
@@ -3429,6 +3598,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "markers, payload_echo=passed, payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
         "payload_trace_order=passed, payload_trace_result=success, "
+        "payload_comm_binding=comm-name with payload_comm_acquire=default, "
+        "or explicit payload_comm_binding=channel-handle, "
         "payload_desc_batch_tag=default|custom, payload_semantic_v7=present, "
         "payload_semantic_v8=present, payload_thread_notify_order=..., "
         "source/received/expected checksum match, payload_verify=passed, and "
@@ -3526,19 +3697,33 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     )
 
     strict_result: Optional[StepResult] = None
+    strict_tree_log: Optional[Path] = None
     for spec in command_specs:
         timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
                    else args.step_timeout_sec)
         step_name = ("hcomm-storage-strict-positive"
                      if spec.name == "hccl-collective-smoke"
                      else spec.name)
-        result = runner.run(step_name, spec.command, required=spec.required,
+        allow_channel_candidate = (
+            step_name == "hcomm-storage-strict-positive" and
+            args.auto_run_hcomm_payload_channel_handle_candidate and
+            not CommandUsesChannelHandleBinding(spec.command))
+        result = runner.run(step_name, spec.command,
+                            required=spec.required and
+                            not allow_channel_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
         if step_name == "hcomm-storage-strict-positive":
             strict_result = result
+            strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                if allow_channel_candidate:
+                    channel_result = RunHcommPayloadChannelHandleCandidate(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
+                    if StrictPayloadLogPassed(channel_result.log_path):
+                        strict_tree_log = channel_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3567,7 +3752,7 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        strict_result.log_path if strict_result is not None else None,
+        strict_tree_log,
         package_result.log_path,
     )
     strict_passed = DecisionTreeStrictPositivePassed(tree)
@@ -4821,6 +5006,15 @@ def parse_args() -> argparse.Namespace:
                               "This isolates HcommAcquireComm/ReleaseComm from "
                               "the ChannelHandle Notify/Read path and does not "
                               "turn the strict-positive gate green."))
+    parser.add_argument("--auto-run-hcomm-payload-channel-handle-candidate",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the default comm-name strict payload gate "
+                              "fails, automatically rerun the same smoke with "
+                              "--hcomm-payload-comm-binding=channel-handle "
+                              "and write HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md. "
+                              "Unlike diagnostic-skip, a complete channel-handle "
+                              "run can satisfy the strict-positive evidence gate."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",
                         help=("Batch tag used by "

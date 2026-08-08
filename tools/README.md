@@ -114,6 +114,14 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-channel \
 
 这和 `--hcomm-payload-skip-comm-acquire` 不同：`channel-handle` 是候选 backend，只有完整 payload copy、checksum、trace 和 `fallback=none` 都通过时才算真实 HCOMM payload copy；`diagnostic-skip` 只用于隔离问题。
 
+也可以让 focused gate 自动跑这个候选分支：
+`--auto-run-hcomm-payload-channel-handle-candidate`。当默认 `comm-name`
+strict-positive 失败时，工具会额外运行
+`--hcomm-payload-comm-binding=channel-handle`，生成
+`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md`；如果该候选分支给出完整
+strict-positive 证据，最终 evidence gate 可以通过。它不同于
+`--auto-run-hcomm-payload-no-comm-acquire-diagnostic`，后者仍然只是诊断。
+
 若默认路径卡在 recv 端 `payload_failure_step=output-copy`，可以追加诊断开关：
 
 ```bash
@@ -519,6 +527,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
@@ -545,6 +554,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
+  --auto-run-hcomm-payload-channel-handle-candidate \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --auto-run-hcomm-payload-no-comm-acquire-diagnostic \
