@@ -50,7 +50,8 @@ extern "C" unsigned int FlumeHcommCanaryDirectAclrtKernel(void* param) {
   return kFlumeCanarySuccess;
 }
 
-#ifndef FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY
+#if !defined(FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD) && \
+    !defined(FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY)
 extern "C" unsigned int FlumeHcommPayloadBuildModeCanaryOnly() {
   return 1U;
 }

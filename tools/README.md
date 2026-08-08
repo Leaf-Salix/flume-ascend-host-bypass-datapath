@@ -167,7 +167,7 @@ python3 tools/flume_tool.py \
 bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 
-FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
+FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON \
 bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 ```
@@ -182,8 +182,8 @@ preflight；如果传了 `--custom-op-export-root`，还会把通过 preflight �
 payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符号。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
-`FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`，生成 Stage 3B.3E 所需的
-internal HCOMM primitive payload package。该模式需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和
+`FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`，生成 Stage 3B.3E 所需的
+HCOMM primitive payload package。该模式需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和
 device-side `ccl_kernel` 链接能力，但 direct ACL payload 路线不需要
 `hccl/hccl_launch.h`。只有在目标 CANN 明确暴露 `hccl_launch.h` 且需要测试
 legacy public-HCCL-launch notify-only 入口时，才额外传
@@ -194,7 +194,7 @@ source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`�
 逻辑失败。`--install-custom-op-package` 会执行生成的 `.run --install` 并在
 安装后再跑一次 installed-package preflight；它是显式 opt-in，因为会修改目标
 CANN/OPP 安装状态。安装前必须先通过 build artifact preflight；如果 JSON、
-AICPU tar、V4 payload entrypoint 或 internal-payload marker 不完整，工具会拒绝安装。
+AICPU tar、V4 payload entrypoint 或 primitive-payload marker 不完整，工具会拒绝安装。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，
@@ -229,7 +229,7 @@ canary-only 包或 payload 包不完整；如果同时出现
 marker `FlumeHcommPayloadStatusSchemaVersion` 和
 `FlumeHcommPayloadStatusWordCount`。旧包只声明
 `FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic marker 时会被明确判为
-stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑
+stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
 `readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
@@ -258,7 +258,7 @@ payload-required 模式检查包体，并在
 runtime 不会悄悄回退到系统安装目录。`--custom-op-aicpu-tar` 只用于
 preflight 校验包体，不参与 direct ACL runtime loader。
 
-未安装 internal payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
+未安装 primitive payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
@@ -294,7 +294,7 @@ Stage 3B.2-complete / 3B.3-prep notify-only smoke：
 python3 tools/flume_tool.py --build-dir build-stage3b2-notify --run-hcomm-notify-only-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe
 ```
 
-当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify`、`stage3b2_kernel_consume=missing`、`stage3b3b_launcher_router=selected:unsupported` 和 direct ACL readiness marker。若未安装 Flume custom-op package，预期是 `stage3b3c_direct_aclrt_loader=unsupported`、`stage3b3c_descriptor_handoff=blocked`、`stage3b3c_direct_aclrt_launch=not-attempted`，同时 Stage 3B.3D canary 预期停在 `stage3b3d_direct_aclrt_canary_loader=unsupported` / `stage3b3d_direct_aclrt_canary_launch=not-attempted`。若已安装只含 canary 的 Flume custom-op package，则可期待 `stage3b3d_direct_aclrt_canary=passed canary_status_word=0 canary_observed_token=1128357465`，表示 no-internal-header custom-op kernel 已消费 descriptor 并写回 device-visible token，但这仍不代表 HCOMM notify-only 已经完成。若安装了 internal payload 包，notify-only direct ACL 成功还应包含 `stage3b2_kernel_consume=passed notify_kernel_status=success notify_status_word=0`；否则应优先根据 `notify_kernel_hcomm_ret=<ret>` 定位 in-kernel HCOMM Notify 调用。
+当前预期仍是 unsupported，但 detail 应包含 `stage3b2_notify_only_plan=channel-notify`、`stage3b2_kernel_consume=missing`、`stage3b3b_launcher_router=selected:unsupported` 和 direct ACL readiness marker。若未安装 Flume custom-op package，预期是 `stage3b3c_direct_aclrt_loader=unsupported`、`stage3b3c_descriptor_handoff=blocked`、`stage3b3c_direct_aclrt_launch=not-attempted`，同时 Stage 3B.3D canary 预期停在 `stage3b3d_direct_aclrt_canary_loader=unsupported` / `stage3b3d_direct_aclrt_canary_launch=not-attempted`。若已安装只含 canary 的 Flume custom-op package，则可期待 `stage3b3d_direct_aclrt_canary=passed canary_status_word=0 canary_observed_token=1128357465`，表示 no-internal-header custom-op kernel 已消费 descriptor 并写回 device-visible token，但这仍不代表 HCOMM notify-only 已经完成。若安装了 primitive payload 包，notify-only direct ACL 成功还应包含 `stage3b2_kernel_consume=passed notify_kernel_status=success notify_status_word=0`；否则应优先根据 `notify_kernel_hcomm_ret=<ret>` 定位 in-kernel HCOMM Notify 调用。
 
 可选 Stage 3A storage proxy HBM smoke：
 

@@ -22,12 +22,13 @@ Current status:
   `hcomm_primitives.h`, or `hccl_res_expt.h`.
 - Stage 3B.3E adds the first true HCOMM pair-copy kernel:
   `FlumeHcommPayloadCopyDirectAclrtKernel`. It is behind
-  `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` because the kernel itself must
-  call `HcommLocalCopyOnThread`, `HcommReadOnThread`, and Channel Notify
-  primitives. This direct ACL payload package does not require `hccl_launch.h`.
+  `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` because the kernel itself
+  calls public `hcomm_primitives.h` APIs: `HcommLocalCopyOnThread`,
+  `HcommReadOnThread`, and Channel Notify primitives. This direct ACL payload
+  package does not require `hccl_launch.h` or `pkg_inc`.
 - Payload copy now has an experimental kernel path, but it is not part of the
   default no-internal-header canary build and still requires remote validation
-  with the internal HCOMM kernel package enabled.
+  with the HCOMM primitive payload package enabled.
 - The legacy public HCCL-launch notify-only entrypoint that consumes
   `HcclP2pKernelParam` is optional and guarded by
   `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`; keep it off on CANN
@@ -180,9 +181,11 @@ bash build.sh \
 ```
 
 By default this builds the no-internal-header canary package. To build the
-experimental HCOMM primitive payload package, enable the internal kernel mode
+experimental HCOMM primitive payload package, enable primitive payload mode
 through the Flume helper or through the environment before invoking HCCL
-`build.sh`:
+`build.sh`. The old `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY` variable is
+still accepted as a compatibility alias, but new scripts should use
+`FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD`:
 
 ```bash
 cd <flume-repo>
@@ -216,7 +219,7 @@ python3 tools/flume_tool.py \
   hcomm-custom-op-export-runtime
 
 cd <hccl-source-root>
-FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
+FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON \
 bash build.sh \
   --vendor=flume \
   --ops=hcomm_payload \
@@ -231,10 +234,11 @@ runs package preflight against that root. It is useful when the target machine
 should not be modified by a `.run --install` step.
 
 `--install-custom-op-package` only installs after the build artifact preflight
-passes. If the JSON, AICPU tar, V4 payload entrypoint, or internal-payload build
-marker is missing, the helper stops before touching the target CANN/OPP install.
+passes. If the JSON, AICPU tar, V4 payload entrypoint, or primitive-payload
+build marker is missing, the helper stops before touching the target CANN/OPP
+install.
 
-The internal payload package is the one required for
+The primitive payload package is the one required for
 `stage3b3e_payload_copy=passed`.
 It still uses the direct ACL runtime launcher and intentionally avoids the
 legacy `hccl_launch.h` path. Only enable

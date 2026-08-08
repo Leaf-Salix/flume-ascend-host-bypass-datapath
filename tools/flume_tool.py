@@ -320,9 +320,9 @@ def PackageTextNextAction(package_text: str) -> str:
                 "from current Flume; installed package predates the current "
                 "payload status schema")
     if "no Flume HCOMM custom-op JSON found" in reason:
-        return "install the Stage 3B.3E internal payload custom-op package"
+        return "install the Stage 3B.3E primitive payload custom-op package"
     if "missing or incomplete" in reason:
-        return "rebuild/reinstall the Stage 3B.3E internal payload custom-op package"
+        return "rebuild/reinstall the Stage 3B.3E primitive payload custom-op package"
     return "inspect hcomm-custom-op-package-preflight failure"
 
 
@@ -1658,7 +1658,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + internal markers + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + primitive-payload marker + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
@@ -2003,8 +2003,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         note.write_text(
             "hcomm-payload-strict-positive stopped before launch because the "
             "installed Flume HCOMM custom-op package is not payload-ready. "
-            "The package must declare and export the V3 direct ACL payload "
-            "kernel and the internal-payload build marker. See "
+            "The package must declare and export the V4 direct ACL payload "
+            "kernel and the primitive-payload build marker. See "
             "HCOMM_PAYLOAD_PACKAGE_NEXT_STEPS.txt for the build/install "
             "command to run before retrying strict-positive.\n",
             encoding="utf-8",
@@ -2189,7 +2189,7 @@ def WritePayloadPackageBuildNextSteps(run_dir: Path,
     lines = [
         "Flume HCOMM payload package is not ready",
         "",
-        "Build and install the internal payload custom-op package, then rerun "
+        "Build and install the primitive payload custom-op package, then rerun "
         "hcomm-payload-strict-positive:",
         "",
         "python3 tools/flume_tool.py \\",
@@ -2359,6 +2359,7 @@ def _DirectBuildSharedLibraryCommand(
             HCOMM_CUSTOM_OP_PATH / "aicpu" / "notify_only_direct_acl_kernel.cc",
             HCOMM_CUSTOM_OP_PATH / "aicpu" / "payload_copy_kernel.cc",
         ])
+        defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1")
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
     command = [cxx, "-std=c++14"]
     if platform.system() == "Darwin":
@@ -2535,8 +2536,10 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
     env_updates: dict[str, str] = {}
     if args.custom_op_build_mode == "payload":
+        env_updates["FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD"] = "ON"
         env_updates["FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY"] = "ON"
     else:
+        env_updates["FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD"] = "OFF"
         env_updates["FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY"] = "OFF"
     if args.build_public_hccl_launch:
         env_updates["FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH"] = "ON"
@@ -2919,7 +2922,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("reason=payload kernel package is canary-only; V4 "
                       "payload entrypoint is a compatibility stub")
                 print("action=rebuild package with "
-                      "FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON")
+                      "FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON")
             elif (found_internal_payload_marker and
                   not found_payload_abi_version_marker):
                 if found_payload_abi_v2_marker:
@@ -3122,7 +3125,7 @@ def parse_args() -> argparse.Namespace:
                         choices=["payload", "canary"],
                         default="payload",
                         help=("Package mode for hcomm-custom-op-build. payload "
-                              "enables the internal HCOMM primitive kernel; "
+                              "enables the HCOMM primitive payload kernel; "
                               "canary builds the no-internal-header canary."))
     parser.add_argument("--build-public-hccl-launch", action="store_true",
                         help=("Also build the legacy public HCCL-launch "

@@ -389,7 +389,7 @@ the same runtime layout that direct ACL loading uses.
 The preflight also verifies that the SO inside the tar exports the required
 entrypoints, so a JSON/SO mismatch fails before strict payload smoke. If the
 second check fails, the next action is to rebuild the package with
-`FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to debug HCOMM payload
+`FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`, not to debug HCOMM payload
 execution yet. On CANN packages that do not expose `hccl/hccl_launch.h`, keep
 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=OFF`; the direct ACL payload
 package does not need that legacy public-HCCL-launch entrypoint.
@@ -414,7 +414,7 @@ the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
 package refresh problem, not as evidence that HCOMM payload primitives failed.
-When the V4 entrypoint and internal-payload marker exist but
+When the V4 entrypoint and primitive-payload marker exist but
 `FlumeHcommPayloadCopyAbiVersion4` is missing, rebuild the package with current
 Flume headers before running strict smoke.
 When `FlumeHcommPayloadCopyRequiresCommAcquire` is missing, rebuild from the
