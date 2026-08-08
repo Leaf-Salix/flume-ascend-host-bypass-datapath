@@ -119,6 +119,12 @@ def strict_log_with_rank1_remote_read_failure() -> str:
     ])
 
 
+def strict_log_with_rank1_failed_wait_remote_read() -> str:
+    return strict_log_with_rank1_remote_read_failure().replace(
+        "rank 1 hcomm payload smoke unsupported",
+        "rank 1 hcomm payload smoke failed")
+
+
 def strict_log_with_checksum_mismatch() -> str:
     return strict_log(True).replace(
         "payload_checksum=1234", "payload_checksum=9999")
@@ -383,6 +389,19 @@ def main() -> int:
         assert "| rank0 kernel status | success |" in text
         assert "| rank1 kernel status | remote-read-failed |" in text
         assert "| rank0 kernel HCOMM ret | 0 |" in text
+        assert "| rank1 kernel HCOMM ret | 88 |" in text
+        assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
+                "remote-read-failed at remote-read") in text
+
+        strict_rank1_failed_wait = write(
+            tmp / "strict-rank1-failed-wait.log",
+            strict_log_with_rank1_failed_wait_remote_read())
+        rank1_failed_wait_dir = tmp / "rank1-failed-wait"
+        rank1_failed_wait_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank1_failed_wait_dir, smoke, strict_rank1_failed_wait, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank1 kernel status | remote-read-failed |" in text
         assert "| rank1 kernel HCOMM ret | 88 |" in text
         assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
                 "remote-read-failed at remote-read") in text

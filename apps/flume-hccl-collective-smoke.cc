@@ -1440,7 +1440,63 @@ void RankMain(RankContext* ctx) {
         goto cleanup;
       }
       int wait_ret = flume_wait(hcomm_payload_io, -1);
+      auto log_hcomm_payload_line = [&]() {
+        std::ostringstream line;
+        line << "rank " << ctx->rank
+             << " hcomm payload smoke ";
+        if (wait_ret == FLUME_OK) {
+          line << "passed";
+        } else if (wait_ret == FLUME_ERR_UNSUPPORTED) {
+          line << "unsupported";
+        } else {
+          line << "failed";
+        }
+        line << ": peer_rank=" << peer_rank
+             << " usable_hccl_buffer_bytes="
+             << flume_io_bytes(hcomm_payload_io)
+             << " requested_engine=" << HcommEngineName(ctx->hcomm_engine)
+             << " resolved_engine="
+             << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
+             << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
+             << " notify_num=" << ctx->hcomm_notify_num
+             << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
+             << " require_thread_export="
+             << (ctx->hcomm_require_thread_export ? "on" : "off")
+             << " require_payload_copy="
+             << (ctx->hcomm_require_payload_copy ? "on" : "off")
+             << " channel_res="
+             << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
+             << " primitives="
+             << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built")
+             << " fallback=";
+        if (ctx->hcomm_require_payload_copy) {
+          line << "none";
+        } else {
+          line << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
+        }
+        if (ctx->hcomm_require_payload_copy && ctx->rank == 1 &&
+            wait_ret == FLUME_OK) {
+          line << " payload_verify="
+               << (hcomm_payload_verify_passed ? "passed" : "not-run")
+               << " payload_checksum=" << hcomm_payload_checksum;
+          if (hcomm_payload_expected_checksum_ready) {
+            line << " payload_expected_checksum="
+                 << hcomm_payload_expected_checksum;
+          }
+        }
+        if (ctx->hcomm_require_payload_copy && ctx->rank == 0 &&
+            hcomm_payload_source_checksum_ready) {
+          line << " payload_source_checksum="
+               << hcomm_payload_source_checksum;
+        }
+        const char* detail = flume_io_error_message(hcomm_payload_io);
+        if (detail != nullptr && detail[0] != '\0') {
+          line << " detail=\"" << detail << "\"";
+        }
+        LogLine(line.str());
+      };
       if (wait_ret != FLUME_OK && wait_ret != FLUME_ERR_UNSUPPORTED) {
+        log_hcomm_payload_line();
         error = std::string("flume_wait hcomm payload smoke failed, flume ret=") +
                 flume_status_string(wait_ret);
         const char* detail = flume_io_error_message(hcomm_payload_io);
@@ -1452,6 +1508,7 @@ void RankMain(RankContext* ctx) {
       }
       if (wait_ret == FLUME_ERR_UNSUPPORTED &&
           ctx->hcomm_require_payload_copy) {
+        log_hcomm_payload_line();
         error = "HCOMM payload copy required but unavailable";
         const char* detail = flume_io_error_message(hcomm_payload_io);
         if (detail != nullptr && detail[0] != '\0') {
@@ -1482,6 +1539,7 @@ void RankMain(RankContext* ctx) {
         };
         if (!DetailContainsMarkers(detail, required_markers,
                                    &missing_marker)) {
+          log_hcomm_payload_line();
           error = "HCOMM payload copy required but success detail is missing "
                   "marker: " + missing_marker;
           if (detail != nullptr && detail[0] != '\0') {
@@ -1534,53 +1592,7 @@ void RankMain(RankContext* ctx) {
         }
         hcomm_payload_verify_passed = true;
       }
-      std::ostringstream line;
-      line << "rank " << ctx->rank
-           << " hcomm payload smoke "
-           << (wait_ret == FLUME_OK ? "passed" : "unsupported")
-           << ": peer_rank=" << peer_rank
-           << " usable_hccl_buffer_bytes="
-           << flume_io_bytes(hcomm_payload_io)
-           << " requested_engine=" << HcommEngineName(ctx->hcomm_engine)
-           << " resolved_engine="
-           << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
-           << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
-           << " notify_num=" << ctx->hcomm_notify_num
-           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
-           << " require_thread_export="
-           << (ctx->hcomm_require_thread_export ? "on" : "off")
-           << " require_payload_copy="
-           << (ctx->hcomm_require_payload_copy ? "on" : "off")
-           << " channel_res="
-           << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
-           << " primitives="
-           << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built")
-           << " fallback=";
-      if (ctx->hcomm_require_payload_copy && wait_ret == FLUME_OK) {
-        line << "none";
-      } else {
-        line << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
-      }
-      if (ctx->hcomm_require_payload_copy && ctx->rank == 1 &&
-          wait_ret == FLUME_OK) {
-        line << " payload_verify="
-             << (hcomm_payload_verify_passed ? "passed" : "not-run")
-             << " payload_checksum=" << hcomm_payload_checksum;
-        if (hcomm_payload_expected_checksum_ready) {
-          line << " payload_expected_checksum="
-               << hcomm_payload_expected_checksum;
-        }
-      }
-      if (ctx->hcomm_require_payload_copy && ctx->rank == 0 &&
-          wait_ret == FLUME_OK && hcomm_payload_source_checksum_ready) {
-        line << " payload_source_checksum="
-             << hcomm_payload_source_checksum;
-      }
-      const char* detail = flume_io_error_message(hcomm_payload_io);
-      if (detail != nullptr && detail[0] != '\0') {
-        line << " detail=\"" << detail << "\"";
-      }
-      LogLine(line.str());
+      log_hcomm_payload_line();
     }
   }
 
