@@ -3275,6 +3275,8 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
     if not DecisionTreeStrictPositivePassed(tree):
         channel_log = FindStepLog(
             run_dir, [
+                "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
+                "hcomm-payload-channel-handle-nobatch-candidate",
                 "hcomm-payload-channel-handle-direct-output-candidate",
                 "hcomm-payload-channel-handle-candidate",
             ])
@@ -3298,6 +3300,8 @@ def AnalyzeHcommStorageStrictPositiveLogs(
     if not DecisionTreeHcommStoragePassed(tree):
         channel_log = FindStepLog(
             run_dir, [
+                "hcomm-payload-channel-handle-nobatch-direct-output-candidate",
+                "hcomm-payload-channel-handle-nobatch-candidate",
                 "hcomm-payload-channel-handle-direct-output-candidate",
                 "hcomm-payload-channel-handle-candidate",
             ])
