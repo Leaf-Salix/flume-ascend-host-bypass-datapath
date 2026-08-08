@@ -615,6 +615,13 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   add_test(NAME hcomm_payload_abi COMMAND test_hcomm_payload_abi)
 
+  add_executable(test_hcomm_payload_kernel tests/test_hcomm_payload_kernel.cc)
+  target_include_directories(test_hcomm_payload_kernel PRIVATE
+    ${PROJECT_SOURCE_DIR}/tests/hcomm_kernel_stubs
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
+  add_test(NAME hcomm_payload_kernel COMMAND test_hcomm_payload_kernel)
+
   add_executable(test_sim_collective_failures tests/test_sim_collective_failures.cc)
   target_link_libraries(test_sim_collective_failures PRIVATE flume)
   target_include_directories(test_sim_collective_failures PRIVATE ${PROJECT_SOURCE_DIR}/src)
