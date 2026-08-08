@@ -212,7 +212,8 @@ using flume::protocol::WriteFrame;
 
 constexpr int kSocketTimeoutSeconds = 30;
 constexpr uint32_t kDefaultHcommTimeoutSeconds = 60;
-constexpr const char* kDefaultHcommPayloadBatchTag = "flume_hcomm_payload";
+constexpr const char* kDefaultHcommPayloadBatchTag =
+    FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG;
 
 struct CommState {
   bool hccl_attached = false;

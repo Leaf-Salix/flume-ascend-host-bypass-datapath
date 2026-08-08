@@ -97,6 +97,8 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
   desc.local_hccl_buffer_bytes = 64;
   desc.remote_hccl_buffer_bytes = 64;
   desc.status_word = reinterpret_cast<uint64_t>(status_words);
+  std::memcpy(desc.batch_tag, FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG,
+              sizeof(FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG));
   std::memcpy(desc.comm_name, "flume_unit_comm", sizeof("flume_unit_comm"));
   return desc;
 }
@@ -137,7 +139,8 @@ int main() {
   reset_status();
   auto send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                             status);
-  FLUME_TEST_CHECK(send_desc.batch_tag[0] == '\0');
+  FLUME_TEST_CHECK(std::strcmp(send_desc.batch_tag,
+                               FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG) == 0);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
@@ -153,14 +156,17 @@ int main() {
                             kNotifyRecord, kNotifyWait, kBatchEnd,
                             kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(send_calls, 7));
-  FLUME_TEST_CHECK(std::strcmp(batch_start_tag, "") == 0);
-  FLUME_TEST_CHECK(std::strcmp(batch_end_tag, "") == 0);
+  FLUME_TEST_CHECK(std::strcmp(batch_start_tag,
+                               FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG) == 0);
+  FLUME_TEST_CHECK(std::strcmp(batch_end_tag,
+                               FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG) == 0);
 
   Reset();
   reset_status();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status);
   send_desc.reserved2[0] = FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  send_desc.batch_tag[0] = '\0';
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   const int send_no_batch_calls[] = {kAcquireComm, kLocalCopy,
@@ -563,6 +569,18 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   const int invalid_role_notify_calls[] = {kThreadRecord};
   FLUME_TEST_CHECK(CallsEqual(invalid_role_notify_calls, 1));
+
+  Reset();
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.batch_tag[0] = '\0';
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(call_count == 0);
 
   Reset();
   status[0] = 0xFFFFFFFFU;

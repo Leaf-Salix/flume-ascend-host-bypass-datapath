@@ -30,6 +30,15 @@ bool HasCommName(const flume_hcomm_payload_copy_desc_v1& desc) {
   return false;
 }
 
+bool HasPayloadBatchTag(const flume_hcomm_payload_copy_desc_v1& desc) {
+  for (unsigned int i = 0; i < FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES; ++i) {
+    if (desc.batch_tag[i] == '\0') {
+      return i != 0;
+    }
+  }
+  return false;
+}
+
 void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
                         unsigned int status) {
   if (!HasPayloadDescHeader(desc) || desc.status_word == 0 ||
@@ -116,6 +125,7 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          desc.status_schema_version ==
              FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION &&
          HasCommName(desc) &&
+         (!PayloadBatchModeEnabled(desc) || HasPayloadBatchTag(desc)) &&
          (desc.thread_notify_mode !=
               FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU ||
           desc.cpu_thread_on_aicpu != 0);

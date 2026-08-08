@@ -2944,7 +2944,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "to pass with stage3b3e_payload_copy=passed, direct ACL payload launch/"
         "sync passed, payload_kernel_status=success, payload_failure_step=none, "
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
-        "markers, payload_echo=passed, payload_thread_notify_order=..., source/received/expected checksum "
+        "markers, payload_echo=passed, payload_desc_batch_tag=default|custom, "
+        "payload_thread_notify_order=..., source/received/expected checksum "
         "match, payload_verify=passed, and fallback=none.\n",
         encoding="utf-8",
     )
