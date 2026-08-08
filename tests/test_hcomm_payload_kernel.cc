@@ -263,7 +263,7 @@ int main() {
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   const int thread_notify_send_calls[] = {
       kAcquireComm, kBatchStart, kThreadWait, kLocalCopy, kNotifyRecord,
-      kNotifyWait, kBatchEnd, kThreadRecord, kReleaseComm};
+      kNotifyWait, kThreadRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_notify_send_calls, 9));
 
   Reset();
@@ -378,7 +378,7 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 78U);
   const int thread_notify_failure_calls[] = {
       kAcquireComm, kBatchStart, kThreadWait, kLocalCopy,
-      kBatchEnd, kThreadRecord, kReleaseComm};
+      kThreadRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_notify_failure_calls, 7));
 
   Reset();
@@ -411,7 +411,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_WAIT_FAILED);
   FLUME_TEST_CHECK(status[1] == 79U);
   const int thread_wait_failure_calls[] = {
-      kAcquireComm, kBatchStart, kThreadWait, kBatchEnd, kThreadRecord,
+      kAcquireComm, kBatchStart, kThreadWait, kThreadRecord, kBatchEnd,
       kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_wait_failure_calls, 6));
 
@@ -430,7 +430,7 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 58U);
   const int thread_record_failure_calls[] = {
       kAcquireComm, kBatchStart, kThreadWait, kLocalCopy, kNotifyRecord,
-      kNotifyWait, kBatchEnd, kThreadRecord, kReleaseComm};
+      kNotifyWait, kThreadRecord, kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(thread_record_failure_calls, 9));
 
   Reset();

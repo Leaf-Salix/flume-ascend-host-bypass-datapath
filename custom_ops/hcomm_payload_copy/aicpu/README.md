@@ -68,10 +68,11 @@ concrete status such as
 `ready-notify-wait-failed` before returning so host-side strict smoke can
 distinguish a package/launch problem from a specific HCOMM primitive execution
 problem.
-When host/AICPU thread notify handles are available, the kernel records the
-host completion notify only after `HcommBatchModeEnd` returns, so host wakeup
-does not precede HCOMM batch execution. Host-side strict payload logs report
-this as `payload_thread_notify_order=batch-end-before-host-notify`.
+When host/AICPU thread notify handles are available, the kernel follows the
+public HCCL custom P2P example order: it records the host completion notify
+before closing the HCOMM batch with `HcommBatchModeEnd`. Host-side strict
+payload logs report this as
+`payload_thread_notify_order=host-notify-before-batch-end`.
 The kernel also avoids writing final success before batch end, completion
 notify, and communicator release have completed; status word `0` therefore
 means the whole payload primitive sequence has returned successfully.

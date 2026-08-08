@@ -2670,7 +2670,7 @@ std::string HcommPayloadCompletionDetail(
       " payload_completion=thread-notify+stream-sync+status-word" :
       " payload_completion=stream-sync+status-word";
   detail += resource_info.host_thread_notify_ready ?
-      " payload_thread_notify_order=batch-end-before-host-notify" :
+      " payload_thread_notify_order=host-notify-before-batch-end" :
       " payload_thread_notify_order=not-used";
   detail += std::string(" payload_resolved_engine=") +
       FlumeHcommEngineName(resource_info.resolved_engine) +
