@@ -194,20 +194,23 @@ python3 tools/flume_tool.py \
 canary-only 包或 payload 包不完整；如果同时出现
 `reason.payload_direct_aclrt=legacy-entrypoint-present`，说明当前安装的是
 旧 payload 包。当前 payload-ready 要求 JSON 声明
-`FlumeHcommPayloadCopyDirectAclrtKernelV2`，旧包只声明
-`FlumeHcommPayloadCopyDirectAclrtKernel` 时会被明确判为 stale，需要用
-`FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑 strict
-payload smoke。该检查还会确认 AICPU tar
+`FlumeHcommPayloadCopyDirectAclrtKernelV2`、`FlumeHcommPayloadCopyAbiVersion2`
+和 `FlumeHcommPayloadCopySemanticVersion`，旧包只声明
+`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic marker 时会被明确判为
+stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑
+strict payload smoke。该检查还会确认 AICPU tar
 是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
 `readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
 `FlumeHcommCanaryDirectAclrtKernel`、
 `FlumeHcommPayloadCopyDirectAclrtKernelV2` 和
 `FlumeHcommPayloadBuildModeInternalPayload`，并要求
-`FlumeHcommPayloadCopyAbiVersion2` 同时出现在 JSON 和 SO 里，作为当前
-descriptor semantic ABI marker。默认 canary-only 包可能为了 JSON/SO 兼容导出
-V2 stub；没有 internal build-mode marker 或 ABI v2 marker 时不会被判为
-payload-ready，避免把空包、坏包、stub 包、旧 ABI 包或 JSON/SO 不一致的包
-误判为可跑 strict payload。
+`FlumeHcommPayloadCopyAbiVersion2` 和
+`FlumeHcommPayloadCopySemanticVersion` 同时出现在 JSON 和 SO 里，作为当前
+descriptor ABI 与 payload success-status 语义 marker。默认 canary-only
+包可能为了 JSON/SO 兼容导出 V2 stub；没有 internal build-mode marker、
+ABI v2 marker 或 semantic marker 时不会被判为 payload-ready，避免把空包、
+坏包、stub 包、旧 ABI 包、旧语义包或 JSON/SO 不一致的包误判为可跑 strict
+payload。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加

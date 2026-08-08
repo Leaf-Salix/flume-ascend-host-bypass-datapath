@@ -55,6 +55,11 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyAbiVersion2(void) { return 1; }"
         )
+    if mode not in ("legacy", "stale_v2"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopySemanticVersion(void) "
+            "{ return 3; }"
+        )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
@@ -97,6 +102,14 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopyAbiVersion2",
+            }
+        }
+    if mode not in ("legacy", "stale_v2"):
+        payload["FlumeHcommPayloadCopySemanticVersion"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopySemanticVersion",
             }
         }
     json_path = tmp / f"pkg_{mode}.json"
@@ -159,6 +172,7 @@ def main() -> int:
             raise AssertionError("canary-only package passed as payload-ready")
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in canary.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in canary.stdout
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "reason=payload kernel package is canary-only" in canary.stdout
@@ -178,6 +192,17 @@ def main() -> int:
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=missing" in wrong_so.stdout
         assert "status=FAIL" in wrong_so.stdout
 
+        stale_v2_json, stale_v2_tar = write_package(tmp, mode="stale_v2")
+        stale_v2 = run_preflight(repo, stale_v2_json, stale_v2_tar)
+        if stale_v2.returncode == 0:
+            print(stale_v2.stdout)
+            print(stale_v2.stderr, file=sys.stderr)
+            raise AssertionError("stale ABI v2 package without semantic marker passed")
+        assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in stale_v2.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing" in stale_v2.stdout
+        assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing" in stale_v2.stdout
+        assert "reason=payload kernel package is missing the payload semantic marker" in stale_v2.stdout
+
         v2_json, v2_tar = write_package(tmp, mode="v2")
         v2 = run_preflight(repo, v2_json, v2_tar)
         if v2.returncode != 0:
@@ -186,6 +211,8 @@ def main() -> int:
             raise AssertionError("ABI v2 package did not pass")
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v2.stdout
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v2.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in v2.stdout
+        assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v2.stdout
         assert "status=PASS" in v2.stdout
 
         installed_json = (

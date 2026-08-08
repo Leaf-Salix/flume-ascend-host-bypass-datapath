@@ -26,6 +26,8 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 2,
                 "payload descriptor semantic ABI version changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 3,
+                "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
       "payload completion mode offset changed");
@@ -106,6 +108,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V2_FUNC,
       "FlumeHcommPayloadCopyAbiVersion2") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion") == 0);
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);

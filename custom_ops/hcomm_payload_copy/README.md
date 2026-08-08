@@ -222,7 +222,10 @@ older public-HCCL-launch notify-only entrypoint.
 The package preflight treats the build as payload-ready only when the AICPU SO
 exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
 export the V2 payload function as a compatibility stub, but it is not accepted
-as a real payload package.
+as a real payload package. Current payload-ready packages also export
+`FlumeHcommPayloadCopySemanticVersion`, which marks the success-status
+semantics where the second status word is written as
+`payload_kernel_hcomm_ret=0`.
 
 After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints

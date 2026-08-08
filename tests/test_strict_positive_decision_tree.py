@@ -67,6 +67,11 @@ def strict_log_with_cross_line_false_positive() -> str:
     ])
 
 
+def payload_ready_package_log() -> str:
+    return ("required=canary_direct_aclrt,payload_direct_aclrt,"
+            "payload_abi_v2,payload_semantic\nstatus=PASS\n")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: test_strict_positive_decision_tree.py <repo-root>",
@@ -86,8 +91,7 @@ def main() -> int:
             "storage HBM smoke passed\n")
         package = write(
             tmp / "package.log",
-            "required=canary_direct_aclrt,payload_direct_aclrt\n"
-            "status=PASS\n")
+            payload_ready_package_log())
 
         strict_pass = write(tmp / "strict-pass.log", strict_log(True))
         pass_dir = tmp / "pass"
@@ -125,8 +129,7 @@ def main() -> int:
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()
         write(log_dir / "00-hcomm-custom-op-package-preflight.log",
-              "required=canary_direct_aclrt,payload_direct_aclrt\n"
-              "status=PASS\n")
+              payload_ready_package_log())
         write(log_dir / "01-hccl-collective-smoke.log",
               "FLUME_BACKEND_CAPS hcomm_primitives=on "
               "hcomm_payload_scheduler_candidate=on\n"
@@ -146,8 +149,7 @@ def main() -> int:
         fail_log_dir = tmp / "flume-check-synthetic-fail"
         fail_log_dir.mkdir()
         write(fail_log_dir / "00-hcomm-custom-op-package-preflight.log",
-              "required=canary_direct_aclrt,payload_direct_aclrt\n"
-              "status=PASS\n")
+              payload_ready_package_log())
         write(fail_log_dir / "01-hcomm-payload-strict-positive.log",
               strict_log(False))
         _tree, passed, _smoke_log, _strict_log, _package_log = (
