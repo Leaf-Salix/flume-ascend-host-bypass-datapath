@@ -37,6 +37,12 @@ STALE_MARKERS = (
     "payload_status_word_count=10",
 )
 
+RUNTIME_PACKAGE_READY_MARKERS = (
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11_FUNC",
+)
+
 
 def main() -> int:
     if len(sys.argv) != 2:
@@ -56,6 +62,24 @@ def main() -> int:
     if stale:
         print("stale strict smoke marker(s):", file=sys.stderr)
         for marker in stale:
+            print(f"  {marker}", file=sys.stderr)
+        return 1
+    client = repo / "src" / "core" / "client.cc"
+    client_text = client.read_text(encoding="utf-8")
+    start = client_text.find("bool JsonLooksPayloadReady(")
+    end = client_text.find("if (json_text.empty())", start)
+    if start == -1 or end == -1:
+        print("could not find JsonLooksPayloadReady required marker block",
+              file=sys.stderr)
+        return 1
+    package_ready_block = client_text[start:end]
+    missing_runtime = [
+        marker for marker in RUNTIME_PACKAGE_READY_MARKERS
+        if marker not in package_ready_block
+    ]
+    if missing_runtime:
+        print("runtime package-ready marker(s) missing:", file=sys.stderr)
+        for marker in missing_runtime:
             print(f"  {marker}", file=sys.stderr)
         return 1
     return 0
