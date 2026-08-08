@@ -294,7 +294,22 @@ def PackageTextCanaryReady(package_text: str) -> bool:
 
 def PackageTextReason(package_text: str) -> str:
     match = re.search(r"^reason=(.+)$", package_text, re.MULTILINE)
-    return match.group(1).strip() if match else "missing"
+    reason = match.group(1).strip() if match else "missing"
+    if reason.endswith("missing or incomplete"):
+        if re.search(r"^aicpu_tar=missing$", package_text, re.MULTILINE):
+            return "custom-op AICPU tar missing"
+        if re.search(r"^aicpu_tar_readable=(missing|unreadable)$",
+                     package_text, re.MULTILINE):
+            return "custom-op AICPU tar unreadable"
+        if re.search(
+                rf"^aicpu_tar_so\.{re.escape(HCOMM_CUSTOM_OP_KERNEL_SO)}=missing$",
+                package_text, re.MULTILINE):
+            return "custom-op AICPU tar missing kernel SO"
+        if re.search(
+                r"^aicpu_tar_so_symbols=(missing|unreadable|not-checked)$",
+                package_text, re.MULTILINE):
+            return "custom-op AICPU tar symbols unavailable"
+    return reason
 
 
 def PackageTextNextAction(package_text: str) -> str:
@@ -319,6 +334,9 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package predates the current "
                 "payload status schema")
+    if "AICPU tar" in reason:
+        return ("rebuild/export the custom-op runtime package so the JSON and "
+                "matching AICPU tar are both present in the runtime layout")
     if "no Flume HCOMM custom-op JSON found" in reason:
         return "install the Stage 3B.3E primitive payload custom-op package"
     if "missing or incomplete" in reason:
@@ -717,7 +735,8 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b2_kernel_consume|notify_kernel|notify_status_word|"
                 r"stage3b3a_kernel_launch|"
                 r"stage3b3b_launcher_router|direct_aclrt|custom_op_package|"
-                r"payload_package|payload_package_reason|"
+                r"payload_package|payload_package_reason|package_aicpu_tar|"
+                r"aicpu_tar|aicpu_tar_so|"
                 r"stage3b3c_direct_aclrt_loader|stage3b3c_descriptor_handoff|"
                 r"stage3b3c_direct_aclrt_launch|"
                 r"stage3b3d_no_internal_headers|direct_aclrt_canary_candidate|"

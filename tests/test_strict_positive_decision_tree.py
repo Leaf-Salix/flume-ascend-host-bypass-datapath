@@ -197,6 +197,19 @@ def abi_missing_package_log() -> str:
     ])
 
 
+def missing_aicpu_tar_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,build_mode_internal",
+        "json=present",
+        "aicpu_tar=missing",
+        "aicpu_tar_readable=missing",
+        "aicpu_tar_so.libflume_hcomm_payload_aicpu_kernel.so=missing",
+        "status=FAIL",
+        "reason=payload kernel package is missing or incomplete",
+        "",
+    ])
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: test_strict_positive_decision_tree.py <repo-root>",
@@ -364,6 +377,17 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "current Flume V4 ABI headers" in text
+
+        missing_tar_package = write(tmp / "package-missing-aicpu-tar.log",
+                                    missing_aicpu_tar_package_log())
+        missing_tar_dir = tmp / "missing-aicpu-tar-package"
+        missing_tar_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_tar_dir, smoke, None, missing_tar_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "| HCOMM custom-op package reason | custom-op AICPU tar missing |" in text
+        assert "matching AICPU tar are both present" in text
 
         stale_status_schema_package = write(
             tmp / "package-stale-status-schema.log",
