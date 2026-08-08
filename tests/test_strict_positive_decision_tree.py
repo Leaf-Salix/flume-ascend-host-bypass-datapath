@@ -92,6 +92,38 @@ def main() -> int:
         assert "| rank1 verify | missing |" in text
         assert "inspect hcomm-payload-strict-positive failure" in text
 
+        log_dir = tmp / "flume-check-synthetic-pass"
+        log_dir.mkdir()
+        write(log_dir / "00-hcomm-custom-op-package-preflight.log",
+              "required=canary_direct_aclrt,payload_direct_aclrt\n"
+              "status=PASS\n")
+        write(log_dir / "01-hccl-collective-smoke.log",
+              "FLUME_BACKEND_CAPS hcomm_primitives=on "
+              "hcomm_payload_scheduler_candidate=on\n"
+              "hccl collective smoke passed p2p_copy=on\n"
+              "hcomm channel probe passed\n"
+              "storage HBM smoke passed\n")
+        write(log_dir / "02-hcomm-payload-strict-positive.log",
+              strict_log(True))
+        tree, passed, smoke_log, found_strict_log, package_log = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(log_dir))
+        assert passed
+        assert smoke_log == log_dir / "01-hccl-collective-smoke.log"
+        assert found_strict_log == log_dir / "02-hcomm-payload-strict-positive.log"
+        assert package_log == log_dir / "00-hcomm-custom-op-package-preflight.log"
+        assert tree.exists()
+
+        fail_log_dir = tmp / "flume-check-synthetic-fail"
+        fail_log_dir.mkdir()
+        write(fail_log_dir / "00-hcomm-custom-op-package-preflight.log",
+              "required=canary_direct_aclrt,payload_direct_aclrt\n"
+              "status=PASS\n")
+        write(fail_log_dir / "01-hcomm-payload-strict-positive.log",
+              strict_log(False))
+        _tree, passed, _smoke_log, _strict_log, _package_log = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(fail_log_dir))
+        assert not passed
+
     return 0
 
 

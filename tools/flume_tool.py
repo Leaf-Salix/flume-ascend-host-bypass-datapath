@@ -1393,6 +1393,64 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     return path
 
 
+def FindLatestRunDir(log_root: Path) -> Optional[Path]:
+    if log_root.is_dir() and log_root.name.startswith("flume-check-"):
+        return log_root
+    if not log_root.exists():
+        return None
+    candidates = sorted(
+        item for item in log_root.glob("flume-check-*") if item.is_dir())
+    return candidates[-1] if candidates else None
+
+
+def FindStepLog(run_dir: Path, step_names: Iterable[str]) -> Optional[Path]:
+    for step_name in step_names:
+        matches = sorted(run_dir.glob(f"*-{step_name}.log"))
+        if matches:
+            return matches[-1]
+    return None
+
+
+def DecisionTreeStrictPositivePassed(tree_path: Path) -> bool:
+    try:
+        text = tree_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return "| Strict payload positive passed? | yes |" in text
+
+
+def AnalyzeHcommPayloadStrictPositiveLogs(
+        run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
+                                Optional[Path]]:
+    smoke_log = FindStepLog(run_dir, ["hccl-collective-smoke"])
+    strict_log = FindStepLog(run_dir, ["hcomm-payload-strict-positive"])
+    package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
+    tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
+    return (tree, DecisionTreeStrictPositivePassed(tree), smoke_log,
+            strict_log, package_log)
+
+
+def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
+    root = (Path(args.log_dir).expanduser() if args.log_dir else
+            Path(args.log_root))
+    run_dir = FindLatestRunDir(root)
+    if run_dir is None:
+        print(f"[failed] no flume-check log directory found under {root}")
+        return 2
+    tree, passed, smoke_log, strict_log, package_log = (
+        AnalyzeHcommPayloadStrictPositiveLogs(run_dir))
+    print(f"[ok] analyzed log dir -> {run_dir}")
+    print(f"[ok] strict log -> {strict_log if strict_log else '<missing>'}")
+    print(f"[ok] smoke log -> {smoke_log if smoke_log else '<missing>'}")
+    print(f"[ok] package log -> {package_log if package_log else '<missing>'}")
+    if passed:
+        print("[ok] strict-positive evidence -> passed")
+        return 0
+    print("[failed] strict-positive evidence -> incomplete or failed")
+    print(f"[failed] inspect -> {tree}")
+    return 1
+
+
 def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -2272,6 +2330,15 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "hcomm-payload-strict-positive",
         help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
+    verify_logs_parser = subparsers.add_parser(
+        "hcomm-payload-verify-logs",
+        help=("Analyze an existing flume-check log directory and return "
+              "success only when the Stage 3B.3E strict-positive evidence is "
+              "complete"))
+    verify_logs_parser.add_argument(
+        "log_dir", nargs="?",
+        help=("Existing flume-check-* directory to analyze. Defaults to the "
+              "latest directory under --log-root."))
     subparsers.add_parser(
         "hcomm-custom-op-build",
         help=("Build the Flume HCOMM custom-op package through a HCCL source "
@@ -2345,6 +2412,8 @@ def main() -> int:
         return run_ascend_full_matrix(args)
     if args.command == "hcomm-payload-strict-positive":
         return run_hcomm_payload_strict_positive(args)
+    if args.command == "hcomm-payload-verify-logs":
+        return run_hcomm_payload_verify_logs(args)
     if args.command == "hcomm-custom-op-build":
         return run_hcomm_custom_op_build(args)
     if args.command == "hcomm-custom-op-package":
