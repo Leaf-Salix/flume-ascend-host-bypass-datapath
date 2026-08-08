@@ -757,7 +757,7 @@ store-agent pread
 - 已增加可选真机 smoke app `flume-hccl-collective-smoke`。
 - 已给 smoke 增加 `--p2p-copy`，当前测试 rank0 HBM -> rank1 HBM 的公开 HCCL P2P baseline。
 - 已给 smoke 增加 `--hcomm-channel-probe`，当前测试 HCOMM 自定义 backend 的资源准备阶段。
-- 已给 smoke 增加 `--hcomm-payload-smoke`，当前测试 Channel resource + HCOMM primitive capability，并在 custom-op/AICPU scheduler 未实现时输出 unsupported / `fallback=hccl-p2p`。
+- 已给 smoke 增加 `--hcomm-payload-smoke`，当前测试 Channel resource + HCOMM primitive call-shape / symbol capability，并在 custom-op/AICPU scheduler 未实现时输出 unsupported / `fallback=hccl-p2p`。
 - 已增加 `flume_get_backend_caps`，让 smoke app 和 tools 从库内结构化能力模型生成判断依据。
 - 已增加本地 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` sim backend，以及 `file offset -> SIM_HCCL_COMM -> SIM_HBM` storage partial-direct 骨架。
 - 已增加 `ascend-full-matrix`，下一次真机会一次性收集 collective、P2P fallback、HCOMM Channel、payload readiness、Stage 3A storage-HBM fallback、strict payload-copy gate 和 decision tree；package payload-ready 时 strict gate 是 required positive，否则是 optional expected negative。

@@ -51,7 +51,7 @@ Implemented and validated on Ascend hardware in the current test environment:
 - Optional single-node multi-card HCCL smoke test on Ascend HBM buffers. Verified with `root-info` and `init-all`.
 - Optional rank0-to-rank1 HCCL P2P copy smoke on Ascend HBM buffers. Verified with `p2p_copy=on`.
 - Optional rank0/rank1 HCOMM Channel resource probe smoke. Verified as channel-resource readiness; it does not yet move payload with HCOMM primitives.
-- Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus primitive symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
+- Optional Stage 2.5 HCOMM payload readiness smoke. It probes HCOMM Channel resources plus HCOMM primitive call-shape and symbol availability, then reports `unsupported` / `fallback=hccl-p2p` until the custom-op/AICPU payload scheduler is implemented.
 - Optional Stage 3B.1 HCOMM custom-op no-op launch readiness smoke. It distinguishes default `custom-op/AICPU scheduler build disabled` from `--build-hcomm-custom-op` `custom-op/AICPU scheduler launch missing`.
 - Optional Stage 3B.2 HCOMM resource descriptor smoke. It packages channel, buffer, notify, rank, engine, protocol, and descriptor-source metadata, then reports expected unsupported until descriptor handoff into custom-op/AICPU is implemented.
 - Optional Stage 3B.2-complete / 3B.3-prep HCOMM notify-only smoke. It fixes the send/recv ready-done Channel Notify plan and reports expected unsupported until the custom-op/AICPU kernel can consume the descriptor.
@@ -159,7 +159,7 @@ Stage 2.5 HCOMM payload readiness smoke:
 python3 tools/flume_tool.py --build-dir build-hcomm-payload --run-hcomm-payload-smoke --hccl-devices 0,1 ascend-probe
 ```
 
-This probes whether the current CANN build exposes the HCOMM primitive symbols needed by the future payload backend. The current implementation intentionally does not claim payload copy success; it should report `hcomm payload smoke unsupported ... fallback=hccl-p2p` unless a future custom-op/AICPU scheduler is implemented. Add `--hcomm-require-payload-copy` only when testing that future strict path.
+This probes whether the current CANN build exposes the HCOMM primitive call shape and symbols needed by the future payload backend. The current implementation intentionally does not claim payload copy success; it should report `hcomm payload smoke unsupported ... fallback=hccl-p2p` unless a future custom-op/AICPU scheduler is implemented. Add `--hcomm-require-payload-copy` only when testing that future strict path.
 
 Stage 3A storage proxy HBM smoke:
 

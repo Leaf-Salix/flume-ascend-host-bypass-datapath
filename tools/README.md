@@ -39,7 +39,7 @@ python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 - 强制检查 CANN/HCCL 布局。
 - 以 `FLUME_ENABLE_HCCL=ON` 配置 CMake。
 - 编译并链接 HCCL/HCOMM；HCOMM public header 依赖的 `securec.h` 也需要在 CANN include 路径下可见。
-- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。
+- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。其中 `FLUME_HAVE_HCOMM_PRIMITIVES` 是 compile-only call-shape probe，要求真实头文件接受 Flume payload kernel 当前使用的 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、Notify、Batch 调用形状。
 - 执行当前 CTest、storage sim demo 和 collective sim demo。
 
 默认边界：`ascend-probe` 只验证环境发现、编译和链接，以及当前 mock/sim 回归。它不会默认跑真实 HCCL 数据面，也不会要求 A3 试用 API 必须存在。

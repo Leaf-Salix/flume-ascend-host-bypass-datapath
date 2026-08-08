@@ -332,35 +332,43 @@ int main() {
   set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
+#include <cstdint>
 int main() {
   ThreadHandle thread = 0;
+  ThreadHandle peer_thread = 0;
   ChannelHandle channel = 0;
-  void *ptr = nullptr;
-  auto local_copy = &HcommLocalCopyOnThread;
-  auto read = &HcommReadOnThread;
-  auto notify_record = &HcommChannelNotifyRecordOnThread;
-  auto notify_wait = &HcommChannelNotifyWaitOnThread;
-  auto fence = &HcommChannelFenceOnThread;
-  auto batch_start = &HcommBatchModeStart;
-  auto batch_end = &HcommBatchModeEnd;
-  auto acquire_comm = &HcommAcquireComm;
-  auto release_comm = &HcommReleaseComm;
-  auto thread_notify_wait = &HcommThreadNotifyWaitOnThread;
-  auto thread_notify_record = &HcommThreadNotifyRecordOnThread;
-  (void)thread;
-  (void)channel;
-  (void)ptr;
-  (void)local_copy;
-  (void)read;
-  (void)notify_record;
-  (void)notify_wait;
-  (void)fence;
-  (void)batch_start;
-  (void)batch_end;
-  (void)acquire_comm;
-  (void)release_comm;
-  (void)thread_notify_wait;
-  (void)thread_notify_record;
+  void *dst = nullptr;
+  const void *src = nullptr;
+  const char *tag = \"flume-probe\";
+  uint64_t bytes = 64;
+  uint32_t notify_idx = 0;
+  uint32_t timeout_sec = 1;
+  auto acquire_ret = HcommAcquireComm(tag);
+  auto local_copy_ret = HcommLocalCopyOnThread(thread, dst, src, bytes);
+  auto read_ret = HcommReadOnThread(thread, channel, dst, src, bytes);
+  auto record_ret =
+      HcommChannelNotifyRecordOnThread(thread, channel, notify_idx);
+  auto wait_ret =
+      HcommChannelNotifyWaitOnThread(thread, channel, notify_idx, timeout_sec);
+  auto fence_ret = HcommChannelFenceOnThread(thread, channel);
+  auto thread_record_ret =
+      HcommThreadNotifyRecordOnThread(thread, peer_thread, notify_idx);
+  auto thread_wait_ret =
+      HcommThreadNotifyWaitOnThread(thread, notify_idx, timeout_sec);
+  auto batch_start_ret = HcommBatchModeStart(tag);
+  auto batch_end_ret = HcommBatchModeEnd(tag);
+  auto release_ret = HcommReleaseComm(tag);
+  (void)acquire_ret;
+  (void)local_copy_ret;
+  (void)read_ret;
+  (void)record_ret;
+  (void)wait_ret;
+  (void)fence_ret;
+  (void)thread_record_ret;
+  (void)thread_wait_ret;
+  (void)batch_start_ret;
+  (void)batch_end_ret;
+  (void)release_ret;
   return 0;
 }
 " FLUME_HAVE_HCOMM_PRIMITIVES)
