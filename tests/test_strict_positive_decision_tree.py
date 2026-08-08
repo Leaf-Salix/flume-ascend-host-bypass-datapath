@@ -46,6 +46,9 @@ def strict_log(include_verify: bool) -> str:
                 "payload_usable_hccl_buffer_bytes=8192 "
                 "payload_local_hccl_buffer_bytes=8192 "
                 "payload_remote_hccl_buffer_bytes=8192")
+    package_runtime = (" package_source=explicit-json "
+                       "package_aicpu_tar=present "
+                       "package_aicpu_tar_readable=yes")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
@@ -66,6 +69,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_status_word_count=8 payload_echo=passed payload_role=send "
         "payload_batch_mode=on "
         "payload_thread_notify_order=not-used" + desc + resource +
+        package_runtime +
         " fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke passed: fallback=none "
@@ -81,7 +85,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_status_word_count=8 payload_echo=passed payload_role=recv "
         "payload_batch_mode=on "
         "payload_thread_notify_order=not-used" + recv_desc +
-        resource + " fallback=none\" "
+        resource + package_runtime + " fallback=none\" "
         "payload_expected_checksum=1234",
         "",
     ])
@@ -464,6 +468,8 @@ def main() -> int:
         assert "| Strict payload positive passed? | yes |" in text
         assert ("| HCOMM custom-op package source | source=<runtime-root>, "
                 "vendor=flume, tar=present, so=present |") in text
+        assert ("| runtime package identity | source=explicit-json, "
+                "tar=present, readable=yes |") in text
         assert "`payload_kernel_hcomm_ret=0`" in text
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text

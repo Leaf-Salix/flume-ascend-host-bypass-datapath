@@ -2049,6 +2049,7 @@ struct HcommCustomOpPackageProbe {
   bool installed = false;
   bool payload_ready = false;
   bool aicpu_tar_present = false;
+  bool aicpu_tar_readable = false;
   std::string vendor = "none";
   std::string json_path;
   std::string aicpu_tar_path;
@@ -2075,6 +2076,10 @@ void AppendMissing(std::vector<std::string>* missing, const std::string& item) {
 
 bool FileExists(const std::string& path) {
   return !path.empty() && access(path.c_str(), F_OK) == 0;
+}
+
+bool FileReadable(const std::string& path) {
+  return !path.empty() && access(path.c_str(), R_OK) == 0;
 }
 
 std::string ReadTextFile(const std::string& path) {
@@ -2246,6 +2251,7 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
       probe.aicpu_tar_path = FindAicpuTarForJson(probe.json_path);
     }
     probe.aicpu_tar_present = FileExists(probe.aicpu_tar_path);
+    probe.aicpu_tar_readable = FileReadable(probe.aicpu_tar_path);
     probe.source = probe.installed ? "explicit-json" : "explicit-json-missing";
     if (probe.installed) {
       probe.payload_ready =
@@ -2254,6 +2260,9 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
       if (probe.payload_ready && !probe.aicpu_tar_present) {
         probe.payload_ready = false;
         probe.payload_reason = "payload AICPU tar missing beside JSON";
+      } else if (probe.payload_ready && !probe.aicpu_tar_readable) {
+        probe.payload_ready = false;
+        probe.payload_reason = "payload AICPU tar is not readable";
       }
     } else {
       probe.payload_reason = "custom-op JSON missing";
@@ -2279,6 +2288,7 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
                                "/aicpu/kernel/" +
                                kFlumeHcommPayloadAicpuTar;
         probe.aicpu_tar_present = FileExists(probe.aicpu_tar_path);
+        probe.aicpu_tar_readable = FileReadable(probe.aicpu_tar_path);
         probe.source = "root-scan";
         probe.payload_ready =
             JsonLooksPayloadReady(ReadTextFile(probe.json_path),
@@ -2286,6 +2296,9 @@ HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
         if (probe.payload_ready && !probe.aicpu_tar_present) {
           probe.payload_ready = false;
           probe.payload_reason = "payload AICPU tar missing in OPP layout";
+        } else if (probe.payload_ready && !probe.aicpu_tar_readable) {
+          probe.payload_ready = false;
+          probe.payload_reason = "payload AICPU tar is not readable";
         }
         return probe;
       }
@@ -2372,6 +2385,8 @@ std::string DescribeHcommLauncherDecision(
          (decision.package.payload_ready ? "ready" : "not-ready") +
          " package_aicpu_tar=" +
          (decision.package.aicpu_tar_present ? "present" : "missing") +
+         " package_aicpu_tar_readable=" +
+         (decision.package.aicpu_tar_readable ? "yes" : "no") +
          " package_vendor=" + decision.package.vendor +
          " package_source=" + decision.package.source +
          " payload_package_reason=\"" + decision.package.payload_reason + "\"" +
@@ -2593,6 +2608,8 @@ std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
          " package_source=" + decision.package.source +
          " package_aicpu_tar=" +
          (decision.package.aicpu_tar_present ? "present" : "missing") +
+         " package_aicpu_tar_readable=" +
+         (decision.package.aicpu_tar_readable ? "yes" : "no") +
          " package_json_path=\"" + decision.package.json_path + "\"" +
          " package_aicpu_tar_path=\"" + decision.package.aicpu_tar_path + "\"" +
          " payload_package=" +

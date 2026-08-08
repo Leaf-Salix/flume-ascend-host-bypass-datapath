@@ -2222,6 +2222,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic = marker_value(strict, "payload_semantic")
     strict_semantic_v5 = marker_value(strict, "payload_semantic_v5")
     strict_build_mode = marker_value(strict, "payload_build_mode")
+    strict_runtime_package_source = marker_value(strict, "package_source")
+    strict_runtime_package_tar = marker_value(strict, "package_aicpu_tar")
+    strict_runtime_package_tar_readable = marker_value(
+        strict, "package_aicpu_tar_readable")
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
     strict_batch_mode = marker_value(strict, "payload_batch_mode")
@@ -2370,6 +2374,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| payload semantic v5 marker | {strict_semantic_v5} | `payload_semantic_v5=missing` means the package predates the current recv local-buffer scheduler |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
+            f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
             f"| fallback | {strict_fallback} | expected `none` for real HCOMM payload copy |",
         ])
