@@ -395,7 +395,10 @@ If the batch-enabled strict gate fails, the optional no-batch rerun writes
 `HCOMM_PAYLOAD_TAGGED_DIAGNOSTIC.md`, and the CANN fixture adds
 `hcomm-primitive-call-shape-probe.txt` so the same log bundle can distinguish
 ABI call-shape problems, default-tag batch compatibility, batch submit/ordering
-problems, and primitive-copy problems.
+problems, and primitive-copy problems. If a no-batch, tagged-batch, or
+direct-output rerun produces the full strict-positive marker set with checksum
+match and `fallback=none`, the tools accept that log as real HCOMM payload-copy
+evidence and record the variant explicitly in the decision tree.
 
 If the batch-enabled strict gate fails inside the payload kernel, use the
 diagnostic no-batch variant to isolate HCOMM primitive execution from
@@ -664,7 +667,9 @@ The command records both `hcomm-payload-strict-evidence` and
 payload copy plus `storage_hbm=hcomm-payload-staging`. If the storage-over-HCOMM
 gate fails after package preflight, the optional no-batch and tagged-batch
 reruns collect the same A/B evidence as the focused payload gate, but the final
-storage gate still requires the HCOMM payload path; batch-enabled mode remains a separate compatibility signal.
+storage gate still requires the HCOMM payload path and
+`storage_hbm=hcomm-payload-staging`; batch-enabled mode remains a separate
+compatibility signal when a no-batch path is the first one to pass.
 
 ## Remote Validation Commands
 

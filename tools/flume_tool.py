@@ -3246,7 +3246,10 @@ def FindStepLog(run_dir: Path, step_names: Iterable[str]) -> Optional[Path]:
     return None
 
 
-HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_STEPS = (
+HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
+    "hcomm-payload-nobatch-diagnostic",
+    "hcomm-payload-direct-output-diagnostic",
+    "hcomm-payload-tagged-diagnostic",
     "hcomm-payload-channel-handle-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
     "hcomm-payload-channel-handle-direct-output-candidate",
@@ -3257,7 +3260,7 @@ HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_STEPS = (
 def FindPassingHcommPayloadCandidateLog(run_dir: Path,
                                         *,
                                         require_storage: bool) -> Optional[Path]:
-    for step_name in HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_STEPS:
+    for step_name in HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS:
         candidate_log = FindStepLog(run_dir, [step_name])
         if candidate_log is None:
             continue
@@ -3272,6 +3275,25 @@ def FindPassingHcommPayloadCandidateLog(run_dir: Path,
             continue
         return candidate_log
     return None
+
+
+def SelectHcommPayloadEvidenceLog(run_dir: Path,
+                                  default_log: Optional[Path],
+                                  *,
+                                  require_storage: bool) -> Optional[Path]:
+    if default_log is not None:
+        try:
+            default_text = default_log.read_text(
+                encoding="utf-8", errors="replace")
+        except OSError:
+            default_text = ""
+        if (StrictPayloadRankEvidencePassed(default_text)[0] and
+                (not require_storage or
+                 StorageHbmHcommPathPassed(default_text))):
+            return default_log
+    candidate_log = FindPassingHcommPayloadCandidateLog(
+        run_dir, require_storage=require_storage)
+    return candidate_log if candidate_log is not None else default_log
 
 
 def DecisionTreeStrictPositivePassed(tree_path: Path) -> bool:
@@ -3299,6 +3321,8 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
     smoke_log = FindStepLog(run_dir, ["hccl-collective-smoke"])
     strict_log = FindStepLog(run_dir, ["hcomm-payload-strict-positive"])
     package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
+    strict_log = SelectHcommPayloadEvidenceLog(
+        run_dir, strict_log, require_storage=False)
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeStrictPositivePassed(tree):
         channel_log = FindPassingHcommPayloadCandidateLog(
@@ -3317,6 +3341,8 @@ def AnalyzeHcommStorageStrictPositiveLogs(
     smoke_log = FindStepLog(run_dir, ["hccl-collective-smoke"])
     strict_log = FindStepLog(run_dir, ["hcomm-storage-strict-positive"])
     package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
+    strict_log = SelectHcommPayloadEvidenceLog(
+        run_dir, strict_log, require_storage=True)
     tree = WriteMatrixDecisionTree(run_dir, smoke_log, strict_log, package_log)
     if not DecisionTreeHcommStoragePassed(tree):
         channel_log = FindPassingHcommPayloadCandidateLog(
@@ -3606,7 +3632,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
-        strict_tree_log,
+        SelectHcommPayloadEvidenceLog(
+            runner.run_dir, strict_tree_log, require_storage=False),
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
@@ -3817,7 +3844,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        strict_tree_log,
+        SelectHcommPayloadEvidenceLog(
+            runner.run_dir, strict_tree_log, require_storage=False),
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
@@ -4035,7 +4063,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        strict_tree_log,
+        SelectHcommPayloadEvidenceLog(
+            runner.run_dir, strict_tree_log, require_storage=True),
         package_result.log_path,
     )
     strict_passed = DecisionTreeStrictPositivePassed(tree)
@@ -5317,19 +5346,19 @@ def parse_args() -> argparse.Namespace:
                               "the batch-enabled strict payload gate fails, "
                               "automatically rerun the same smoke with "
                               "--hcomm-payload-disable-batch and write "
-                              "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. When used "
-                              "with the channel-handle auto candidate, a "
+                              "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. A "
                               "complete no-batch HCOMM primitive copy can "
-                              "satisfy the strict-positive gate; the default "
-                              "comm-name no-batch rerun remains A/B evidence."))
+                              "satisfy the strict-positive gate, but it does "
+                              "not validate HcommBatchModeStart/End."))
     parser.add_argument("--auto-run-hcomm-payload-tagged-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
                               "the default batch-enabled strict payload gate "
                               "fails, automatically rerun the same smoke with "
-                              "--hcomm-payload-batch-tag set. This collects "
-                              "default-batch vs tagged-batch evidence only and "
-                              "does not turn the strict-positive gate green."))
+                              "--hcomm-payload-batch-tag set. A complete "
+                              "tagged-batch HCOMM primitive copy can satisfy "
+                              "the strict-positive gate while preserving "
+                              "batch-mode coverage."))
     parser.add_argument("--auto-run-hcomm-payload-direct-output-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
@@ -5337,9 +5366,9 @@ def parse_args() -> argparse.Namespace:
                               "rerun the same smoke with "
                               "--hcomm-payload-recv-direct-output and write "
                               "HCOMM_PAYLOAD_DIRECT_OUTPUT_DIAGNOSTIC.md. "
-                              "This collects local-buffer vs direct-output "
-                              "recv evidence only and does not turn the "
-                              "strict-positive gate green."))
+                              "A complete direct-output HCOMM primitive copy "
+                              "can satisfy the strict-positive gate and marks "
+                              "the accepted recv path explicitly."))
     parser.add_argument("--auto-run-hcomm-payload-no-comm-acquire-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
