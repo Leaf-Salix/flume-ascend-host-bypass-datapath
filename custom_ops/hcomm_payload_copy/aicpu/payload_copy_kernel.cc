@@ -155,6 +155,16 @@ bool PayloadRecvDirectOutputEnabled(
   return desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
 }
 
+unsigned int PayloadCompletionMode(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  return desc.completion_mode & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK;
+}
+
+bool PayloadSkipCommAcquire(const flume_hcomm_payload_copy_desc_v1& desc) {
+  return (desc.completion_mode &
+          FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0;
+}
+
 bool CanRecordPayloadCompletionNotify(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   return HasPayloadDescHeader(desc) &&
@@ -183,9 +193,9 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          (desc.thread_notify_mode == FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE ||
           desc.thread_notify_mode ==
               FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) &&
-         (desc.completion_mode ==
+         (PayloadCompletionMode(desc) ==
               FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY ||
-          desc.completion_mode ==
+          PayloadCompletionMode(desc) ==
               FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) &&
          desc.aicpu_thread != 0 && desc.channel_handle != 0 &&
          desc.user_buffer != 0 && desc.local_hccl_buffer != 0 &&
@@ -286,7 +296,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED;
     }
-    if (desc.completion_mode ==
+    if (PayloadCompletionMode(desc) ==
         FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
       BeginPayloadPrimitive(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED);
@@ -350,19 +360,24 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   const bool use_thread_notify =
       desc.thread_notify_mode ==
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
-  BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
-  TracePayloadEvent(desc,
-                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER, -1);
-  int32_t ret = HcommAcquireComm(desc.comm_name);
-  TracePayloadEvent(desc,
-                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE, ret);
-  if (ret != 0) {
-    StorePayloadPrimitiveRet(desc, ret);
-    StorePayloadStatus(desc,
-                       FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
-    StorePayloadTraceResult(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
-    BestEffortPayloadCompletionNotify(desc);
-    return FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED;
+  int32_t ret = 0;
+  const bool skip_comm_acquire = PayloadSkipCommAcquire(desc);
+  if (!skip_comm_acquire) {
+    BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER, -1);
+    ret = HcommAcquireComm(desc.comm_name);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE, ret);
+    if (ret != 0) {
+      StorePayloadPrimitiveRet(desc, ret);
+      StorePayloadStatus(desc,
+                         FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+      StorePayloadTraceResult(
+          desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+      BestEffortPayloadCompletionNotify(desc);
+      return FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED;
+    }
   }
 
   unsigned int result = kFlumePayloadSuccess;
@@ -440,21 +455,24 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   } else {
     StorePayloadStatus(desc, result);
   }
-  if (result == kFlumePayloadSuccess) {
+  if (result == kFlumePayloadSuccess && !skip_comm_acquire) {
     StorePayloadPrimitiveRet(desc, 0);
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
   }
-  TracePayloadEvent(desc,
-                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER, -1);
-  ret = HcommReleaseComm(desc.comm_name);
-  TracePayloadEvent(desc,
-                    FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE, ret);
-  if (ret != 0 && result == kFlumePayloadSuccess) {
-    StorePayloadPrimitiveRet(desc, ret);
-    StorePayloadStatus(desc,
-                       FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
-    StorePayloadTraceResult(desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
-    return FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED;
+  if (!skip_comm_acquire) {
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER, -1);
+    ret = HcommReleaseComm(desc.comm_name);
+    TracePayloadEvent(desc,
+                      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE, ret);
+    if (ret != 0 && result == kFlumePayloadSuccess) {
+      StorePayloadPrimitiveRet(desc, ret);
+      StorePayloadStatus(desc,
+                         FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
+      StorePayloadTraceResult(
+          desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
+      return FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED;
+    }
   }
   if (result == kFlumePayloadSuccess) {
     StorePayloadStatus(desc, kFlumePayloadSuccess);

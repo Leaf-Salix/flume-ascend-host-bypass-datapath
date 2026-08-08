@@ -124,6 +124,7 @@ struct RankContext {
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
   bool hcomm_payload_recv_direct_output = false;
+  bool hcomm_payload_skip_comm_acquire = false;
   std::string hcomm_payload_batch_tag;
   uint64_t sym_win_gb = 1;
   int status = 0;
@@ -381,6 +382,7 @@ bool DetailContainsMarkers(const char* detail,
 
 std::vector<std::string> RequiredHcommPayloadIoMarkers(
     bool disable_batch,
+    bool skip_comm_acquire,
     const char* expected_role) {
   std::vector<std::string> markers = {
       "stage3b3e_payload_copy=passed",
@@ -404,6 +406,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_result=success",
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
+      skip_comm_acquire ? "payload_comm_acquire=skipped" :
+                          "payload_comm_acquire=default",
       "payload_desc_batch_tag=",
       "payload_recv_path=",
       "payload_semantic_v6=present",
@@ -417,6 +421,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
 
 bool CheckHcommPayloadIoMarkers(flume_io_t* io,
                                 bool disable_batch,
+                                bool skip_comm_acquire,
                                 const char* expected_role,
                                 const char* label,
                                 std::string* error) {
@@ -424,6 +429,7 @@ bool CheckHcommPayloadIoMarkers(flume_io_t* io,
   const char* detail = flume_io_error_message(io);
   if (DetailContainsMarkers(detail,
                             RequiredHcommPayloadIoMarkers(disable_batch,
+                                                          skip_comm_acquire,
                                                           expected_role),
                             &missing_marker)) {
     return true;
@@ -1473,6 +1479,8 @@ void RankMain(RankContext* ctx) {
           nullptr : ctx->hcomm_payload_batch_tag.c_str();
       options.payload_recv_direct_output =
           ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+      options.payload_skip_comm_acquire =
+          ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
       if (ctx->hcomm_require_payload_copy) {
         if (ctx->rank == 1) {
           auto* host = static_cast<float*>(host_buf);
@@ -1562,6 +1570,8 @@ void RankMain(RankContext* ctx) {
              << (ctx->hcomm_payload_recv_direct_output ? "on" : "off")
              << " payload_batch_diagnostic="
              << (ctx->hcomm_payload_disable_batch ? "no-batch" : "batch")
+             << " payload_comm_acquire_mode="
+             << (ctx->hcomm_payload_skip_comm_acquire ? "skipped" : "default")
              << " channel_res="
              << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
              << " primitives="
@@ -1620,6 +1630,7 @@ void RankMain(RankContext* ctx) {
         const char* expected_role = ctx->rank == 0 ? "send" : "recv";
         if (!CheckHcommPayloadIoMarkers(
                 hcomm_payload_io, ctx->hcomm_payload_disable_batch,
+                ctx->hcomm_payload_skip_comm_acquire,
                 expected_role, "HCOMM payload copy", &error)) {
           log_hcomm_payload_line();
           goto cleanup;
@@ -1711,6 +1722,8 @@ void RankMain(RankContext* ctx) {
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
         options.payload_recv_direct_output =
             ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+        options.payload_skip_comm_acquire =
+            ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
         options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
             nullptr : ctx->hcomm_payload_batch_tag.c_str();
         if (!CheckFlume(flume_hcomm_payload_send_ex(
@@ -1724,7 +1737,8 @@ void RankMain(RankContext* ctx) {
           goto cleanup;
         }
         if (!CheckHcommPayloadIoMarkers(
-                storage_hbm_io, ctx->hcomm_payload_disable_batch, "send",
+                storage_hbm_io, ctx->hcomm_payload_disable_batch,
+                ctx->hcomm_payload_skip_comm_acquire, "send",
                 "storage HBM HCOMM send", &error)) {
           goto cleanup;
         }
@@ -1777,6 +1791,8 @@ void RankMain(RankContext* ctx) {
             ctx->hcomm_payload_disable_batch ? 1U : 0U;
         options.payload_recv_direct_output =
             ctx->hcomm_payload_recv_direct_output ? 1U : 0U;
+        options.payload_skip_comm_acquire =
+            ctx->hcomm_payload_skip_comm_acquire ? 1U : 0U;
         options.payload_batch_tag = ctx->hcomm_payload_batch_tag.empty() ?
             nullptr : ctx->hcomm_payload_batch_tag.c_str();
         if (!CheckFlume(flume_hcomm_payload_recv_ex(
@@ -1790,7 +1806,8 @@ void RankMain(RankContext* ctx) {
           goto cleanup;
         }
         if (!CheckHcommPayloadIoMarkers(
-                storage_hbm_io, ctx->hcomm_payload_disable_batch, "recv",
+                storage_hbm_io, ctx->hcomm_payload_disable_batch,
+                ctx->hcomm_payload_skip_comm_acquire, "recv",
                 "storage HBM HCOMM recv", &error)) {
           goto cleanup;
         }
@@ -1951,6 +1968,7 @@ int main(int argc, char** argv) {
   bool hcomm_require_payload_copy = false;
   bool hcomm_payload_disable_batch = false;
   bool hcomm_payload_recv_direct_output = false;
+  bool hcomm_payload_skip_comm_acquire = false;
   std::string hcomm_payload_batch_tag;
   uint64_t sym_win_gb = 1;
   HcclInitMode init_mode = HcclInitMode::kAll;
@@ -2024,6 +2042,8 @@ int main(int argc, char** argv) {
       hcomm_payload_disable_batch = true;
     } else if (arg == "--hcomm-payload-recv-direct-output") {
       hcomm_payload_recv_direct_output = true;
+    } else if (arg == "--hcomm-payload-skip-comm-acquire") {
+      hcomm_payload_skip_comm_acquire = true;
     } else if (arg.rfind("--hcomm-payload-batch-tag=", 0) == 0) {
       hcomm_payload_batch_tag =
           arg.substr(std::string("--hcomm-payload-batch-tag=").size());
@@ -2107,6 +2127,7 @@ int main(int argc, char** argv) {
                 << " [--hcomm-resource-descriptor-smoke]"
                 << " [--hcomm-notify-only-smoke]"
                 << " [--hcomm-payload-smoke]"
+                << " [--hcomm-payload-skip-comm-acquire]"
                 << " [--storage-hbm-smoke]"
                 << " [--storage-smoke-file=path]"
                 << " [--storage-smoke-offset=0]"
@@ -2282,6 +2303,8 @@ int main(int argc, char** argv) {
             << (hcomm_require_payload_copy ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_skip_comm_acquire="
+            << (hcomm_payload_skip_comm_acquire ? "on" : "off")
             << "\n";
   std::cout << "hccl feature probe: root_info=" << FLUME_HAVE_HCCL_ROOT_INFO
             << " root_info_config=" << FLUME_HAVE_HCCL_ROOT_INFO_CONFIG
@@ -2547,6 +2570,8 @@ int main(int argc, char** argv) {
         hcomm_payload_disable_batch;
     contexts[local_index].hcomm_payload_recv_direct_output =
         hcomm_payload_recv_direct_output;
+    contexts[local_index].hcomm_payload_skip_comm_acquire =
+        hcomm_payload_skip_comm_acquire;
     contexts[local_index].hcomm_payload_batch_tag = hcomm_payload_batch_tag;
     contexts[local_index].sym_win_gb = sym_win_gb;
     threads.emplace_back(RankMain, &contexts[local_index]);
@@ -2607,6 +2632,8 @@ int main(int argc, char** argv) {
             << (hcomm_payload_disable_batch ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_skip_comm_acquire="
+            << (hcomm_payload_skip_comm_acquire ? "on" : "off")
             << " hcomm_payload_batch_tag="
             << (hcomm_payload_batch_tag.empty() ? "empty" : "set") << "\n";
   return 0;

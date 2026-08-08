@@ -75,9 +75,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed payload_role=send "
 	        "payload_trace=passed payload_trace_event=kernel-exit "
-	        "payload_trace_order=passed "
-	        "payload_trace_result=success "
-        "payload_batch_mode=on "
+        "payload_trace_order=passed "
+        "payload_trace_result=success "
+        "payload_batch_mode=on payload_comm_acquire=default "
         "payload_thread_notify_order=not-used" + desc + resource +
         package_runtime +
         " fallback=none\" "
@@ -95,9 +95,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed payload_role=recv "
 	        "payload_trace=passed payload_trace_event=kernel-exit "
-	        "payload_trace_order=passed "
-	        "payload_trace_result=success "
-        "payload_batch_mode=on "
+        "payload_trace_order=passed "
+        "payload_trace_result=success "
+        "payload_batch_mode=on payload_comm_acquire=default "
         "payload_thread_notify_order=not-used" + recv_desc +
         resource + package_runtime + " fallback=none\" "
         "payload_expected_checksum=1234",
@@ -121,9 +121,9 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed payload_role=send "
 	        "payload_trace=passed payload_trace_event=kernel-exit "
-	        "payload_trace_order=passed "
-	        "payload_trace_result=success "
-        "payload_batch_mode=on "
+        "payload_trace_order=passed "
+        "payload_trace_result=success "
+        "payload_batch_mode=on payload_comm_acquire=default "
         "payload_desc_batch_tag=default "
         "payload_recv_path=local-buffer "
 	        "payload_semantic_v6=present "
@@ -605,6 +605,23 @@ def main() -> int:
         default_failure = write(
             tmp / "strict-default-failure-for-nobatch.log",
             strict_log_with_rank1_remote_read_failure())
+        strict_no_comm = write(
+            tmp / "strict-no-comm-acquire.log",
+            strict_log(True).replace("payload_comm_acquire=default",
+                                     "payload_comm_acquire=skipped"))
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_no_comm.read_text(encoding="utf-8"))[0]
+        no_comm_passed, no_comm_rank0, no_comm_rank1 = (
+            flume_tool.StrictPayloadNoCommAcquireDiagnosticPassed(
+                strict_no_comm.read_text(encoding="utf-8")))
+        assert no_comm_passed
+        assert no_comm_rank0
+        assert no_comm_rank1
+        no_comm_note = flume_tool.WriteHcommPayloadNoCommAcquireDiagnostic(
+            no_batch_dir, default_failure, strict_no_comm)
+        no_comm_text = no_comm_note.read_text(encoding="utf-8")
+        assert "no-comm-acquire HCOMM payload copy" in no_comm_text
+        assert "`payload_comm_acquire=default`" in no_comm_text
         no_batch_note = flume_tool.WriteHcommPayloadNoBatchDiagnostic(
             no_batch_dir, default_failure, strict_no_batch)
         no_batch_text = no_batch_note.read_text(encoding="utf-8")

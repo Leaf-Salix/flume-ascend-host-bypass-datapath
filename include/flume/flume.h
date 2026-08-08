@@ -91,6 +91,7 @@ typedef struct {
   uint32_t disable_payload_batch_mode;
   const char *payload_batch_tag;
   uint32_t payload_recv_direct_output;
+  uint32_t payload_skip_comm_acquire;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {

@@ -1460,6 +1460,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-payload-disable-batch")
             if args.hcomm_payload_recv_direct_output:
                 command.append("--hcomm-payload-recv-direct-output")
+            if args.hcomm_payload_skip_comm_acquire:
+                command.append("--hcomm-payload-skip-comm-acquire")
             if args.hcomm_payload_batch_tag:
                 command.append(
                     f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
@@ -1617,6 +1619,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_result=success",
     "payload_role=",
     "payload_batch_mode=on",
+    "payload_comm_acquire=default",
     "payload_desc_batch_tag=",
     "payload_recv_path=",
     "payload_semantic_v6=present",
@@ -1701,6 +1704,29 @@ def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
     rank1_ok = (bool(rank_lines[1]) and
                 all(marker in rank_lines[1]
                     for marker in no_batch_markers) and
+                "payload_role=recv" in rank_lines[1] and
+                "payload_verify=passed" in rank_lines[1])
+    source = MarkerValueFromLine(rank_lines[0], "payload_source_checksum")
+    payload = MarkerValueFromLine(rank_lines[1], "payload_checksum")
+    expected = MarkerValueFromLine(rank_lines[1], "payload_expected_checksum")
+    checksum_ok = (
+        source != "missing" and source == payload and payload == expected)
+    return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
+
+
+def StrictPayloadNoCommAcquireDiagnosticPassed(
+        text: str) -> tuple[bool, bool, bool]:
+    rank_lines = ExtractStrictPayloadRankLines(text)
+    no_comm_markers = tuple(
+        "payload_comm_acquire=skipped"
+        if item == "payload_comm_acquire=default" else item
+        for item in STRICT_PAYLOAD_RANK_MARKERS)
+    rank0_ok = bool(rank_lines[0]) and all(
+        marker in rank_lines[0] for marker in no_comm_markers) and (
+            "payload_role=send" in rank_lines[0])
+    rank1_ok = (bool(rank_lines[1]) and
+                all(marker in rank_lines[1]
+                    for marker in no_comm_markers) and
                 "payload_role=recv" in rank_lines[1] and
                 "payload_verify=passed" in rank_lines[1])
     source = MarkerValueFromLine(rank_lines[0], "payload_source_checksum")
@@ -1843,6 +1869,132 @@ def RunHcommPayloadNoBatchDiagnostic(
     if result.returncode != 0:
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadNoBatchDiagnostic(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def WriteHcommPayloadNoCommAcquireDiagnostic(
+        run_dir: Path,
+        default_log: Optional[Path],
+        no_comm_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_NO_COMM_ACQUIRE_DIAGNOSTIC.md"
+    try:
+        default_text = (default_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if default_log is not None else "")
+    except OSError as exc:
+        default_text = f"failed to read default log: {exc}"
+    try:
+        no_comm_text = (no_comm_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if no_comm_log is not None else "")
+    except OSError as exc:
+        no_comm_text = f"failed to read no-comm-acquire log: {exc}"
+
+    default_rank_lines = ExtractStrictPayloadRankLines(default_text)
+    no_comm_rank_lines = ExtractStrictPayloadRankLines(no_comm_text)
+    no_comm_ok, no_comm_rank0_ok, no_comm_rank1_ok = (
+        StrictPayloadNoCommAcquireDiagnosticPassed(no_comm_text))
+    default_rank0_failure_step = MarkerValueFromLine(
+        default_rank_lines[0], "payload_failure_step")
+    default_rank1_failure_step = MarkerValueFromLine(
+        default_rank_lines[1], "payload_failure_step")
+    default_failure_step = (
+        default_rank1_failure_step
+        if default_rank1_failure_step not in ("missing", "none") else
+        default_rank0_failure_step)
+    no_comm_rank0_failure_step = MarkerValueFromLine(
+        no_comm_rank_lines[0], "payload_failure_step")
+    no_comm_rank1_failure_step = MarkerValueFromLine(
+        no_comm_rank_lines[1], "payload_failure_step")
+    no_comm_failure_step = (
+        no_comm_rank1_failure_step
+        if no_comm_rank1_failure_step not in ("missing", "none") else
+        no_comm_rank0_failure_step)
+    no_comm_kernel = MarkerValue(no_comm_text, "payload_kernel_status")
+    no_comm_hcomm_ret = MarkerValue(no_comm_text, "payload_kernel_hcomm_ret")
+    no_comm_acquire = MarkerValue(no_comm_text, "payload_comm_acquire")
+
+    if no_comm_ok:
+        decision = (
+            "no-comm-acquire HCOMM payload copy and checksum verification "
+            "passed; the default failure is likely isolated to "
+            "HcommAcquireComm/HcommReleaseComm or comm-name binding")
+        next_action = (
+            "inspect HcclGetCommName output, HcommAcquireComm requirements, "
+            "and whether the selected CANN build expects ChannelHandle-only "
+            "payload primitives")
+    elif no_comm_failure_step != "missing":
+        decision = (
+            "no-comm-acquire diagnostic reached the payload kernel but failed "
+            f"inside `{no_comm_failure_step}`")
+        next_action = StrictPayloadFailureAction(1, no_comm_failure_step)
+    elif no_comm_kernel != "missing":
+        decision = (
+            "no-comm-acquire diagnostic launched but did not produce complete "
+            "rank evidence")
+        next_action = "inspect no-comm-acquire rank logs and payload kernel status"
+    else:
+        decision = (
+            "no-comm-acquire diagnostic did not reach payload kernel evidence")
+        next_action = "inspect direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload No-Comm-Acquire Diagnostic",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- no_comm_acquire_log: `{no_comm_log}`",
+        f"- default_failure_step: `{default_failure_step}`",
+        f"- default_rank0_failure_step: `{default_rank0_failure_step}`",
+        f"- default_rank1_failure_step: `{default_rank1_failure_step}`",
+        f"- no_comm_kernel_status: `{no_comm_kernel}`",
+        f"- no_comm_failure_step: `{no_comm_failure_step}`",
+        f"- no_comm_rank0_failure_step: `{no_comm_rank0_failure_step}`",
+        f"- no_comm_rank1_failure_step: `{no_comm_rank1_failure_step}`",
+        f"- no_comm_hcomm_ret: `{no_comm_hcomm_ret}`",
+        f"- no_comm_acquire_marker: `{no_comm_acquire}`",
+        f"- no_comm_rank0_evidence: `{'passed' if no_comm_rank0_ok else 'missing'}`",
+        f"- no_comm_rank1_evidence: `{'passed' if no_comm_rank1_ok else 'missing'}`",
+        f"- no_comm_payload_copy_and_verify: `{'passed' if no_comm_ok else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "The no-comm-acquire path is diagnostic only. It intentionally cannot "
+        "satisfy the final strict-positive gate, which still requires "
+        "`payload_comm_acquire=default`.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- default_rank0: `{default_rank_lines[0]}`",
+        f"- default_rank1: `{default_rank_lines[1]}`",
+        f"- no_comm_rank0: `{no_comm_rank_lines[0]}`",
+        f"- no_comm_rank1: `{no_comm_rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload no-comm-acquire diagnostic -> {note}")
+    return note
+
+
+def RunHcommPayloadNoCommAcquireDiagnostic(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = list(base_command)
+    if "--hcomm-payload-skip-comm-acquire" not in command:
+        command.append("--hcomm-payload-skip-comm-acquire")
+    result = runner.run(
+        "hcomm-payload-no-comm-acquire-diagnostic",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadNoCommAcquireDiagnostic(
         runner.run_dir, default_log, result.log_path)
     return result
 
@@ -2315,6 +2467,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     direct_output_log = FindStepLog(
         run_dir, ["hcomm-payload-direct-output-diagnostic"])
     direct_output = read(direct_output_log)
+    no_comm_log = FindStepLog(
+        run_dir, ["hcomm-payload-no-comm-acquire-diagnostic"])
+    no_comm = read(no_comm_log)
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
@@ -2481,6 +2636,15 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         direct_output, "payload_failure_step")
     direct_output_hcomm_ret = marker_value(
         direct_output, "payload_kernel_hcomm_ret")
+    no_comm_ok, no_comm_rank0_ok, no_comm_rank1_ok = (
+        StrictPayloadNoCommAcquireDiagnosticPassed(no_comm))
+    no_comm_result = (
+        "passed" if no_comm_ok else (
+            "partial" if no_comm_rank0_ok or no_comm_rank1_ok else (
+                "not-run" if not no_comm else "not-passed")))
+    no_comm_failure_step = marker_value(no_comm, "payload_failure_step")
+    no_comm_hcomm_ret = marker_value(no_comm, "payload_kernel_hcomm_ret")
+    no_comm_acquire = marker_value(no_comm, "payload_comm_acquire")
     rank_status = {}
     for rank in (0, 1):
         rank_line = strict_rank_lines[rank]
@@ -2560,6 +2724,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_echo=passed` + `payload_trace=passed` + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
+        "`payload_comm_acquire=default` + "
         "`payload_desc_batch_tag=...` + "
         "`payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
@@ -2580,6 +2745,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"recv_path={direct_output_recv_path}, failure "
         f"`{direct_output_failure_step}`, hcomm ret "
         f"`{direct_output_hcomm_ret}` |")
+    lines.append(
+        f"| HCOMM payload no-comm-acquire diagnostic | {no_comm_result} | "
+        f"comm_acquire={no_comm_acquire}, failure "
+        f"`{no_comm_failure_step}`, hcomm ret `{no_comm_hcomm_ret}` |")
     if strict_log is not None:
         lines.extend([
             "",
@@ -2689,6 +2858,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 "no-batch HCOMM payload copy passed; inspect "
                 "HcommBatchModeStart/End submit, ordering, and selected "
                 "engine batch-mode compatibility")
+        elif no_comm_ok:
+            next_action = (
+                "no-comm-acquire HCOMM payload copy passed; inspect "
+                "HcommAcquireComm/HcommReleaseComm, HCCL comm-name binding, "
+                "and whether this CANN build expects ChannelHandle-only "
+                "payload primitives")
         elif any(rank_status[rank]["primitive_state"] == "pending"
                  for rank in (0, 1)):
             bad_rank = next(
@@ -2845,6 +3020,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_recv_path=,payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_batch_mode=on,"
+            "payload_comm_acquire=default,"
             "payload_thread_notify_order=,"
             "payload_pattern=strict-v1,"
             "payload_source_checksum=,"
@@ -3032,6 +3208,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                 RunHcommPayloadDirectOutputDiagnostic(
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
+            if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
+                    package_payload_ready and
+                    "--hcomm-payload-skip-comm-acquire" not in strict_command):
+                RunHcommPayloadNoCommAcquireDiagnostic(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -3181,6 +3363,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                     RunHcommPayloadDirectOutputDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
+                if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
+                        not args.hcomm_payload_skip_comm_acquire and
+                        "--hcomm-payload-skip-comm-acquire" not in spec.command):
+                    RunHcommPayloadNoCommAcquireDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -3328,6 +3516,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                 if (args.auto_run_hcomm_payload_direct_output_diagnostic and
                         "--hcomm-payload-recv-direct-output" not in spec.command):
                     RunHcommPayloadDirectOutputDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
+                if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
+                        not args.hcomm_payload_skip_comm_acquire and
+                        "--hcomm-payload-skip-comm-acquire" not in spec.command):
+                    RunHcommPayloadNoCommAcquireDiagnostic(
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path)
 
@@ -4525,6 +4719,14 @@ def parse_args() -> argparse.Namespace:
                               "HBM buffer. The default remains local-buffer "
                               "staging, which reads remote HCCL Buffer into "
                               "local HCCL Buffer before the output copy."))
+    parser.add_argument("--hcomm-payload-skip-comm-acquire",
+                        action="store_true",
+                        help=("Diagnostic only: ask the direct ACL payload "
+                              "kernel to skip HcommAcquireComm/ReleaseComm and "
+                              "exercise the ChannelHandle-based Notify/Read "
+                              "path. This mode cannot satisfy the final "
+                              "strict-positive gate, which requires "
+                              "payload_comm_acquire=default."))
     parser.add_argument("--hcomm-payload-batch-tag", default="",
                         help=("Optional HCOMM batch tag for Stage 3B.3E "
                               "experiments. Empty uses Flume's stable default "
@@ -4558,6 +4760,16 @@ def parse_args() -> argparse.Namespace:
                               "This collects local-buffer vs direct-output "
                               "recv evidence only and does not turn the "
                               "strict-positive gate green."))
+    parser.add_argument("--auto-run-hcomm-payload-no-comm-acquire-diagnostic",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the strict payload gate fails, automatically "
+                              "rerun the same smoke with "
+                              "--hcomm-payload-skip-comm-acquire and write "
+                              "HCOMM_PAYLOAD_NO_COMM_ACQUIRE_DIAGNOSTIC.md. "
+                              "This isolates HcommAcquireComm/ReleaseComm from "
+                              "the ChannelHandle Notify/Read path and does not "
+                              "turn the strict-positive gate green."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",
                         help=("Batch tag used by "

@@ -233,6 +233,7 @@ struct HcommProbeOptions {
   bool disable_payload_batch_mode = false;
   std::string payload_batch_tag = kDefaultHcommPayloadBatchTag;
   bool payload_recv_direct_output = false;
+  bool payload_skip_comm_acquire = false;
 };
 
 struct HcommChannelResourceInfo {
@@ -532,6 +533,13 @@ bool NormalizeHcommProbeOptions(
             sizeof(options->payload_recv_direct_output)) {
       normalized.payload_recv_direct_output =
           options->payload_recv_direct_output != 0;
+    }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t,
+                 payload_skip_comm_acquire) +
+            sizeof(options->payload_skip_comm_acquire)) {
+      normalized.payload_skip_comm_acquire =
+          options->payload_skip_comm_acquire != 0;
     }
   }
 
@@ -2080,6 +2088,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               bool disable_payload_batch_mode,
                               const std::string& payload_batch_tag,
                               bool payload_recv_direct_output,
+                              bool payload_skip_comm_acquire,
                               flume_hcomm_payload_copy_desc_v1* desc) {
   flume_hcomm_payload_copy_desc_init(desc);
   desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
@@ -2099,6 +2108,10 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
           FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
+  if (payload_skip_comm_acquire) {
+    desc->completion_mode |=
+        FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE;
+  }
   desc->aicpu_thread = resource_info.aicpu_ts_thread;
   desc->channel_handle = resource_info.channel_handle;
   desc->user_buffer = reinterpret_cast<uint64_t>(user_buffer);
@@ -2646,6 +2659,9 @@ std::string PayloadDescriptorDetail(
   }
   const bool recv_direct_output =
       desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  const bool skip_comm_acquire =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0;
   return std::string(" payload_desc_role=") + std::to_string(desc.role) +
          " payload_desc_local_rank=" + std::to_string(desc.local_rank) +
          " payload_desc_peer_rank=" + std::to_string(desc.peer_rank) +
@@ -2659,6 +2675,8 @@ std::string PayloadDescriptorDetail(
          std::to_string(desc.thread_notify_mode) +
          " payload_desc_completion_mode=" +
          std::to_string(desc.completion_mode) +
+         " payload_comm_acquire=" +
+         (skip_comm_acquire ? "skipped" : "default") +
          " payload_desc_timeout_sec=" + std::to_string(desc.timeout_sec) +
          " payload_desc_status_schema=v" +
          std::to_string(desc.status_schema_version) +
@@ -2821,10 +2839,15 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
     expected.push_back(done);
   };
   expected.push_back(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER);
-  append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
-         FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE);
   const bool batch_enabled =
       trace_words[10] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  const bool skip_comm_acquire =
+      (trace_words[12] &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0;
+  if (!skip_comm_acquire) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE);
+  }
   if (batch_enabled) {
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE);
@@ -2864,8 +2887,10 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
     append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE);
   }
-  append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER,
-         FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE);
+  if (!skip_comm_acquire) {
+    append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER,
+           FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE);
+  }
   expected.push_back(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
   return expected;
 }
@@ -2921,6 +2946,10 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_batch_mode=" + std::to_string(trace_words[10]) +
          " payload_trace_recv_path=" + std::to_string(trace_words[11]) +
          " payload_trace_completion_mode=" + std::to_string(trace_words[12]) +
+         " payload_trace_comm_acquire=" +
+         (((trace_words[12] &
+            FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE) != 0) ?
+              "skipped" : "default") +
          " payload_trace_ready_notify_idx=" + std::to_string(trace_words[13]) +
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
@@ -3055,6 +3084,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     bool disable_payload_batch_mode,
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
+    bool payload_skip_comm_acquire,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
     int* status) {
@@ -3165,6 +3195,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
                            bytes, comm_name, disable_payload_batch_mode,
                            payload_batch_tag, payload_recv_direct_output,
+                           payload_skip_comm_acquire,
                            &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
   desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
@@ -3725,9 +3756,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
           FLUME_HCOMM_NOTIFY_ROLE_SEND :
           FLUME_HCOMM_NOTIFY_ROLE_RECV;
   const uint32_t expected_completion_mode =
-      resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
-          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
-          FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
+      desc.completion_mode;
   if (kernel_status_words[2] != expected_role ||
       kernel_status_words[3] != peer_rank || echo_bytes != bytes ||
       kernel_status_words[6] != state.rank ||
@@ -4204,6 +4233,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     bool disable_payload_batch_mode,
     const std::string& payload_batch_tag,
     bool payload_recv_direct_output,
+    bool payload_skip_comm_acquire,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
     int* status) {
@@ -4216,6 +4246,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   (void)disable_payload_batch_mode;
   (void)payload_batch_tag;
   (void)payload_recv_direct_output;
+  (void)payload_skip_comm_acquire;
   (void)resource_info;
   if (status != nullptr) {
     *status = FLUME_ERR_UNSUPPORTED;
@@ -5833,7 +5864,8 @@ int flume_hcomm_payload_send_ex(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, acl_stream,
       static_cast<uint8_t*>(src->ptr) + src_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
-      options.payload_recv_direct_output, resource_info, launcher,
+      options.payload_recv_direct_output, options.payload_skip_comm_acquire,
+      resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
@@ -5954,7 +5986,8 @@ int flume_hcomm_payload_recv_ex(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, acl_stream,
       static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes,
       options.disable_payload_batch_mode, options.payload_batch_tag,
-      options.payload_recv_direct_output, resource_info, launcher,
+      options.payload_recv_direct_output, options.payload_skip_comm_acquire,
+      resource_info, launcher,
       &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
