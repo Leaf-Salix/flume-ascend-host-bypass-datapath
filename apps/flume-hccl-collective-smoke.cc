@@ -899,6 +899,10 @@ void RankMain(RankContext* ctx) {
   flume_io_t* storage_hbm_io = nullptr;
   bool hcomm_payload_verify_passed = false;
   uint32_t hcomm_payload_checksum = 0;
+  bool hcomm_payload_source_checksum_ready = false;
+  uint32_t hcomm_payload_source_checksum = 0;
+  bool hcomm_payload_expected_checksum_ready = false;
+  uint32_t hcomm_payload_expected_checksum = 0;
 
   BufferLayout layout;
   std::string error;
@@ -1398,6 +1402,15 @@ void RankMain(RankContext* ctx) {
           }
         }
         if (ctx->rank == 0) {
+          if (!CheckAcl(aclrtMemcpy(host_buf, one_rank_bytes, reduce_send,
+                                    one_rank_bytes,
+                                    ACL_MEMCPY_DEVICE_TO_HOST),
+                        "aclrtMemcpy hcomm payload source D2H", &error)) {
+            goto cleanup;
+          }
+          hcomm_payload_source_checksum =
+              flume::protocol::Checksum32(host_buf, one_rank_bytes);
+          hcomm_payload_source_checksum_ready = true;
           if (!CheckFlume(flume_hcomm_payload_send_ex(
                                 client, reduce_send_buf,
                                 ctx->a3_symmetric ?
@@ -1498,6 +1511,12 @@ void RankMain(RankContext* ctx) {
         }
         hcomm_payload_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
+        for (uint64_t i = 0; i < ctx->count; ++i) {
+          host[i] = static_cast<float>(1 + i);
+        }
+        hcomm_payload_expected_checksum =
+            flume::protocol::Checksum32(host, one_rank_bytes);
+        hcomm_payload_expected_checksum_ready = true;
         hcomm_payload_verify_passed = true;
       }
       std::ostringstream line;
@@ -1532,6 +1551,15 @@ void RankMain(RankContext* ctx) {
         line << " payload_verify="
              << (hcomm_payload_verify_passed ? "passed" : "not-run")
              << " payload_checksum=" << hcomm_payload_checksum;
+        if (hcomm_payload_expected_checksum_ready) {
+          line << " payload_expected_checksum="
+               << hcomm_payload_expected_checksum;
+        }
+      }
+      if (ctx->hcomm_require_payload_copy && ctx->rank == 0 &&
+          wait_ret == FLUME_OK && hcomm_payload_source_checksum_ready) {
+        line << " payload_source_checksum="
+             << hcomm_payload_source_checksum;
       }
       const char* detail = flume_io_error_message(hcomm_payload_io);
       if (detail != nullptr && detail[0] != '\0') {

@@ -1353,7 +1353,17 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
                 all(marker in rank_lines[1]
                     for marker in STRICT_PAYLOAD_RANK_MARKERS) and
                 "payload_verify=passed" in rank_lines[1])
-    return (rank0_ok and rank1_ok, rank0_ok, rank1_ok)
+    source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
+                             rank_lines[0])
+    payload_match = re.search(r"\bpayload_checksum=([^\s\"]+)",
+                              rank_lines[1])
+    expected_match = re.search(r"\bpayload_expected_checksum=([^\s\"]+)",
+                               rank_lines[1])
+    checksum_ok = (
+        source_match is not None and payload_match is not None and
+        expected_match is not None and source_match.group(1) ==
+        payload_match.group(1) == expected_match.group(1))
+    return (rank0_ok and rank1_ok and checksum_ok, rank0_ok, rank1_ok)
 
 
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
@@ -1373,6 +1383,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
 
     def marker_value(text: str, name: str) -> str:
         match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", text)
+        return match.group(1) if match else "missing"
+
+    def marker_value_from_line(line: str, name: str) -> str:
+        match = re.search(rf"\b{re.escape(name)}=([^\s\"]+)", line)
         return match.group(1) if match else "missing"
 
     smoke = read(smoke_log)
@@ -1404,6 +1418,20 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     storage_hbm_ok = "storage HBM smoke passed" in combined
     strict_positive_ok, strict_rank0_ok, strict_rank1_ok = (
         StrictPayloadRankEvidencePassed(strict))
+    strict_rank_lines = ExtractStrictPayloadRankLines(strict)
+    strict_source_checksum = marker_value_from_line(
+        strict_rank_lines[0], "payload_source_checksum")
+    strict_payload_checksum = marker_value_from_line(
+        strict_rank_lines[1], "payload_checksum")
+    strict_expected_checksum = marker_value_from_line(
+        strict_rank_lines[1], "payload_expected_checksum")
+    strict_checksum_match = "missing"
+    if (strict_source_checksum != "missing" and
+            strict_payload_checksum != "missing" and
+            strict_expected_checksum != "missing"):
+        strict_checksum_match = (
+            "yes" if strict_source_checksum == strict_payload_checksum ==
+            strict_expected_checksum else "no")
     strict_negative_expected = (
         "hcomm-payload-strict-negative" in strict and
         ("HCOMM payload copy required but unavailable" in strict or
@@ -1488,7 +1516,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`stage3b3e_payload_descriptor_handoff=passed` + "
         "`payload_kernel_status=success` + `payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
-        "`payload_echo=passed` + `payload_verify=passed` + `fallback=none` |")
+        "`payload_echo=passed` + checksum match + `payload_verify=passed` + "
+        "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_log is not None:
@@ -1508,6 +1537,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
+            f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -1548,6 +1578,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 f"{strict_hcomm_ret}")
         elif strict_verify not in ("passed", "missing"):
             next_action = "inspect rank1 payload verification mismatch"
+        elif strict_checksum_match not in ("yes", "missing"):
+            next_action = "inspect payload checksum mismatch"
         elif strict_fallback not in ("none", "missing"):
             next_action = "remove unexpected fallback from strict payload path"
         else:
@@ -1618,7 +1650,9 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
             "payload_status_word=0,payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v,payload_status_word_count=,"
-            "payload_echo=passed,payload_verify=passed,fallback=none")
+            "payload_echo=passed,payload_source_checksum=,"
+            "payload_checksum=,payload_expected_checksum=,"
+            "payload_verify=passed,fallback=none")
     return runner.record_static("hcomm-payload-strict-evidence", lines,
                                 returncode=0 if passed else 1,
                                 required=required)

@@ -39,7 +39,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none\"",
+        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
         "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -49,7 +50,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none\"",
+        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_expected_checksum=1234",
         "",
     ])
 
@@ -86,6 +88,11 @@ def strict_log_with_kernel_local_copy_failure() -> str:
         "payload_kernel_status=local-copy-failed "
         "payload_failure_step=local-copy payload_status_word=5 "
         "payload_kernel_hcomm_ret=91")
+
+
+def strict_log_with_checksum_mismatch() -> str:
+    return strict_log(True).replace(
+        "payload_checksum=1234", "payload_checksum=9999")
 
 
 def strict_log_with_missing_handoff() -> str:
@@ -212,6 +219,7 @@ def main() -> int:
         assert "`payload_status_schema`" in text
         assert "`payload_echo=passed`" in text
         assert "| kernel failure step | none |" in text
+        assert "| payload checksum match | yes |" in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
@@ -262,6 +270,18 @@ def main() -> int:
         assert "| kernel failure step | local-copy |" in text
         assert ("inspect in-kernel HCOMM primitive failure: "
                 "local-copy-failed at local-copy") in text
+
+        strict_checksum_mismatch = write(
+            tmp / "strict-checksum-mismatch.log",
+            strict_log_with_checksum_mismatch())
+        checksum_mismatch_dir = tmp / "checksum-mismatch"
+        checksum_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            checksum_mismatch_dir, smoke, strict_checksum_mismatch, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload checksum match | no |" in text
+        assert "inspect payload checksum mismatch" in text
 
         strict_missing_handoff = write(tmp / "strict-missing-handoff.log",
                                        strict_log_with_missing_handoff())
