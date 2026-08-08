@@ -110,6 +110,10 @@ primitive 调用。该字段会细分为 `local-copy-failed`、
 `remote-read-failed`、`done-notify-record-failed`、`batch-start-failed`、
 `batch-end-failed` 或 `thread-notify-*-failed` 等阶段；失败时还会打印
 `payload_kernel_hcomm_ret=<ret>`，表示对应 HCOMM primitive 的原始返回码。
+如果看到 `payload_kernel_status=not-written` 或
+`payload_status_word=4294967295`，说明 kernel 没有写回 device-visible
+status word，应优先检查 descriptor handoff、status pointer 和 kernel
+是否实际执行，而不是先定位 HCOMM primitive。
 
 构建 Flume custom-op package 时有两种模式：
 

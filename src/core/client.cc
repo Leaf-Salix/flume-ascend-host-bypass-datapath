@@ -2184,6 +2184,8 @@ std::string AclErrorMessage(aclError ret) {
 
 std::string PayloadKernelStatusName(uint32_t status) {
   switch (status) {
+    case 0xFFFFFFFFU:
+      return "not-written";
     case FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS:
       return "success";
     case FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT:
@@ -2538,6 +2540,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_sync=passed "
                        "payload_batch_mode=on payload_kernel_status=") +
            PayloadKernelStatusName(kernel_status) +
+           " payload_status_word=" +
+           std::to_string(kernel_status) +
            " payload_kernel_hcomm_ret=" +
            std::to_string(kernel_hcomm_ret) + " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
@@ -2550,6 +2554,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_direct_aclrt_payload_launch=passed "
                      "stage3b3e_payload_sync=passed "
                      "payload_batch_mode=on payload_kernel_status=success "
+                     "payload_status_word=0 "
                      "kernel_func=") +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
          HcommPayloadCompletionDetail(resource_info);
