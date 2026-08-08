@@ -151,6 +151,14 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "unsigned int FlumeHcommPayloadCopySemanticVersion10(void) "
             "{ return 1; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9", "stale_semantic_v10"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopySemanticVersion11(void) "
+            "{ return 1; }"
+        )
     if mode not in ("legacy", "stale_v2", "stale_v3",
                     "stale_v4_no_comm_acquire",
                     "canary"):
@@ -316,6 +324,17 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopySemanticVersion10",
+            }
+        }
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9", "stale_semantic_v10"):
+        payload["FlumeHcommPayloadCopySemanticVersion11"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopySemanticVersion11",
             }
         }
     if mode not in ("legacy", "stale_v2", "stale_v3",
@@ -688,6 +707,20 @@ def main() -> int:
         assert "reason=payload kernel package has a stale payload semantic marker" in stale_semantic_v9.stdout
         assert "current Flume semantic v10 write-path-capable payload kernel" in stale_semantic_v9.stdout
 
+        stale_semantic_v10_json, stale_semantic_v10_tar = write_package(
+            tmp, mode="stale_semantic_v10")
+        stale_semantic_v10 = run_preflight(
+            repo, stale_semantic_v10_json, stale_semantic_v10_tar)
+        if stale_semantic_v10.returncode == 0:
+            print(stale_semantic_v10.stdout)
+            print(stale_semantic_v10.stderr, file=sys.stderr)
+            raise AssertionError("stale semantic v10 package passed")
+        assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in stale_semantic_v10.stdout
+        assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=missing" in stale_semantic_v10.stdout
+        assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=missing" in stale_semantic_v10.stdout
+        assert "reason=payload kernel package has a stale payload semantic marker" in stale_semantic_v10.stdout
+        assert "current Flume semantic v11 data-probe-capable payload kernel" in stale_semantic_v10.stdout
+
         stale_schema_json, stale_schema_tar = write_package(
             tmp, mode="stale_v4_no_status_schema")
         stale_schema = run_preflight(repo, stale_schema_json, stale_schema_tar)
@@ -725,6 +758,7 @@ def main() -> int:
         assert "function.payload_semantic_v8.FlumeHcommPayloadCopySemanticVersion8=present" in marker_only.stdout
         assert "function.payload_semantic_v9.FlumeHcommPayloadCopySemanticVersion9=present" in marker_only.stdout
         assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in marker_only.stdout
+        assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in marker_only.stdout
         assert "payload_primitive_deps=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
@@ -757,6 +791,8 @@ def main() -> int:
         assert "function_so.payload_semantic_version_v9.FlumeHcommPayloadCopySemanticVersion9=present" in v4.stdout
         assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in v4.stdout
         assert "function_so.payload_semantic_version_v10.FlumeHcommPayloadCopySemanticVersion10=present" in v4.stdout
+        assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in v4.stdout
+        assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in v4.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
