@@ -765,6 +765,7 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"stage3b3a_kernel_launch|"
                 r"stage3b3b_launcher_router|direct_aclrt|custom_op_package|"
                 r"payload_package|payload_package_reason|package_aicpu_tar|"
+                r"package_json_path|package_aicpu_tar_path|"
                 r"aicpu_tar|aicpu_tar_so|"
                 r"stage3b3c_direct_aclrt_loader|stage3b3c_descriptor_handoff|"
                 r"stage3b3c_direct_aclrt_launch|"

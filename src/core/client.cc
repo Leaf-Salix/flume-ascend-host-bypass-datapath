@@ -2556,6 +2556,8 @@ std::string HcommPackageDetail(const HcommLauncherDecision& decision) {
          " package_source=" + decision.package.source +
          " package_aicpu_tar=" +
          (decision.package.aicpu_tar_present ? "present" : "missing") +
+         " package_json_path=\"" + decision.package.json_path + "\"" +
+         " package_aicpu_tar_path=\"" + decision.package.aicpu_tar_path + "\"" +
          " payload_package=" +
          (decision.package.payload_ready ? "ready" : "not-ready") +
          " payload_package_reason=\"" + decision.package.payload_reason + "\"";
