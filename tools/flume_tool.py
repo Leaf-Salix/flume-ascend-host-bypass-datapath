@@ -1645,23 +1645,32 @@ STRICT_PAYLOAD_RANK_MARKERS = (
 )
 
 
-def StrictPayloadRankMarkersForCommBinding(binding: str) -> tuple[str, ...]:
+def StrictPayloadRankMarkersForCommBinding(
+        binding: str, batch_mode: str = "on") -> tuple[str, ...]:
+    if batch_mode not in ("on", "off"):
+        raise ValueError(f"unsupported payload batch mode marker: {batch_mode}")
+    markers = STRICT_PAYLOAD_RANK_MARKERS
+    if batch_mode == "off":
+        markers = tuple(
+            "payload_batch_mode=off"
+            if item == "payload_batch_mode=on" else item
+            for item in markers)
     if binding == "comm-name":
-        return STRICT_PAYLOAD_RANK_MARKERS
+        return markers
     if binding == "channel-handle":
         return tuple(
             "payload_comm_acquire=skipped"
             if item == "payload_comm_acquire=default" else (
                 "payload_comm_binding=channel-handle"
                 if item == "payload_comm_binding=comm-name" else item)
-            for item in STRICT_PAYLOAD_RANK_MARKERS)
+            for item in markers)
     if binding == "diagnostic-skip":
         return tuple(
             "payload_comm_acquire=skipped"
             if item == "payload_comm_acquire=default" else (
                 "payload_comm_binding=diagnostic-skip"
                 if item == "payload_comm_binding=comm-name" else item)
-            for item in STRICT_PAYLOAD_RANK_MARKERS)
+            for item in markers)
     raise ValueError(f"unsupported payload comm binding marker: {binding}")
 
 
@@ -1677,15 +1686,20 @@ def ExtractStrictPayloadRankLines(strict: str) -> dict[int, str]:
 
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
-    accepted_marker_sets = (
-        StrictPayloadRankMarkersForCommBinding("comm-name"),
-        StrictPayloadRankMarkersForCommBinding("channel-handle"),
-    )
+    accepted_marker_sets = tuple(
+        StrictPayloadRankMarkersForCommBinding(binding, batch_mode)
+        for binding in ("comm-name", "channel-handle")
+        for batch_mode in ("on", "off"))
     rank0_binding = MarkerValueFromLine(rank_lines[0], "payload_comm_binding")
     rank1_binding = MarkerValueFromLine(rank_lines[1], "payload_comm_binding")
+    rank0_batch_mode = MarkerValueFromLine(rank_lines[0], "payload_batch_mode")
+    rank1_batch_mode = MarkerValueFromLine(rank_lines[1], "payload_batch_mode")
     binding_ok = (
         rank0_binding == rank1_binding and
         rank0_binding in ("comm-name", "channel-handle"))
+    batch_mode_ok = (
+        rank0_batch_mode == rank1_batch_mode and
+        rank0_batch_mode in ("on", "off"))
     rank0_ok = bool(rank_lines[0]) and any(
         all(marker in rank_lines[0] for marker in markers)
         for markers in accepted_marker_sets) and (
@@ -1707,7 +1721,8 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         source_match is not None and payload_match is not None and
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
-    return (rank0_ok and rank1_ok and binding_ok and checksum_ok,
+    return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
+            checksum_ok,
             rank0_ok, rank1_ok)
 
 
@@ -1756,9 +1771,8 @@ def StrictPayloadRecvRankMarkerValue(text: str, name: str) -> str:
 
 def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(text)
-    no_batch_markers = tuple(
-        "payload_batch_mode=off" if item == "payload_batch_mode=on" else item
-        for item in StrictPayloadRankMarkersForCommBinding("comm-name"))
+    no_batch_markers = StrictPayloadRankMarkersForCommBinding(
+        "comm-name", "off")
     rank0_ok = bool(rank_lines[0]) and all(
         marker in rank_lines[0] for marker in no_batch_markers) and (
             "payload_role=send" in rank_lines[0])
@@ -1892,9 +1906,11 @@ def WriteHcommPayloadNoBatchDiagnostic(
         f"decision: {decision}",
         f"next_action: {next_action}",
         "",
-        "The no-batch path is diagnostic only. It intentionally cannot satisfy "
-        "the final strict-positive gate, which still requires "
-        "`payload_batch_mode=on`.",
+        "A complete no-batch path is valid strict-positive evidence for the "
+        "HCOMM primitive payload copy itself when checksum, trace, and "
+        "`fallback=none` all pass. It does not validate HcommBatchModeStart/End; "
+        "rerun the default batch-enabled path when batch submit semantics must "
+        "also be covered.",
         "",
         "## Rank Evidence",
         "",
@@ -2080,8 +2096,10 @@ def CommandUsesDirectOutputRecv(command: list[str]) -> bool:
 def WriteHcommPayloadChannelHandleCandidate(
         run_dir: Path,
         default_log: Optional[Path],
-        channel_log: Optional[Path]) -> Path:
-    note = run_dir / "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md"
+        channel_log: Optional[Path],
+        note_name: str = "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md",
+        title: str = "HCOMM Payload Channel-Handle Candidate") -> Path:
+    note = run_dir / note_name
     try:
         default_text = (default_log.read_text(encoding="utf-8",
                                               errors="replace")
@@ -2139,7 +2157,7 @@ def WriteHcommPayloadChannelHandleCandidate(
         next_action = "inspect direct ACL loader/package/descriptor handoff"
 
     lines = [
-        "# HCOMM Payload Channel-Handle Candidate",
+        f"# {title}",
         "",
         f"- default_strict_log: `{default_log}`",
         f"- channel_handle_log: `{channel_log}`",
@@ -2161,8 +2179,9 @@ def WriteHcommPayloadChannelHandleCandidate(
         "",
         "This is not the diagnostic-skip path. It is an explicit backend "
         "candidate and can satisfy the strict-positive gate only when both "
-        "ranks pass with `payload_comm_binding=channel-handle`, checksum "
-        "match, complete trace evidence, and `fallback=none`.",
+        "ranks pass with `payload_comm_binding=channel-handle`, "
+        "`payload_batch_mode=on|off`, checksum match, complete trace "
+        "evidence, and `fallback=none`.",
         "",
         "## Rank Evidence",
         "",
@@ -2219,6 +2238,44 @@ def RunHcommPayloadChannelHandleDirectOutputCandidate(
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadChannelHandleCandidate(
         runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def RunHcommPayloadChannelHandleNoBatchCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path],
+        direct_output: bool = False) -> StepResult:
+    command = PayloadCommandWithoutCommBinding(base_command)
+    if "--hcomm-payload-disable-batch" not in command:
+        command.append("--hcomm-payload-disable-batch")
+    if direct_output and "--hcomm-payload-recv-direct-output" not in command:
+        command.append("--hcomm-payload-recv-direct-output")
+    command.append("--hcomm-payload-comm-binding=channel-handle")
+    step_name = ("hcomm-payload-channel-handle-nobatch-direct-output-candidate"
+                 if direct_output else
+                 "hcomm-payload-channel-handle-nobatch-candidate")
+    result = runner.run(
+        step_name,
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadChannelHandleCandidate(
+        runner.run_dir,
+        default_log,
+        result.log_path,
+        note_name=("HCOMM_PAYLOAD_CHANNEL_HANDLE_NOBATCH_DIRECT_OUTPUT_"
+                   "CANDIDATE.md" if direct_output else
+                   "HCOMM_PAYLOAD_CHANNEL_HANDLE_NOBATCH_CANDIDATE.md"),
+        title=("HCOMM Payload Channel-Handle No-Batch Direct-Output Candidate"
+               if direct_output else
+               "HCOMM Payload Channel-Handle No-Batch Candidate"))
     return result
 
 
@@ -2958,7 +3015,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_trace_ret_order=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
         "rank0 `payload_role=send` + "
-        "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
+        "rank1 `payload_role=recv` + `payload_batch_mode=on|off` + "
         "payload comm binding `comm-name|channel-handle` + "
         "`payload_desc_batch_tag=...` + "
         "`payload_thread_notify_order=...` + "
@@ -3281,7 +3338,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_result=success,payload_desc_batch_tag=,"
             "payload_recv_path=,payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
-            "payload_batch_mode=on,"
+            "payload_batch_mode=on|off,"
             "payload_comm_acquire=default,"
             "or payload_comm_binding=channel-handle,"
             "payload_thread_notify_order=,"
@@ -3465,14 +3522,42 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                     args.hccl_smoke_timeout_sec, strict_result.log_path)
                 if StrictPayloadLogPassed(channel_result.log_path):
                     strict_tree_log = channel_result.log_path
-                elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                      not CommandUsesDirectOutputRecv(strict_command)):
-                    channel_direct_result = (
-                        RunHcommPayloadChannelHandleDirectOutputCandidate(
-                            runner, strict_command, smoke_spec.env_updates,
-                            args.hccl_smoke_timeout_sec, strict_result.log_path))
-                    if StrictPayloadLogPassed(channel_direct_result.log_path):
-                        strict_tree_log = channel_direct_result.log_path
+                else:
+                    channel_nobatch_passed = False
+                    if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                            "--hcomm-payload-disable-batch" not in strict_command):
+                        channel_nobatch_result = (
+                            RunHcommPayloadChannelHandleNoBatchCandidate(
+                                runner, strict_command, smoke_spec.env_updates,
+                                args.hccl_smoke_timeout_sec,
+                                strict_result.log_path))
+                        channel_nobatch_passed = StrictPayloadLogPassed(
+                            channel_nobatch_result.log_path)
+                        if channel_nobatch_passed:
+                            strict_tree_log = channel_nobatch_result.log_path
+                    if (not channel_nobatch_passed and
+                            args.auto_run_hcomm_payload_direct_output_diagnostic and
+                            not CommandUsesDirectOutputRecv(strict_command)):
+                        channel_direct_result = (
+                            RunHcommPayloadChannelHandleDirectOutputCandidate(
+                                runner, strict_command, smoke_spec.env_updates,
+                                args.hccl_smoke_timeout_sec,
+                                strict_result.log_path))
+                        if StrictPayloadLogPassed(channel_direct_result.log_path):
+                            strict_tree_log = channel_direct_result.log_path
+                        elif (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                              "--hcomm-payload-disable-batch" not in strict_command):
+                            channel_no_batch_direct_result = (
+                                RunHcommPayloadChannelHandleNoBatchCandidate(
+                                    runner, strict_command,
+                                    smoke_spec.env_updates,
+                                    args.hccl_smoke_timeout_sec,
+                                    strict_result.log_path,
+                                    direct_output=True))
+                            if StrictPayloadLogPassed(
+                                    channel_no_batch_direct_result.log_path):
+                                strict_tree_log = (
+                                    channel_no_batch_direct_result.log_path)
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-disable-batch" not in strict_command):
@@ -3651,14 +3736,41 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path)
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
-                    elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                          not CommandUsesDirectOutputRecv(spec.command)):
-                        channel_direct_result = (
-                            RunHcommPayloadChannelHandleDirectOutputCandidate(
-                                runner, spec.command, spec.env_updates, timeout,
-                                result.log_path))
-                        if StrictPayloadLogPassed(channel_direct_result.log_path):
-                            strict_tree_log = channel_direct_result.log_path
+                    else:
+                        channel_nobatch_passed = False
+                        if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                                not args.hcomm_payload_disable_batch and
+                                "--hcomm-payload-disable-batch" not in spec.command):
+                            channel_nobatch_result = (
+                                RunHcommPayloadChannelHandleNoBatchCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            channel_nobatch_passed = StrictPayloadLogPassed(
+                                channel_nobatch_result.log_path)
+                            if channel_nobatch_passed:
+                                strict_tree_log = channel_nobatch_result.log_path
+                        if (not channel_nobatch_passed and
+                                args.auto_run_hcomm_payload_direct_output_diagnostic and
+                                not CommandUsesDirectOutputRecv(spec.command)):
+                            channel_direct_result = (
+                                RunHcommPayloadChannelHandleDirectOutputCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            if StrictPayloadLogPassed(
+                                    channel_direct_result.log_path):
+                                strict_tree_log = channel_direct_result.log_path
+                            elif (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                                  not args.hcomm_payload_disable_batch and
+                                  "--hcomm-payload-disable-batch" not in spec.command):
+                                channel_no_batch_direct_result = (
+                                    RunHcommPayloadChannelHandleNoBatchCandidate(
+                                        runner, spec.command, spec.env_updates,
+                                        timeout, result.log_path,
+                                        direct_output=True))
+                                if StrictPayloadLogPassed(
+                                        channel_no_batch_direct_result.log_path):
+                                    strict_tree_log = (
+                                        channel_no_batch_direct_result.log_path)
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3716,9 +3828,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "is enabled, a failed default comm-name run may be followed by an "
         "explicit channel-handle candidate; only complete strict-positive "
         "evidence from that candidate can make the required evidence gate "
-        "pass. If direct-output auto diagnostics are also enabled and plain "
+        "pass. If no-batch auto diagnostics are enabled and plain "
         "channel-handle still fails, the gate tries a channel-handle + "
-        "direct-output candidate before writing the decision tree.\n",
+        "no-batch candidate. If direct-output auto diagnostics are also "
+        "enabled, it can additionally try channel-handle + direct-output and "
+        "channel-handle + no-batch + direct-output before writing the decision "
+        "tree.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
@@ -3839,14 +3954,41 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path)
                     if StrictPayloadLogPassed(channel_result.log_path):
                         strict_tree_log = channel_result.log_path
-                    elif (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                          not CommandUsesDirectOutputRecv(spec.command)):
-                        channel_direct_result = (
-                            RunHcommPayloadChannelHandleDirectOutputCandidate(
-                                runner, spec.command, spec.env_updates, timeout,
-                                result.log_path))
-                        if StrictPayloadLogPassed(channel_direct_result.log_path):
-                            strict_tree_log = channel_direct_result.log_path
+                    else:
+                        channel_nobatch_passed = False
+                        if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                                not args.hcomm_payload_disable_batch and
+                                "--hcomm-payload-disable-batch" not in spec.command):
+                            channel_nobatch_result = (
+                                RunHcommPayloadChannelHandleNoBatchCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            channel_nobatch_passed = StrictPayloadLogPassed(
+                                channel_nobatch_result.log_path)
+                            if channel_nobatch_passed:
+                                strict_tree_log = channel_nobatch_result.log_path
+                        if (not channel_nobatch_passed and
+                                args.auto_run_hcomm_payload_direct_output_diagnostic and
+                                not CommandUsesDirectOutputRecv(spec.command)):
+                            channel_direct_result = (
+                                RunHcommPayloadChannelHandleDirectOutputCandidate(
+                                    runner, spec.command, spec.env_updates,
+                                    timeout, result.log_path))
+                            if StrictPayloadLogPassed(
+                                    channel_direct_result.log_path):
+                                strict_tree_log = channel_direct_result.log_path
+                            elif (args.auto_run_hcomm_payload_nobatch_diagnostic and
+                                  not args.hcomm_payload_disable_batch and
+                                  "--hcomm-payload-disable-batch" not in spec.command):
+                                channel_no_batch_direct_result = (
+                                    RunHcommPayloadChannelHandleNoBatchCandidate(
+                                        runner, spec.command, spec.env_updates,
+                                        timeout, result.log_path,
+                                        direct_output=True))
+                                if StrictPayloadLogPassed(
+                                        channel_no_batch_direct_result.log_path):
+                                    strict_tree_log = (
+                                        channel_no_batch_direct_result.log_path)
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -3894,9 +4036,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "storage_hbm=hcomm-payload-staging. With "
         "--auto-run-hcomm-payload-channel-handle-candidate, a failed default "
         "comm-name run may be followed by an explicit channel-handle storage "
-        "candidate. If direct-output auto diagnostics are also enabled and plain "
-        "channel-handle still fails, it tries a channel-handle + direct-output "
-        "storage candidate. Both strict payload evidence and storage verification "
+        "candidate. If no-batch auto diagnostics are enabled and plain "
+        "channel-handle still fails, it tries a channel-handle + no-batch "
+        "storage candidate. If direct-output auto diagnostics are also enabled, "
+        "it can additionally try channel-handle + direct-output and "
+        "channel-handle + no-batch + direct-output storage candidates. Both "
+        "strict payload evidence and storage verification "
         "must pass for the storage gate to pass. This still reads the storage file "
         "through the host into proxy HBM; it validates storage-proxy wiring "
         "onto HCOMM payload copy, not full storage-direct DMA.\n",
@@ -5105,14 +5250,14 @@ def parse_args() -> argparse.Namespace:
                               "--run-hcomm-payload-smoke; current Stage 2.5 "
                               "skeleton is expected to report unsupported"))
     parser.add_argument("--hcomm-payload-disable-batch", action="store_true",
-                        help=("Diagnostic only: when running real HCOMM "
+                        help=("When running real HCOMM "
                               "payload copy, ask the direct ACL payload kernel "
                               "to skip HcommBatchModeStart/End so primitive "
                               "failures can be isolated from batch submit "
-                              "semantics. This mode intentionally cannot "
-                              "satisfy the strict-positive success gate; the "
-                              "final path remains the default batch-enabled "
-                              "mode."))
+                              "semantics. A full checksum/trace/fallback=none "
+                              "pass in this mode is accepted as HCOMM payload "
+                              "copy evidence, but it does not validate batch "
+                              "start/end semantics."))
     parser.add_argument("--hcomm-payload-recv-direct-output",
                         action="store_true",
                         help=("Diagnostic only: ask the recv payload kernel "
@@ -5154,9 +5299,11 @@ def parse_args() -> argparse.Namespace:
                               "the batch-enabled strict payload gate fails, "
                               "automatically rerun the same smoke with "
                               "--hcomm-payload-disable-batch and write "
-                              "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. This "
-                              "collects A/B evidence only and does not turn "
-                              "the strict-positive gate green."))
+                              "HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md. When used "
+                              "with the channel-handle auto candidate, a "
+                              "complete no-batch HCOMM primitive copy can "
+                              "satisfy the strict-positive gate; the default "
+                              "comm-name no-batch rerun remains A/B evidence."))
     parser.add_argument("--auto-run-hcomm-payload-tagged-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "

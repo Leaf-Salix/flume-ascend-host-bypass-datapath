@@ -170,7 +170,7 @@ Expected markers:
 - no-internal canary:
   `stage3b3d_no_internal_headers=on stage3b3d_direct_aclrt_canary=passed`
 - payload copy:
-  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on payload_comm_binding=comm-name payload_comm_acquire=default payload_kernel_status=success`
+  `stage3b3e_payload_copy=passed stage3b3e_payload_sync=passed payload_batch_mode=on|off payload_comm_binding=comm-name payload_comm_acquire=default payload_kernel_status=success`
 - payload completion:
   `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`
   when CANN exposes thread-export handles; otherwise

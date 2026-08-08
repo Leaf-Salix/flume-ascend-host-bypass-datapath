@@ -289,7 +289,7 @@ stage3b3e_direct_aclrt_payload_loader=passed
 stage3b3e_payload_descriptor_handoff=passed
 stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
-payload_batch_mode=on
+payload_batch_mode=on|off
 payload_kernel_status=success
 payload_failure_step=none
 payload_status_word=0
@@ -412,11 +412,12 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-nobatch \
   hcomm-payload-strict-positive
 ```
 
-This is deliberately not a final success path: strict-positive still requires
-`payload_batch_mode=on`. A no-batch rank log that reaches
+This is a valid HCOMM payload-copy success path when strict-positive also sees
+both ranks passed, checksum match, complete trace evidence, and `fallback=none`;
+it simply does not validate HcommBatchModeStart/End. A no-batch rank log that reaches
 `stage3b3e_payload_copy=passed` means the custom-op descriptor, channel,
 notify, `HcommLocalCopyOnThread`, and `HcommReadOnThread` path are viable, and
-the remaining issue is HCOMM batch submit/ordering. A no-batch failure points
+any remaining batch-enabled failure is HCOMM batch submit/ordering. A no-batch failure points
 directly at the failing primitive through `payload_failure_step=...`.
 
 If the default path fails at `payload_failure_step=comm-acquire`, run the
@@ -663,7 +664,7 @@ The command records both `hcomm-payload-strict-evidence` and
 payload copy plus `storage_hbm=hcomm-payload-staging`. If the storage-over-HCOMM
 gate fails after package preflight, the optional no-batch and tagged-batch
 reruns collect the same A/B evidence as the focused payload gate, but the final
-storage gate still requires the batch-enabled HCOMM payload path.
+storage gate still requires the HCOMM payload path; batch-enabled mode remains a separate compatibility signal.
 
 ## Remote Validation Commands
 

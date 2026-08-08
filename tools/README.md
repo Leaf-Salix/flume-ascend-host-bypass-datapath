@@ -163,7 +163,7 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 Channel desc source、channel count 和 notify 数量是否符合预期。
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
-成功日志还会包含 `payload_batch_mode=on`、`payload_comm_binding=...` 和
+成功日志还会包含 `payload_batch_mode=on|off`、`payload_comm_binding=...` 和
 `payload_kernel_status=success`。payload kernel 默认使用稳定非空 batch tag
 `flume_hcomm_payload`，对齐公开 HCCL custom P2P 示例里用 tag 绑定 batch
 上下文的做法。如果 CANN 暴露 host/AICPU thread-export，

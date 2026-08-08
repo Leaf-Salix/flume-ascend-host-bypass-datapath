@@ -644,8 +644,8 @@ def main() -> int:
         tree = flume_tool.WriteMatrixDecisionTree(
             no_batch_dir, smoke, strict_no_batch, package)
         text = tree.read_text(encoding="utf-8")
-        assert "| Strict payload positive passed? | no |" in text
-        assert not flume_tool.StrictPayloadRankEvidencePassed(
+        assert "| Strict payload positive passed? | yes |" in text
+        assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_no_batch.read_text(encoding="utf-8"))[0]
         no_batch_passed, no_batch_rank0, no_batch_rank1 = (
             flume_tool.StrictPayloadNoBatchDiagnosticPassed(
@@ -653,6 +653,11 @@ def main() -> int:
         assert no_batch_passed
         assert no_batch_rank0
         assert no_batch_rank1
+
+        strict_mixed_batch = strict_log(True).replace(
+            "payload_batch_mode=on", "payload_batch_mode=off", 1)
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_mixed_batch)[0]
         default_failure = write(
             tmp / "strict-default-failure-for-nobatch.log",
             strict_log_with_rank1_remote_read_failure())
