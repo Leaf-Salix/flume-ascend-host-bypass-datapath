@@ -34,6 +34,8 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE 0U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU 1U
+#define FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY 0U
+#define FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN 1U
 #define FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC 60U
 #define FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS 0U
 #define FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT 1U
@@ -48,6 +50,7 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_RECORD_FAILED 10U
 #define FLUME_HCOMM_PAYLOAD_STATUS_BATCH_END_FAILED 11U
 #define FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED 12U
+#define FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED 13U
 
 typedef enum {
   FLUME_HCOMM_NOTIFY_ROLE_SEND = 0,
@@ -102,6 +105,7 @@ typedef struct {
   uint32_t done_notify_idx;
   uint32_t timeout_sec;
   uint32_t thread_notify_mode;
+  uint32_t completion_mode;
   uint64_t bytes;
   uint64_t aicpu_thread;
   uint64_t channel_handle;
@@ -145,6 +149,8 @@ static inline void flume_hcomm_payload_copy_desc_init(
   desc->version = FLUME_HCOMM_PAYLOAD_COPY_VERSION;
   desc->size = (uint32_t)sizeof(flume_hcomm_payload_copy_desc_v1);
   desc->timeout_sec = FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC;
+  desc->thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE;
+  desc->completion_mode = FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
 }
 
 #ifdef __cplusplus

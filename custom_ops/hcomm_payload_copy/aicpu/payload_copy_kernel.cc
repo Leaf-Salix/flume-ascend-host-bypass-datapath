@@ -47,6 +47,10 @@ bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
          (desc.thread_notify_mode == FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE ||
           desc.thread_notify_mode ==
               FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) &&
+         (desc.completion_mode ==
+              FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY ||
+          desc.completion_mode ==
+              FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) &&
          desc.aicpu_thread != 0 && desc.channel_handle != 0 &&
          desc.user_buffer != 0 && desc.local_hccl_buffer != 0 &&
          desc.remote_hccl_buffer != 0 &&
@@ -99,6 +103,14 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED;
+    }
+    if (desc.completion_mode ==
+        FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+      ret = HcommChannelDrainOnThread(thread, channel);
+      if (ret != 0) {
+        StorePayloadPrimitiveRet(desc, ret);
+        return FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED;
+      }
     }
     ret = HcommChannelNotifyRecordOnThread(
         thread, channel, desc.done_notify_idx);

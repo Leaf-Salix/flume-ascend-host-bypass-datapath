@@ -15,6 +15,7 @@ int32_t local_copy_ret = 0;
 int32_t read_ret = 0;
 int32_t notify_record_ret = 0;
 int32_t notify_wait_ret = 0;
+int32_t channel_drain_ret = 0;
 int calls[32] = {};
 int call_count = 0;
 
@@ -33,6 +34,7 @@ void Reset() {
   read_ret = 0;
   notify_record_ret = 0;
   notify_wait_ret = 0;
+  channel_drain_ret = 0;
   std::memset(calls, 0, sizeof(calls));
   call_count = 0;
 }
@@ -126,6 +128,21 @@ int main() {
   FLUME_TEST_CHECK(CallsEqual(recv_calls, 5));
 
   Reset();
+  std::memset(user, 0, sizeof(user));
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  recv_desc.completion_mode = FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  const int recv_drain_calls[] = {
+      kBatchStart, kNotifyWait, kRead, kChannelDrain, kNotifyRecord,
+      kBatchEnd};
+  FLUME_TEST_CHECK(CallsEqual(recv_drain_calls, 6));
+
+  Reset();
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
@@ -175,6 +192,19 @@ int main() {
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
   FLUME_TEST_CHECK(status[1] == 88U);
+
+  Reset();
+  channel_drain_ret = 44;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status);
+  recv_desc.completion_mode = FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED);
+  FLUME_TEST_CHECK(status[1] == 44U);
 
   Reset();
   batch_end_ret = 66;

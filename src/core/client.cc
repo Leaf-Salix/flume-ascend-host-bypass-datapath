@@ -1968,6 +1968,10 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
   desc->thread_notify_mode = resource_info.host_thread_notify_ready ?
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU :
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE;
+  desc->completion_mode =
+      resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
+          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
+          FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
   desc->aicpu_thread = resource_info.aicpu_ts_thread;
   desc->channel_handle = resource_info.channel_handle;
   desc->user_buffer = reinterpret_cast<uint64_t>(user_buffer);
@@ -2232,6 +2236,8 @@ std::string PayloadKernelStatusName(uint32_t status) {
       return "batch-end-failed";
     case FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED:
       return "thread-notify-record-failed";
+    case FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED:
+      return "channel-drain-failed";
     default:
       return std::string("unknown-") + std::to_string(status);
   }
@@ -2297,11 +2303,16 @@ std::string MakeDirectAclrtPayloadBlockedDetail(
 
 std::string HcommPayloadCompletionDetail(
     const HcommChannelResourceInfo& resource_info) {
-  return resource_info.host_thread_notify_ready ?
-      " payload_thread_notify=host-aicpu "
-      "payload_completion=thread-notify+stream-sync+status-word" :
-      " payload_thread_notify=unavailable "
-      "payload_completion=stream-sync+status-word";
+  std::string detail = resource_info.host_thread_notify_ready ?
+      " payload_thread_notify=host-aicpu" :
+      " payload_thread_notify=unavailable";
+  detail += resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
+      " payload_completion_mode=channel-drain" :
+      " payload_completion_mode=ordered-notify";
+  detail += resource_info.host_thread_notify_ready ?
+      " payload_completion=thread-notify+stream-sync+status-word" :
+      " payload_completion=stream-sync+status-word";
+  return detail;
 }
 
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH

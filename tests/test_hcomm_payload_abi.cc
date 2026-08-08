@@ -24,6 +24,9 @@ int main() {
       "canary observed token word offset changed");
   static_assert(sizeof(flume_hcomm_payload_copy_desc_v1) == 176,
                 "payload descriptor ABI size changed");
+  static_assert(
+      offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
+      "payload completion mode offset changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, bytes) == 48,
                 "payload bytes offset changed");
   static_assert(offsetof(flume_hcomm_payload_copy_desc_v1, aicpu_thread) == 56,
@@ -43,6 +46,10 @@ int main() {
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
                 "host/AICPU payload thread notify mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY == 0,
+                "ordered-notify payload completion mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN == 1,
+                "channel-drain payload completion mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC == 60,
                 "payload default timeout changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,
@@ -71,6 +78,8 @@ int main() {
                 "payload batch-end status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED == 12,
                 "payload thread-notify record status changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_STATUS_CHANNEL_DRAIN_FAILED == 13,
+                "payload channel-drain status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_SUCCESS == 0,
                 "notify success status changed");
   static_assert(FLUME_HCOMM_NOTIFY_STATUS_INVALID_ARGUMENT == 1,
@@ -99,6 +108,8 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC);
   FLUME_TEST_CHECK(payload.thread_notify_mode ==
                    FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE);
+  FLUME_TEST_CHECK(payload.completion_mode ==
+                   FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(payload.status_word == 0);
   FLUME_TEST_CHECK(sizeof(uint32_t[2]) == 8);
   FLUME_TEST_CHECK(payload.batch_tag[0] == '\0');

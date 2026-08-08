@@ -18,6 +18,7 @@ enum Call {
   kNotifyRecord = 6,
   kNotifyWait = 7,
   kBatchEnd = 8,
+  kChannelDrain = 9,
 };
 
 extern int32_t batch_start_ret;
@@ -28,6 +29,7 @@ extern int32_t local_copy_ret;
 extern int32_t read_ret;
 extern int32_t notify_record_ret;
 extern int32_t notify_wait_ret;
+extern int32_t channel_drain_ret;
 extern int calls[32];
 extern int call_count;
 
@@ -93,6 +95,12 @@ inline int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle,
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kNotifyWait);
   return notify_wait_ret;
+}
+
+inline int32_t HcommChannelDrainOnThread(ThreadHandle, ChannelHandle) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kChannelDrain);
+  return channel_drain_ret;
 }
 
 #endif  // FLUME_TEST_HCOMM_PRIMITIVES_H_
