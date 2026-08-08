@@ -2410,6 +2410,9 @@ std::string HcommPayloadCompletionDetail(
   std::string detail = resource_info.host_thread_notify_ready ?
       " payload_thread_notify=host-aicpu" :
       " payload_thread_notify=unavailable";
+  detail += std::string(" payload_sync_api=") + AclStreamSyncApiName();
+  detail += " payload_sync_timeout_sec=" +
+      std::to_string(resource_info.timeout_sec);
   detail += resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE ?
       " payload_completion_mode=channel-drain" :
       " payload_completion_mode=ordered-notify";

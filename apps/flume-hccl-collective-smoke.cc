@@ -1456,6 +1456,8 @@ void RankMain(RankContext* ctx) {
             "stage3b3e_payload_descriptor_handoff=passed",
             "stage3b3e_direct_aclrt_payload_launch=passed",
             "stage3b3e_payload_sync=passed",
+            "payload_sync_api=",
+            "payload_sync_timeout_sec=",
             "payload_kernel_status=success",
             "payload_status_word=0",
             "payload_kernel_hcomm_ret=0",
