@@ -21,6 +21,14 @@ from typing import Iterable, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUILD_JOBS = min(os.cpu_count() or 4, 32)
+HCOMM_CUSTOM_OP_JSON = "libflume_hcomm_payload_aicpu_kernel.json"
+HCOMM_CUSTOM_OP_TAR = "aicpu_flume_hcomm_payload.tar.gz"
+HCOMM_CUSTOM_OP_FUNCTIONS = {
+    "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
+    "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
+    "canary_direct_aclrt": "FlumeHcommCanaryDirectAclrtKernel",
+    "payload_direct_aclrt": "FlumeHcommPayloadCopyDirectAclrtKernel",
+}
 
 
 def ResolveHcclInitMode(args: argparse.Namespace) -> str:
@@ -45,6 +53,37 @@ def UpdateChecksum32(checksum: int, data: bytes) -> int:
         checksum ^= item
         checksum = (checksum * 16777619) & 0xFFFFFFFF
     return checksum
+
+
+def AscendHomeCandidates() -> list[Path]:
+    candidates: list[Path] = []
+    for key in ("ASCEND_HOME_PATH", "ASCEND_CUSTOM_OPP_PATH", "ASCEND_OPP_PATH"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            path = Path(value)
+            if path.name == "opp":
+                path = path.parent
+            candidates.append(path)
+    candidates.append(Path("/usr/local/Ascend/cann"))
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        text = str(path)
+        if text not in seen:
+            seen.add(text)
+            unique.append(path)
+    return unique
+
+
+def HcommCustomOpPackageCandidates(vendors: list[str]) -> list[tuple[Path, str, Path, Path]]:
+    candidates: list[tuple[Path, str, Path, Path]] = []
+    for root in AscendHomeCandidates():
+        for vendor in vendors:
+            base = root / "opp" / "vendors" / vendor
+            json_path = base / "aicpu" / "config" / HCOMM_CUSTOM_OP_JSON
+            tar_path = base / "aicpu" / "kernel" / HCOMM_CUSTOM_OP_TAR
+            candidates.append((root, vendor, json_path, tar_path))
+    return candidates
 
 
 @dataclass
@@ -1113,6 +1152,79 @@ def run_env(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
+    vendors = [item.strip() for item in args.custom_op_vendor.split(",")
+               if item.strip()]
+    if not vendors:
+        vendors = ["flume", "cust"]
+
+    required_functions = ["canary_direct_aclrt"]
+    if args.require_hcomm_payload_kernel:
+        required_functions.append("payload_direct_aclrt")
+
+    found_any_json = False
+    found_required = False
+    print("HCOMM custom-op package inspection")
+    print(f"json: {HCOMM_CUSTOM_OP_JSON}")
+    print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
+    print(f"vendors: {','.join(vendors)}")
+    print("")
+
+    for root, vendor, json_path, tar_path in HcommCustomOpPackageCandidates(vendors):
+        if not json_path.exists() and not tar_path.exists():
+            continue
+        print(f"root={root}")
+        print(f"vendor={vendor}")
+        print(f"json_path={json_path}")
+        print(f"aicpu_tar_path={tar_path}")
+        print(f"json={'present' if json_path.exists() else 'missing'}")
+        print(f"aicpu_tar={'present' if tar_path.exists() else 'missing'}")
+
+        functions_present: dict[str, bool] = {}
+        if json_path.exists():
+            found_any_json = True
+            try:
+                payload = json.loads(json_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                print(f"json_error={exc}")
+                payload = {}
+            for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
+                entry = payload.get(function_name)
+                ok = isinstance(entry, dict)
+                if ok:
+                    op_info = entry.get("opInfo", {})
+                    ok = isinstance(op_info, dict) and (
+                        op_info.get("functionName") == function_name)
+                functions_present[label] = ok
+                print(f"function.{label}.{function_name}="
+                      f"{'present' if ok else 'missing'}")
+        else:
+            for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
+                functions_present[label] = False
+                print(f"function.{label}.{function_name}=missing")
+
+        required_ok = tar_path.exists() and all(
+            functions_present.get(label, False) for label in required_functions)
+        print(f"required={','.join(required_functions)}")
+        print(f"status={'PASS' if required_ok else 'FAIL'}")
+        print("")
+        found_required = found_required or required_ok
+
+    if not found_any_json:
+        print("status=FAIL")
+        print("reason=no Flume HCOMM custom-op JSON found")
+        return 1
+    if not found_required:
+        print("status=FAIL")
+        if args.require_hcomm_payload_kernel:
+            print("reason=payload kernel package is missing or incomplete")
+        else:
+            print("reason=canary package is missing or incomplete")
+        return 1
+    print("status=PASS")
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Flume test helper")
     parser.add_argument("--build-dir", default="build", help="CMake build directory")
@@ -1236,12 +1348,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--collect-cann-compat-label", default="",
                         help=("Optional label for ascend-full-matrix to collect "
                               "CANN/HCCL compatibility fixtures"))
+    parser.add_argument("--custom-op-vendor", default="flume,cust",
+                        help=("Comma-separated custom-op vendors to inspect in "
+                              "hcomm-custom-op-package"))
+    parser.add_argument("--require-hcomm-payload-kernel", action="store_true",
+                        help=("Require the Stage 3B.3E payload-copy kernel "
+                              "function in hcomm-custom-op-package"))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")
     subparsers.add_parser("local", help="Run no-NPU local configure/build/tests/sim demo")
     subparsers.add_parser("ascend-probe", help="Probe CANN/HCCL discovery and compile/link on Ascend host")
     subparsers.add_parser("ascend-full-matrix", help="Run the full two-rank Ascend readiness matrix")
+    subparsers.add_parser("hcomm-custom-op-package",
+                          help=("Inspect installed Flume HCOMM custom-op JSON "
+                                "and AICPU package"))
 
     args = parser.parse_args()
     args.hccl_host_ifname = args.hccl_host_ifname.strip()
@@ -1296,6 +1417,8 @@ def main() -> int:
         return run_ascend_probe(args)
     if args.command == "ascend-full-matrix":
         return run_ascend_full_matrix(args)
+    if args.command == "hcomm-custom-op-package":
+        return run_hcomm_custom_op_package(args)
     raise AssertionError(args.command)
 
 

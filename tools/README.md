@@ -112,7 +112,22 @@ bash build.sh --vendor=flume --ops=hcomm_payload \
 
 第二种包需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和 device-side `ccl_kernel` 链接能力。
 
-当前代码下严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
+安装包后可以先做不依赖 NPU 的包体自检：
+
+```bash
+# 检查默认 canary package
+python3 tools/flume_tool.py hcomm-custom-op-package
+
+# 检查 Stage 3B.3E payload-copy kernel 是否也在包里
+python3 tools/flume_tool.py --require-hcomm-payload-kernel \
+  hcomm-custom-op-package
+```
+
+如果第二条失败并出现 `payload_direct_aclrt ... missing`，说明当前安装的是
+canary-only 包或旧包，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`
+重新打包安装后再跑 strict payload smoke。
+
+未安装 internal payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-stage25 --run-hccl-p2p-smoke --run-hcomm-payload-smoke --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> ascend-probe

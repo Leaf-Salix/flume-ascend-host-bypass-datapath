@@ -279,6 +279,20 @@ fallback=none
 This is the first marker that should be treated as a real HCOMM payload-copy
 attempt. `stage3b3d_direct_aclrt_canary=passed` remains only a launcher canary.
 
+Before running strict smoke, inspect the installed custom-op package:
+
+```bash
+python3 tools/flume_tool.py hcomm-custom-op-package
+python3 tools/flume_tool.py --require-hcomm-payload-kernel \
+  hcomm-custom-op-package
+```
+
+The first command verifies the canary package; the second verifies that the
+installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernel` and that the
+AICPU package tar is present. If the second check fails, the next action is to
+rebuild the package with `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to
+debug HCOMM payload execution yet.
+
 Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
 toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the
 direct ACL route stops cleanly at `custom_op_package=missing` with
