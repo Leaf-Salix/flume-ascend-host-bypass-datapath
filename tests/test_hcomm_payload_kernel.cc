@@ -321,6 +321,29 @@ int main() {
   Reset();
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(99U, user, local, remote, status);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(call_count == 0);
+
+  Reset();
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(99U, user, local, remote, status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  const int invalid_role_notify_calls[] = {kThreadRecord};
+  FLUME_TEST_CHECK(CallsEqual(invalid_role_notify_calls, 1));
+
+  Reset();
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status);
   send_desc.comm_name[0] = '\0';

@@ -68,6 +68,8 @@ void BestEffortPayloadCompletionNotify(
 
 bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
   return HasPayloadDescHeader(desc) && desc.rank_size == 2 &&
+         (desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND ||
+          desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV) &&
          desc.local_rank < desc.rank_size &&
          desc.peer_rank < desc.rank_size && desc.local_rank != desc.peer_rank &&
          desc.ready_notify_idx != desc.done_notify_idx && desc.bytes != 0 &&
