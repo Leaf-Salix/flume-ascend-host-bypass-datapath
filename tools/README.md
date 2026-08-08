@@ -214,6 +214,10 @@ AICPU tar、V4 payload entrypoint 或 primitive-payload marker 不完整，工�
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，
 后续 strict-positive 命令传 `--custom-op-root <temporary-custom-op-root>` 即可。
+如果只想临时验证 loose build artifacts，也可以在 strict-positive smoke
+中同时传 `--custom-op-json <json>` 和 `--custom-op-aicpu-tar <tar>`；工具会把
+两者都转发给 runtime，避免 package preflight 通过但 C++ launcher 因找不到
+matching AICPU tar 而降级为 not-ready。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 
@@ -268,10 +272,12 @@ comm acquire/release、旧 status ABI 的包或 JSON/SO 不一致的包误判为
 payload-required 模式检查包体，并在
 `ASCEND_FULL_MATRIX_DECISION_TREE.md` 里标记 package 是 `not-ready`、
 `canary-ready` 还是 `payload-ready`。
-`--custom-op-root`、`--custom-op-json` 和 `--custom-op-vendor` 也会传给
-真实 HCOMM smoke runtime；`--custom-op-json` 是 authoritative，路径写错时
-runtime 不会悄悄回退到系统安装目录。`--custom-op-aicpu-tar` 只用于
-preflight 校验包体，不参与 direct ACL runtime loader。
+`--custom-op-root`、`--custom-op-json`、`--custom-op-aicpu-tar` 和
+`--custom-op-vendor` 也会传给真实 HCOMM smoke runtime；`--custom-op-json`
+是 authoritative，路径写错时 runtime 不会悄悄回退到系统安装目录。
+`--custom-op-aicpu-tar` 不作为 `aclrtBinaryLoadFromFile` 的输入，但会作为
+loose build artifacts 的 runtime readiness tar，因此 preflight 与 C++
+launcher 不会使用两套不同的 package 判断。
 
 未安装 primitive payload 包时，严格模式预期失败并返回 unsupported。推荐把 `--run-hcomm-payload-smoke` 与 `--run-hccl-p2p-smoke` 一起跑，以同时验证 fallback：
 

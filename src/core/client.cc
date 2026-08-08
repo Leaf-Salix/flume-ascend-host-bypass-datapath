@@ -2209,11 +2209,16 @@ std::vector<std::string> AscendHomeCandidates() {
 HcommCustomOpPackageProbe ProbeHcommCustomOpPackage() {
   HcommCustomOpPackageProbe probe;
   const char* explicit_json = std::getenv("FLUME_HCOMM_CUSTOM_OP_JSON");
+  const char* explicit_tar = std::getenv("FLUME_HCOMM_CUSTOM_OP_AICPU_TAR");
   if (explicit_json != nullptr && explicit_json[0] != '\0') {
     probe.installed = FileExists(explicit_json);
     probe.vendor = "explicit";
     probe.json_path = explicit_json;
-    probe.aicpu_tar_path = FindAicpuTarForJson(probe.json_path);
+    if (explicit_tar != nullptr && explicit_tar[0] != '\0') {
+      probe.aicpu_tar_path = explicit_tar;
+    } else {
+      probe.aicpu_tar_path = FindAicpuTarForJson(probe.json_path);
+    }
     probe.aicpu_tar_present = FileExists(probe.aicpu_tar_path);
     probe.source = probe.installed ? "explicit-json" : "explicit-json-missing";
     if (probe.installed) {

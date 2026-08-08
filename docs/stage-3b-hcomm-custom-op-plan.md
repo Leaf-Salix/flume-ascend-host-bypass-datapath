@@ -437,11 +437,13 @@ requested. `ascend-full-matrix` runs the preflight in payload-required mode and
 adds the package state to `ASCEND_FULL_MATRIX_DECISION_TREE.md`: `not-ready`
 means rebuild/install the Stage 3B.3E package first, while `payload-ready`
 means the next meaningful test is strict payload smoke.
-The `--custom-op-root`, `--custom-op-json`, and `--custom-op-vendor` options
-are also propagated into the real smoke runtime. `--custom-op-json` is
-authoritative: if it is set and missing, the runtime reports the package as
-missing instead of falling back to a system install. `--custom-op-aicpu-tar`
-remains a preflight-only package integrity check.
+The `--custom-op-root`, `--custom-op-json`, `--custom-op-aicpu-tar`, and
+`--custom-op-vendor` options are also propagated into the real smoke runtime.
+`--custom-op-json` is authoritative: if it is set and missing, the runtime
+reports the package as missing instead of falling back to a system install.
+`--custom-op-aicpu-tar` is not the `aclrtBinaryLoadFromFile` input, but it is
+forwarded as the explicit runtime readiness tar for loose build artifacts so
+preflight and the C++ launcher do not disagree about package readiness.
 
 Host B validation has confirmed this expected diagnostic on a CANN 9.0 beta
 toolkit: the required HCCL/HCOMM smoke flow passes, `direct_aclrt=on`, and the

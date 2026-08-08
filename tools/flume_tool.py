@@ -364,16 +364,22 @@ def ValidateRuntimeCustomOpJson(args: argparse.Namespace) -> tuple[bool, str]:
     runtime_tar = RuntimeAicpuTarForJson(json_path)
     if runtime_tar is not None and runtime_tar.exists():
         return (True, "")
+    custom_op_aicpu_tar = getattr(args, "custom_op_aicpu_tar", "")
+    if custom_op_aicpu_tar:
+        explicit_tar = Path(custom_op_aicpu_tar).expanduser()
+        if explicit_tar.exists():
+            return (True, "")
     expected = (str(runtime_tar) if runtime_tar is not None
                 else "<custom-op-root>/opp/vendors/<vendor>/aicpu/kernel/" +
                 HCOMM_CUSTOM_OP_TAR)
     message = (
         "explicit --custom-op-json is not an installed/runtime-loadable "
-        "Flume custom-op JSON. The preflight --custom-op-aicpu-tar checks "
-        "symbols only; strict-positive runtime launches use "
-        "aclrtBinaryLoadFromFile(JSON). Install the package or point "
-        "--custom-op-json at the installed aicpu/config JSON with matching "
-        f"AICPU tar at {expected}")
+        "Flume custom-op JSON and no matching AICPU tar was found. "
+        "Strict-positive runtime launches use aclrtBinaryLoadFromFile(JSON), "
+        "while --custom-op-aicpu-tar supplies the package readiness tar for "
+        "loose build artifacts. Install/export the package, pass both "
+        "--custom-op-json and --custom-op-aicpu-tar, or point --custom-op-json "
+        f"at the installed aicpu/config JSON with matching AICPU tar at {expected}")
     return (False, message)
 
 
@@ -1235,6 +1241,9 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             env_updates["FLUME_HCOMM_CUSTOM_OP_ROOT"] = args.custom_op_root
         if args.custom_op_json:
             env_updates["FLUME_HCOMM_CUSTOM_OP_JSON"] = args.custom_op_json
+        if args.custom_op_aicpu_tar:
+            env_updates["FLUME_HCOMM_CUSTOM_OP_AICPU_TAR"] = (
+                args.custom_op_aicpu_tar)
         hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
         manual_device_ips = ParseDeviceIpMap(args.hccl_device_ips)
         if init_mode == "rank-table":

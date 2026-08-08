@@ -271,18 +271,21 @@ After installation, run Flume with `--build-hcomm-custom-op` and
 `--run-hcomm-notify-only-smoke`. A successful Stage 3B.3A run prints
 `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`.
 
-For the real Stage 3B.3E payload-copy gate, use the installed package layout,
-not loose build outputs. Flume launches the kernel with
-`aclrtBinaryLoadFromFile(JSON)`, so an explicit `--custom-op-json` must point at
-the installed `aicpu/config/libflume_hcomm_payload_aicpu_kernel.json` and the
-matching `aicpu/kernel/aicpu_flume_hcomm_payload.tar.gz` must exist beside it.
-The `--custom-op-aicpu-tar` option is only package preflight evidence; it is not
-the runtime binary source for strict-positive launch.
+For the real Stage 3B.3E payload-copy gate, prefer an installed or exported OPP
+runtime layout. Flume launches the kernel with `aclrtBinaryLoadFromFile(JSON)`,
+so an explicit `--custom-op-json` should normally point at
+`aicpu/config/libflume_hcomm_payload_aicpu_kernel.json`, with the matching
+`aicpu/kernel/aicpu_flume_hcomm_payload.tar.gz` in the same runtime layout. For
+loose build artifacts, pass both `--custom-op-json <json>` and
+`--custom-op-aicpu-tar <tar>`; the JSON remains the ACL runtime load source, and
+the tar path is forwarded to runtime readiness checks so strict-positive does
+not silently fall back to an unrelated installed package.
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --build-hcomm-custom-op \
   --custom-op-json <installed-opp-root>/vendors/flume/aicpu/config/libflume_hcomm_payload_aicpu_kernel.json \
+  --custom-op-aicpu-tar <installed-opp-root>/vendors/flume/aicpu/kernel/aicpu_flume_hcomm_payload.tar.gz \
   --hccl-devices <device-a>,<device-b> \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \

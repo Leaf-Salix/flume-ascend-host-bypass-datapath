@@ -501,7 +501,12 @@ def main() -> int:
                                   encoding="utf-8")
         installed_tar.write_bytes(v4_tar.read_bytes())
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
-            SimpleNamespace(custom_op_json=str(installed_json)))
+            SimpleNamespace(custom_op_json=str(installed_json),
+                            custom_op_aicpu_tar=""))
+        assert ok, message
+        ok, message = flume_tool.ValidateRuntimeCustomOpJson(
+            SimpleNamespace(custom_op_json=str(v4_json),
+                            custom_op_aicpu_tar=str(v4_tar)))
         assert ok, message
         found_json, found_tar = flume_tool.FindInstalledCustomOpRuntimeArtifacts(
             "flume", [str(tmp / "runtime")])
@@ -710,12 +715,11 @@ def main() -> int:
         assert "hcomm-custom-op-direct-build-preflight" in direct_hcomm_only.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
-            SimpleNamespace(custom_op_json=str(v4_json)))
+            SimpleNamespace(custom_op_json=str(v4_json),
+                            custom_op_aicpu_tar=""))
         assert not ok
-        assert (
-            "strict-positive runtime launches use "
-            "aclrtBinaryLoadFromFile(JSON)"
-        ) in message
+        assert "aclrtBinaryLoadFromFile(JSON)" in message
+        assert "--custom-op-aicpu-tar supplies" in message
 
     return 0
 
