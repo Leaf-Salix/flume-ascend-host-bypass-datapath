@@ -615,6 +615,7 @@ def HcclHeaderSyntaxCommand() -> Optional[list[str]]:
         "FLUME_HAVE_HCOMM_CHANNEL_RES=1",
         "FLUME_HAVE_HCOMM_PRIMITIVES=1",
         "FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=1",
+        "FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS=1",
         "FLUME_BUILD_HCOMM_CUSTOM_OP=1",
     ]
     command = [cxx, "-std=c++17", "-fsyntax-only"]

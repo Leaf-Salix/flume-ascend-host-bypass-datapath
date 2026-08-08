@@ -2531,6 +2531,8 @@ int main(int argc, char** argv) {
             << FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
             << " aclrt_custom_op_launch="
             << FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+            << " aclrt_custom_op_host_args="
+            << FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
             << " hcomm_custom_op_build=" << FLUME_BUILD_HCOMM_CUSTOM_OP
             << " acl_phy_device_id=" << FLUME_HAVE_ACL_PHY_DEVICE_ID
             << " acl_vmm=" << FLUME_HAVE_ACL_VMM << "\n";
@@ -2559,6 +2561,8 @@ int main(int argc, char** argv) {
             << OnOff(caps.hcomm_payload_scheduler_candidate)
             << " hcomm_payload_direct_aclrt="
             << OnOff(caps.hcomm_payload_direct_aclrt)
+            << " hcomm_payload_direct_aclrt_host_args="
+            << OnOff(caps.hcomm_payload_direct_aclrt_host_args)
             << " hcomm_payload_thread_notify="
             << OnOff(caps.hcomm_payload_thread_notify)
             << " hcomm_launcher_public_hccl="

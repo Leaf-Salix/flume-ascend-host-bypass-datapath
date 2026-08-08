@@ -437,6 +437,23 @@ int main() {
 }
 " FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH)
 
+  check_cxx_source_compiles("
+#include <acl/acl.h>
+int main() {
+  aclrtFuncHandle func_handle = nullptr;
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = 1;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  unsigned long long arg = 0;
+  (void)aclrtLaunchKernelWithHostArgs(func_handle, 1, nullptr, &cfg, &arg,
+                                      sizeof(arg), nullptr, 0);
+  return 0;
+}
+" FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS)
+
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
   check_cxx_source_compiles("
 #include <acl/acl.h>
@@ -503,6 +520,7 @@ int main() {
       FLUME_HAVE_HCOMM_RANK_GRAPH
       FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
       FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
+      FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
       FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
       FLUME_HAVE_ACL_PHY_DEVICE_ID
       FLUME_HAVE_ACL_VMM)
@@ -550,6 +568,7 @@ int main() {
     FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=${FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH_VALUE}
     FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=${FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH_VALUE}
+    FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS=${FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS_VALUE}
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=${FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT_VALUE}
     FLUME_HAVE_ACL_PHY_DEVICE_ID=${FLUME_HAVE_ACL_PHY_DEVICE_ID_VALUE}
     FLUME_HAVE_ACL_VMM=${FLUME_HAVE_ACL_VMM_VALUE}
@@ -574,6 +593,7 @@ else()
     FLUME_HAVE_HCOMM_RANK_GRAPH=0
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=0
     FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=0
+    FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS=0
     FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT=0
     FLUME_HAVE_ACL_PHY_DEVICE_ID=0
     FLUME_HAVE_ACL_VMM=0

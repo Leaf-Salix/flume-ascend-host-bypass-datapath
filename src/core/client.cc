@@ -75,6 +75,9 @@
 #ifndef FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
 #define FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH 0
 #endif
+#ifndef FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+#define FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS 0
+#endif
 #ifndef FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
 #endif
@@ -3928,6 +3931,17 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   }
   desc.reserved2[2] = reinterpret_cast<uint64_t>(kernel_trace_dev);
 
+  aclrtLaunchKernelAttr attr = {};
+  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
+  attr.value.timeout = desc.timeout_sec;
+  aclrtLaunchKernelCfg cfg = {};
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  const char* payload_launch_api = "host-args";
+#else
+  const char* payload_launch_api = "args-handle";
   aclrtArgsHandle args_handle = nullptr;
   acl_ret = aclrtKernelArgsInit(func_handle, &args_handle);
   if (acl_ret != ACL_SUCCESS) {
@@ -3972,6 +3986,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) + "\"" +
            HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
+#endif
 
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   if (resource_info.host_thread_notify_ready) {
@@ -3997,15 +4012,17 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   }
 #endif
 
-  aclrtLaunchKernelAttr attr = {};
-  attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
-  attr.value.timeout = desc.timeout_sec;
-  aclrtLaunchKernelCfg cfg = {};
-  cfg.attrs = &attr;
-  cfg.numAttrs = 1;
+#if FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS
+  acl_ret = aclrtLaunchKernelWithHostArgs(
+      func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, &desc,
+      sizeof(desc), nullptr, 0);
+  const char* acl_launch_api = "aclrtLaunchKernelWithHostArgs";
+#else
   acl_ret = aclrtLaunchKernelWithConfig(
       func_handle, 1, static_cast<aclrtStream>(acl_stream), &cfg, args_handle,
       nullptr);
+  const char* acl_launch_api = "aclrtLaunchKernelWithConfig";
+#endif
   if (acl_ret != ACL_SUCCESS) {
     (void)aclrtBinaryUnLoad(bin_handle);
     (void)aclrtFree(kernel_trace_dev);
@@ -4015,7 +4032,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=failed "
-                       "api=aclrtLaunchKernelWithConfig error=\"") +
+                       "api=") + acl_launch_api + " payload_launch_api=" +
+           payload_launch_api + " error=\"" +
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadRuntimeDetail(desc, resource_info, decision);
@@ -4052,8 +4070,11 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                          "stage3b3e_payload_descriptor_handoff=passed "
                          "stage3b3e_direct_aclrt_payload_launch=passed "
                          "stage3b3e_payload_sync=failed "
+                         "payload_launch_api=") +
+             payload_launch_api +
+             " "
                          "payload_thread_notify=host-aicpu "
-                         "api=HcommThreadNotifyWaitOnThread hcomm_ret=") +
+                         "api=HcommThreadNotifyWaitOnThread hcomm_ret=" +
              std::to_string(notify_ret) + " post_notify_stream_sync=\"" +
              AclErrorMessage(sync_ret) + "\" post_notify_stream_sync_api=" +
              AclStreamSyncApiName() +
@@ -4104,7 +4125,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=failed "
-                       "api=") + AclStreamSyncApiName() + " error=\"" +
+                       "payload_launch_api=") +
+           payload_launch_api + " api=" + AclStreamSyncApiName() + " error=\"" +
            AclErrorMessage(acl_ret) + "\" payload_status_read=\"" +
            AclErrorMessage(status_ret) + "\" payload_kernel_status=" +
            PayloadKernelStatusName(observed_status_words[0]) +
@@ -4141,7 +4163,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
                        "stage3b3e_payload_sync=failed "
-                       "api=aclrtMemcpy(payload_status_d2h) error=\"") +
+                       "payload_launch_api=") +
+           payload_launch_api + " api=aclrtMemcpy(payload_status_d2h) error=\"" +
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
@@ -4165,7 +4188,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed ") +
+                       "stage3b3e_payload_sync=passed "
+                       "payload_launch_api=") +
+           payload_launch_api + " " +
            PayloadBatchModeDetail(desc) + " payload_kernel_status=" +
            PayloadKernelStatusName(kernel_status) +
            " payload_failure_step=" +
@@ -4189,7 +4214,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed ") +
+                       "stage3b3e_payload_sync=passed "
+                       "payload_launch_api=") +
+           payload_launch_api + " " +
                      PayloadBatchModeDetail(desc) +
                      " payload_kernel_status=success "
                      "payload_failure_step=none "
@@ -4224,7 +4251,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed ") +
+                       "stage3b3e_payload_sync=passed "
+                       "payload_launch_api=") +
+           payload_launch_api + " " +
                      PayloadBatchModeDetail(desc) +
                      " payload_kernel_status=success "
                      "payload_failure_step=none "
@@ -4251,7 +4280,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_direct_aclrt_payload_loader=passed "
                      "stage3b3e_payload_descriptor_handoff=passed "
                      "stage3b3e_direct_aclrt_payload_launch=passed "
-                     "stage3b3e_payload_sync=passed ") +
+                     "stage3b3e_payload_sync=passed "
+                     "payload_launch_api=") +
+         payload_launch_api + " " +
                      PayloadBatchModeDetail(desc) +
                      " payload_kernel_status=success "
                      "payload_failure_step=none "
@@ -5085,6 +5116,8 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
   caps.fallback_runtime_staging = (!sim_attached && hccl_attached) ? 1U : 0U;
   caps.hcomm_payload_direct_aclrt =
       (FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH) ? 1U : 0U;
+  caps.hcomm_payload_direct_aclrt_host_args =
+      (FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS) ? 1U : 0U;
   caps.hcomm_payload_thread_notify =
       (FLUME_HAVE_HCOMM_THREAD_EXPORT && FLUME_HAVE_HCOMM_PRIMITIVES) ? 1U : 0U;
   caps.hcomm_payload_scheduler_candidate =
