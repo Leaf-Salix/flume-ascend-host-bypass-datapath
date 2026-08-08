@@ -1067,7 +1067,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     storage_hbm_ok = "storage HBM smoke passed" in smoke
     strict_positive_ok = ("hcomm payload smoke passed" in strict and
                           "stage3b3e_payload_copy=passed" in strict and
-                          "fallback=none" in strict)
+                          "fallback=none" in strict and
+                          "payload_verify=passed" in strict)
     strict_negative_expected = (
         "hcomm-payload-strict-negative" in strict and
         ("HCOMM payload copy required but unavailable" in strict or
@@ -1129,7 +1130,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| Payload scheduler missing? | {'yes' if scheduler_missing else 'no'} | `hcomm_payload_scheduler` / scheduler detail |")
     lines.append(
-        f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | `hcomm-payload-strict-positive` log |")
+        f"| Strict payload positive passed? | {'yes' if strict_positive_ok else 'no'} | "
+        "`stage3b3e_payload_copy=passed` + `payload_verify=passed` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
     if strict_positive_ok:

@@ -275,6 +275,8 @@ stage3b3e_direct_aclrt_payload_launch=passed
 stage3b3e_payload_sync=passed
 payload_batch_mode=on
 payload_kernel_status=success
+payload_verify=passed
+payload_checksum=<fnv32>
 payload_thread_notify=host-aicpu|unavailable
 payload_completion=thread-notify+stream-sync+status-word|stream-sync+status-word
 fallback=none
@@ -377,7 +379,8 @@ fallback=none
 means the Flume binary was built with the direct ACL custom-op launcher and
 HCOMM primitive headers needed to attempt the scheduler. Runtime readiness
 still depends on the installed custom-op package and is proven only by strict
-payload smoke passing with `stage3b3e_payload_copy=passed` and `fallback=none`.
+payload smoke passing with `stage3b3e_payload_copy=passed`,
+`payload_verify=passed`, and `fallback=none`.
 
 ## Stage 3B.4: Storage HBM Integration
 

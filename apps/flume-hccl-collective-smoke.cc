@@ -872,6 +872,8 @@ void RankMain(RankContext* ctx) {
   flume_io_t* hcomm_notify_only_io = nullptr;
   flume_io_t* hcomm_payload_io = nullptr;
   flume_io_t* storage_hbm_io = nullptr;
+  bool hcomm_payload_verify_passed = false;
+  uint32_t hcomm_payload_checksum = 0;
 
   BufferLayout layout;
   std::string error;
@@ -1424,6 +1426,9 @@ void RankMain(RankContext* ctx) {
             goto cleanup;
           }
         }
+        hcomm_payload_checksum =
+            flume::protocol::Checksum32(host, one_rank_bytes);
+        hcomm_payload_verify_passed = true;
       }
       std::ostringstream line;
       line << "rank " << ctx->rank
@@ -1447,6 +1452,12 @@ void RankMain(RankContext* ctx) {
            << (FLUME_HAVE_HCOMM_PRIMITIVES ? "available" : "not-built")
            << " fallback="
            << (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none");
+      if (ctx->hcomm_require_payload_copy && ctx->rank == 1 &&
+          wait_ret == FLUME_OK) {
+        line << " payload_verify="
+             << (hcomm_payload_verify_passed ? "passed" : "not-run")
+             << " payload_checksum=" << hcomm_payload_checksum;
+      }
       const char* detail = flume_io_error_message(hcomm_payload_io);
       if (detail != nullptr && detail[0] != '\0') {
         line << " detail=\"" << detail << "\"";
