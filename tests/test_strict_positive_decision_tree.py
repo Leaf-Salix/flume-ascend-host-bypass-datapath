@@ -140,6 +140,16 @@ def strict_log_with_rank1_failed_wait_remote_read() -> str:
         "rank 1 hcomm payload smoke failed")
 
 
+def strict_log_with_rank1_output_copy_failure() -> str:
+    return strict_log_with_rank1_remote_read_failure().replace(
+        "payload_kernel_status=remote-read-failed "
+        "payload_failure_step=remote-read payload_status_word=9 "
+        "payload_kernel_hcomm_ret=88",
+        "payload_kernel_status=output-copy-failed "
+        "payload_failure_step=output-copy payload_status_word=16 "
+        "payload_kernel_hcomm_ret=91")
+
+
 def strict_log_with_rank1_pending_remote_read() -> str:
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
@@ -451,6 +461,20 @@ def main() -> int:
         assert "| rank1 kernel HCOMM ret | 88 |" in text
         assert ("inspect rank 1 in-kernel HCOMM primitive failure: "
                 "remote-read-failed at remote-read") in text
+
+        strict_rank1_output_copy_fail = write(
+            tmp / "strict-rank1-output-copy-fail.log",
+            strict_log_with_rank1_output_copy_failure())
+        rank1_output_copy_fail_dir = tmp / "rank1-output-copy-fail"
+        rank1_output_copy_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            rank1_output_copy_fail_dir, smoke,
+            strict_rank1_output_copy_fail, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank1 kernel status | output-copy-failed |" in text
+        assert "| rank1 kernel failure step | output-copy |" in text
+        assert "| rank1 kernel HCOMM ret | 91 |" in text
+        assert "inspect rank 1 local HCCL Buffer to user HBM output copy" in text
 
         strict_rank1_pending_remote_read = write(
             tmp / "strict-rank1-pending-remote-read.log",

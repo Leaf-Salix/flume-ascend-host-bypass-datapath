@@ -1814,6 +1814,14 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 "inspect rank "
                 f"{bad_rank} pending HCOMM primitive timeout/hang at "
                 f"{rank_status[bad_rank]['failure_step']}")
+        elif any(rank_status[rank]["failure_step"] == "output-copy"
+                 for rank in (0, 1)):
+            bad_rank = next(
+                rank for rank in (0, 1)
+                if rank_status[rank]["failure_step"] == "output-copy")
+            next_action = (
+                "inspect rank "
+                f"{bad_rank} local HCCL Buffer to user HBM output copy")
         elif strict_sync != "passed":
             next_action = "inspect payload stream sync or kernel hang"
         elif any(rank_status[rank]["kernel"] not in ("success", "missing")
