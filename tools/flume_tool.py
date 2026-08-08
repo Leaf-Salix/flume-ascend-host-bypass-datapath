@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,6 +136,60 @@ def InspectAicpuTar(tar_path: Optional[Path]) -> tuple[str, str, int, str]:
                         for name in names)
     return ("present", "present" if has_kernel_so else "missing",
             len(names), "")
+
+
+def _RunSymbolTool(path: Path) -> tuple[str, str]:
+    commands: list[list[str]] = []
+    if shutil.which("readelf"):
+        commands.append(["readelf", "-Ws", str(path)])
+    if shutil.which("nm"):
+        commands.append(["nm", "-D", str(path)])
+        commands.append(["nm", "-g", str(path)])
+    if not commands:
+        return ("unknown", "no readelf or nm available")
+    errors: list[str] = []
+    for command in commands:
+        try:
+            result = subprocess.run(
+                command, text=True, capture_output=True, timeout=20,
+                check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            errors.append(f"{command[0]}: {exc}")
+            continue
+        if result.returncode == 0:
+            return ("present", result.stdout + "\n" + result.stderr)
+        errors.append(f"{' '.join(command)} rc={result.returncode}: "
+                      f"{result.stderr.strip()}")
+    return ("unreadable", "; ".join(errors))
+
+
+def InspectAicpuTarSymbols(
+        tar_path: Optional[Path], function_names: Iterable[str]
+) -> tuple[str, dict[str, bool], str]:
+    if tar_path is None or not tar_path.exists():
+        return ("not-checked", {}, "tar missing")
+    try:
+        with tarfile.open(tar_path, "r:*") as tar:
+            member = next((item for item in tar.getmembers()
+                           if Path(item.name).name == HCOMM_CUSTOM_OP_KERNEL_SO),
+                          None)
+            if member is None:
+                return ("not-checked", {}, "kernel so missing")
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                return ("unreadable", {}, "kernel so member is not a file")
+            with tempfile.TemporaryDirectory(prefix="flume-aicpu-symbols-") as tmp:
+                so_path = Path(tmp) / HCOMM_CUSTOM_OP_KERNEL_SO
+                so_path.write_bytes(extracted.read())
+                symbol_state, output = _RunSymbolTool(so_path)
+    except (OSError, tarfile.TarError) as exc:
+        return ("unreadable", {}, str(exc))
+    if symbol_state != "present":
+        return (symbol_state, {}, output)
+    symbols = {name: bool(re.search(rf"(^|\s)_?{re.escape(name)}($|\s)",
+                                    output))
+               for name in function_names}
+    return ("present", symbols, "")
 
 
 def HcommCustomOpPackageCommand(args: argparse.Namespace,
@@ -1338,6 +1393,13 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_members={tar_members}")
         if tar_error:
             print(f"aicpu_tar_error={tar_error}")
+        symbol_names = list(HCOMM_CUSTOM_OP_FUNCTIONS.values()) + [
+            HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT]
+        symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
+            tar_path, symbol_names)
+        print(f"aicpu_tar_so_symbols={symbol_state}")
+        if symbol_error:
+            print(f"aicpu_tar_so_symbols_error={symbol_error}")
 
         functions_present: dict[str, bool] = {}
         legacy_payload_present = False
@@ -1353,10 +1415,17 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 functions_present[label] = ok
                 print(f"function.{label}.{function_name}="
                       f"{'present' if ok else 'missing'}")
+                if symbol_state == "present":
+                    print(f"function_so.{label}.{function_name}="
+                          f"{'present' if symbols_present.get(function_name, False) else 'missing'}")
             legacy_payload_present = JsonDeclaresFunction(
                 payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT)
             found_legacy_payload = (
                 found_legacy_payload or legacy_payload_present)
+            if symbol_state == "present":
+                print("function_so.payload_direct_aclrt.legacy."
+                      f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
+                      f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -1375,6 +1444,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             tar_state == "present" and tar_so_state == "present" and
             all(functions_present.get(label, False)
                 for label in required_functions))
+        if symbol_state in ("unreadable", "not-checked"):
+            required_ok = False
+        elif symbol_state == "present":
+            required_ok = required_ok and all(
+                symbols_present.get(HCOMM_CUSTOM_OP_FUNCTIONS[label], False)
+                for label in required_functions)
         print(f"required={','.join(required_functions)}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")

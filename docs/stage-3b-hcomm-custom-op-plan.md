@@ -326,8 +326,10 @@ python3 tools/flume_tool.py \
 The first command verifies the canary package; the second verifies that the
 installed JSON declares `FlumeHcommPayloadCopyDirectAclrtKernelV2` and that the
 AICPU package tar is readable and contains
-`libflume_hcomm_payload_aicpu_kernel.so`. If the second check fails, the next
-action is to rebuild the package with
+`libflume_hcomm_payload_aicpu_kernel.so`. When `readelf` or `nm` is available,
+the preflight also verifies that the SO inside the tar exports the required
+entrypoints, so a JSON/SO mismatch fails before strict payload smoke. If the
+second check fails, the next action is to rebuild the package with
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`, not to debug HCOMM payload
 execution yet. On CANN packages that do not expose `hccl/hccl_launch.h`, keep
 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=OFF`; the direct ACL payload

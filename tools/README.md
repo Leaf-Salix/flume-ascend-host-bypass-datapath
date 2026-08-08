@@ -153,8 +153,11 @@ canary-only 包或 payload 包不完整；如果同时出现
 `FlumeHcommPayloadCopyDirectAclrtKernel` 时会被明确判为 stale，需要用
 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑 strict
 payload smoke。该检查还会确认 AICPU tar
-是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，避免把空包或
-不完整包误判为 payload-ready。
+是否可读、是否包含 `libflume_hcomm_payload_aicpu_kernel.so`，并在
+`readelf` 或 `nm` 可用时检查 tar 内 SO 是否真的导出
+`FlumeHcommCanaryDirectAclrtKernel` 和
+`FlumeHcommPayloadCopyDirectAclrtKernelV2`，避免把空包、坏包或 JSON/SO
+不一致的包误判为 payload-ready。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加
