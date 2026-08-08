@@ -277,6 +277,19 @@ def strict_log_with_checksum_mismatch() -> str:
         "payload_checksum=1234", "payload_checksum=9999")
 
 
+def strict_log_with_recv_direct_output() -> str:
+    text = strict_log(True)
+    marker = "payload_recv_path=local-buffer"
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing rank recv path markers")
+    text = text[:second] + text[second:].replace(
+        marker, "payload_recv_path=direct-output", 1)
+    return text.replace("payload_trace_primitive_path=recv-read-local-copy",
+                        "payload_trace_primitive_path=recv-read-direct-output")
+
+
 def strict_log_with_missing_handoff() -> str:
     return strict_log(True).replace(
         "stage3b3e_payload_descriptor_handoff=passed ", "")
@@ -689,14 +702,18 @@ def main() -> int:
             strict_log_with_rank1_output_copy_failure())
         direct_output_log = write(
             direct_output_dir / "04-hcomm-payload-direct-output-diagnostic.log",
-            strict_log(True).replace("payload_recv_path=local-buffer",
-                                     "payload_recv_path=direct-output"))
+            strict_log_with_recv_direct_output())
         direct_output_note = (
             flume_tool.WriteHcommPayloadDirectOutputDiagnostic(
                 direct_output_dir, output_copy_failure, direct_output_log))
         direct_output_text = direct_output_note.read_text(encoding="utf-8")
         assert "direct_payload_copy_and_verify: `passed`" in direct_output_text
         assert "default local-buffer path is likely failing" in direct_output_text
+        assert "direct_rank0:" in direct_output_text
+        assert "payload_recv_path=local-buffer" in direct_output_text
+        assert "direct_rank1:" in direct_output_text
+        assert "payload_recv_path=direct-output" in direct_output_text
+        assert "payload_trace_primitive_path=recv-read-direct-output" in direct_output_text
         tree = flume_tool.WriteMatrixDecisionTree(
             direct_output_dir, smoke, output_copy_failure, package)
         text = tree.read_text(encoding="utf-8")

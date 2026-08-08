@@ -1741,6 +1741,10 @@ def MarkerValue(text: str, name: str) -> str:
     return match.group(1) if match else "missing"
 
 
+def StrictPayloadRecvRankMarkerValue(text: str, name: str) -> str:
+    return MarkerValueFromLine(ExtractStrictPayloadRankLines(text)[1], name)
+
+
 def StrictPayloadNoBatchDiagnosticPassed(text: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(text)
     no_batch_markers = tuple(
@@ -2308,8 +2312,10 @@ def WriteHcommPayloadDirectOutputDiagnostic(
     direct_rank_lines = ExtractStrictPayloadRankLines(direct_text)
     direct_ok, direct_rank0_ok, direct_rank1_ok = (
         StrictPayloadRankEvidencePassed(direct_text))
-    default_recv_path = MarkerValue(default_text, "payload_recv_path")
-    direct_recv_path = MarkerValue(direct_text, "payload_recv_path")
+    default_recv_path = StrictPayloadRecvRankMarkerValue(default_text,
+                                                        "payload_recv_path")
+    direct_recv_path = StrictPayloadRecvRankMarkerValue(direct_text,
+                                                       "payload_recv_path")
     direct_path_ok = direct_recv_path == "direct-output"
     default_failure_step = MarkerValue(default_text, "payload_failure_step")
     direct_rank0_failure_step = MarkerValueFromLine(
@@ -2743,6 +2749,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_trace = marker_value(strict, "payload_trace")
     strict_trace_event = marker_value(strict, "payload_trace_event")
     strict_trace_order = marker_value(strict, "payload_trace_order")
+    strict_rank0_trace_path = marker_value_from_line(
+        strict_rank_lines[0], "payload_trace_primitive_path")
+    strict_rank1_trace_path = marker_value_from_line(
+        strict_rank_lines[1], "payload_trace_primitive_path")
     strict_trace_result = marker_value(strict, "payload_trace_result")
     strict_rank0_role = marker_value_from_line(strict_rank_lines[0],
                                                "payload_role")
@@ -2787,7 +2797,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_fallback = marker_value(strict, "fallback")
     strict_batch_mode = marker_value(strict, "payload_batch_mode")
     strict_desc_batch_tag = marker_value(strict, "payload_desc_batch_tag")
-    strict_recv_path = marker_value(strict, "payload_recv_path")
+    strict_recv_path = marker_value_from_line(strict_rank_lines[1],
+                                             "payload_recv_path")
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -2807,7 +2818,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     tagged_hcomm_ret = marker_value(tagged, "payload_kernel_hcomm_ret")
     direct_output_ok, direct_output_rank0_ok, direct_output_rank1_ok = (
         StrictPayloadRankEvidencePassed(direct_output))
-    direct_output_recv_path = marker_value(direct_output, "payload_recv_path")
+    direct_output_recv_path = StrictPayloadRecvRankMarkerValue(
+        direct_output, "payload_recv_path")
     direct_output_effective_ok = (
         direct_output_ok and direct_output_recv_path == "direct-output")
     direct_output_result = (
@@ -2904,6 +2916,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + `payload_trace=passed` + "
+        "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
         "payload comm binding `comm-name|channel-handle` + "
@@ -2962,7 +2975,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
-            f"| payload primitive trace | {strict_trace} | event={strict_trace_event}, order={strict_trace_order}, result={strict_trace_result}; trace must end at `kernel-exit` with expected HCOMM primitive order and success |",
+            f"| payload primitive trace | {strict_trace} | event={strict_trace_event}, order={strict_trace_order}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, result={strict_trace_result}; trace must end at `kernel-exit` with expected HCOMM primitive order/path and success |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
@@ -3216,6 +3229,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_echo=passed,payload_role=send/recv,"
             "payload_primitive_state=completed,payload_trace=passed,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
+            "payload_trace_primitive_path=send-local-copy|recv-read-*,"
             "payload_trace_result=success,payload_desc_batch_tag=,"
             "payload_recv_path=,payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
