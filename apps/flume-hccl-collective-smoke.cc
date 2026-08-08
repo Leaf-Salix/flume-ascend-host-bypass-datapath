@@ -177,6 +177,45 @@ void FillStrictHcommPayloadPattern(float* host, uint64_t count) {
   }
 }
 
+uint32_t PayloadDataFingerprint(const void* ptr, uint64_t bytes) {
+  if (ptr == nullptr || bytes == 0) {
+    return 0U;
+  }
+  constexpr uint64_t kMaxSampleBytes = 4096U;
+  const auto* data = static_cast<const uint8_t*>(ptr);
+  uint32_t hash = 2166136261U;
+  auto mix = [&hash](uint8_t value) {
+    hash ^= value;
+    hash *= 16777619U;
+  };
+  auto mix_u64 = [&mix](uint64_t value) {
+    for (unsigned int i = 0; i < 8U; ++i) {
+      mix(static_cast<uint8_t>((value >> (i * 8U)) & 0xFFU));
+    }
+  };
+  const uint64_t first = bytes < kMaxSampleBytes ? bytes : kMaxSampleBytes;
+  mix_u64(bytes);
+  mix_u64(first);
+  for (uint64_t i = 0; i < first; ++i) {
+    mix(data[i]);
+  }
+  if (bytes > first) {
+    const uint64_t last = first;
+    mix_u64(last);
+    const uint64_t start = bytes - last;
+    for (uint64_t i = 0; i < last; ++i) {
+      mix(data[start + i]);
+    }
+  }
+  return hash;
+}
+
+uint64_t PayloadDataSampleBytes(uint64_t bytes) {
+  constexpr uint64_t kMaxSampleBytes = 4096U;
+  const uint64_t first = bytes < kMaxSampleBytes ? bytes : kMaxSampleBytes;
+  return bytes > first ? first * 2U : first;
+}
+
 bool ParseU64(const std::string& text, uint64_t* out) {
   if (out == nullptr || text.empty() || text[0] == '-') {
     return false;
@@ -1050,8 +1089,14 @@ void RankMain(RankContext* ctx) {
   uint32_t hcomm_payload_checksum = 0;
   bool hcomm_payload_source_checksum_ready = false;
   uint32_t hcomm_payload_source_checksum = 0;
+  bool hcomm_payload_source_fingerprint_ready = false;
+  uint32_t hcomm_payload_source_fingerprint = 0;
   bool hcomm_payload_expected_checksum_ready = false;
   uint32_t hcomm_payload_expected_checksum = 0;
+  bool hcomm_payload_expected_fingerprint_ready = false;
+  uint32_t hcomm_payload_expected_fingerprint = 0;
+  bool hcomm_payload_received_fingerprint_ready = false;
+  uint32_t hcomm_payload_received_fingerprint = 0;
 
   BufferLayout layout;
   std::string error;
@@ -1588,6 +1633,9 @@ void RankMain(RankContext* ctx) {
           hcomm_payload_source_checksum =
               flume::protocol::Checksum32(host_buf, one_rank_bytes);
           hcomm_payload_source_checksum_ready = true;
+          hcomm_payload_source_fingerprint =
+              PayloadDataFingerprint(host_buf, one_rank_bytes);
+          hcomm_payload_source_fingerprint_ready = true;
           if (!CheckFlume(flume_hcomm_payload_send_ex(
                                 client, reduce_send_buf,
                                 ctx->a3_symmetric ?
@@ -1672,15 +1720,31 @@ void RankMain(RankContext* ctx) {
           line << " payload_verify="
                << (hcomm_payload_verify_passed ? "passed" : "not-run")
                << " payload_checksum=" << hcomm_payload_checksum;
+          if (hcomm_payload_received_fingerprint_ready) {
+            line << " payload_host_received_fingerprint="
+                 << hcomm_payload_received_fingerprint
+                 << " payload_host_sample_bytes="
+                 << PayloadDataSampleBytes(one_rank_bytes);
+          }
           if (hcomm_payload_expected_checksum_ready) {
             line << " payload_expected_checksum="
                  << hcomm_payload_expected_checksum;
+          }
+          if (hcomm_payload_expected_fingerprint_ready) {
+            line << " payload_host_expected_fingerprint="
+                 << hcomm_payload_expected_fingerprint;
           }
         }
         if (ctx->hcomm_require_payload_copy && ctx->rank == 0 &&
             hcomm_payload_source_checksum_ready) {
           line << " payload_source_checksum="
                << hcomm_payload_source_checksum;
+          if (hcomm_payload_source_fingerprint_ready) {
+            line << " payload_host_source_fingerprint="
+                 << hcomm_payload_source_fingerprint
+                 << " payload_host_sample_bytes="
+                 << PayloadDataSampleBytes(one_rank_bytes);
+          }
         }
         const char* detail = flume_io_error_message(hcomm_payload_io);
         if (detail != nullptr && detail[0] != '\0') {
@@ -1748,10 +1812,16 @@ void RankMain(RankContext* ctx) {
         }
         hcomm_payload_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
+        hcomm_payload_received_fingerprint =
+            PayloadDataFingerprint(host, one_rank_bytes);
+        hcomm_payload_received_fingerprint_ready = true;
         FillStrictHcommPayloadPattern(host, ctx->count);
         hcomm_payload_expected_checksum =
             flume::protocol::Checksum32(host, one_rank_bytes);
         hcomm_payload_expected_checksum_ready = true;
+        hcomm_payload_expected_fingerprint =
+            PayloadDataFingerprint(host, one_rank_bytes);
+        hcomm_payload_expected_fingerprint_ready = true;
         if (hcomm_payload_checksum != hcomm_payload_expected_checksum) {
           std::ostringstream mismatch;
           mismatch << "HCOMM payload checksum mismatch: received="

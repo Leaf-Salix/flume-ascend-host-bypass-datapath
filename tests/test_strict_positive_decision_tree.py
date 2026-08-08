@@ -95,7 +95,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
-        "payload_thread_notify_order=not-used" + desc + resource +
+        "payload_thread_notify_order=not-used "
+        "payload_host_source_fingerprint=222 "
+        "payload_host_sample_bytes=4096" + desc + resource +
         package_runtime +
         " fallback=none\" "
         "payload_source_checksum=1234",
@@ -120,7 +122,10 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_result=success "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
-        "payload_thread_notify_order=not-used" + recv_desc +
+        "payload_thread_notify_order=not-used "
+        "payload_host_received_fingerprint=222 "
+        "payload_host_expected_fingerprint=222 "
+        "payload_host_sample_bytes=4096" + recv_desc +
         resource + package_runtime + " fallback=none\" "
         "payload_expected_checksum=1234",
         "",
@@ -333,6 +338,12 @@ def strict_log_with_data_flow_mismatch() -> str:
         raise AssertionError("synthetic log missing payload data probe markers")
     return text[:second] + text[second:].replace(
         marker, "payload_data_user_exit_fingerprint=999", 1)
+
+
+def strict_log_with_host_data_mismatch() -> str:
+    return strict_log(True).replace(
+        "payload_host_received_fingerprint=222",
+        "payload_host_received_fingerprint=999")
 
 
 def strict_log_with_recv_direct_output() -> str:
@@ -645,6 +656,7 @@ def main() -> int:
         assert "`payload_descriptor_fingerprint=passed`" in text
         assert "`payload_pattern=strict-v1`" in text
         assert "| payload data flow | passed |" in text
+        assert "| payload host data | passed |" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
@@ -668,6 +680,17 @@ def main() -> int:
         assert "| payload data flow | recv-output-copy-mismatch |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_data_flow_mismatch())[0]
+        strict_host_mismatch = write(tmp / "strict-host-mismatch.log",
+                                     strict_log_with_host_data_mismatch())
+        host_mismatch_dir = tmp / "host-mismatch"
+        host_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            host_mismatch_dir, smoke, strict_host_mismatch, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload host data | host-received-expected-mismatch |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_host_data_mismatch())[0]
         strict_channel_handle = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
             "payload_comm_acquire=skipped payload_comm_binding=channel-handle")

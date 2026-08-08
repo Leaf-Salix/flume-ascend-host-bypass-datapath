@@ -1754,6 +1754,42 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     return True, "passed"
 
 
+def StrictPayloadHostDataPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
+    rank0_line = rank_lines.get(0, "")
+    rank1_line = rank_lines.get(1, "")
+    if not rank0_line or not rank1_line:
+        return False, "missing-rank-line"
+    host_source = MarkerValueFromLine(
+        rank0_line, "payload_host_source_fingerprint")
+    host_received = MarkerValueFromLine(
+        rank1_line, "payload_host_received_fingerprint")
+    host_expected = MarkerValueFromLine(
+        rank1_line, "payload_host_expected_fingerprint")
+    rank0_sample = MarkerValueFromLine(rank0_line, "payload_host_sample_bytes")
+    rank1_sample = MarkerValueFromLine(rank1_line, "payload_host_sample_bytes")
+    rank0_device = MarkerValueFromLine(
+        rank0_line, "payload_data_local_exit_fingerprint")
+    rank1_device = MarkerValueFromLine(
+        rank1_line, "payload_data_user_exit_fingerprint")
+    values = (host_source, host_received, host_expected, rank0_sample,
+              rank1_sample, rank0_device, rank1_device)
+    if any(value == "missing" for value in values):
+        return False, "missing-host-fingerprint"
+    if rank0_sample != rank1_sample:
+        return False, "host-sample-size-mismatch"
+    if rank0_sample in ("0", "0U"):
+        return False, "empty-host-sample"
+    if host_source != host_expected:
+        return False, "host-source-expected-mismatch"
+    if host_received != host_expected:
+        return False, "host-received-expected-mismatch"
+    if rank0_device != host_source:
+        return False, "host-source-device-mismatch"
+    if rank1_device != host_received:
+        return False, "host-received-device-mismatch"
+    return True, "passed"
+
+
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
     accepted_marker_sets = tuple(
@@ -1816,9 +1852,10 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
     data_flow_ok, _data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
+    host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and recv_path_ok and
-            checksum_ok and data_flow_ok,
+            checksum_ok and data_flow_ok and host_data_ok,
             rank0_ok, rank1_ok)
 
 
@@ -3621,6 +3658,18 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_rank_lines[1], "payload_data_user_exit_fingerprint")
     strict_data_flow_ok, strict_data_flow_reason = (
         StrictPayloadDataFlowPassed(strict_rank_lines))
+    strict_host_data_ok, strict_host_data_reason = (
+        StrictPayloadHostDataPassed(strict_rank_lines))
+    strict_rank0_host_source = marker_value_from_line(
+        strict_rank_lines[0], "payload_host_source_fingerprint")
+    strict_rank0_host_sample_bytes = marker_value_from_line(
+        strict_rank_lines[0], "payload_host_sample_bytes")
+    strict_rank1_host_received = marker_value_from_line(
+        strict_rank_lines[1], "payload_host_received_fingerprint")
+    strict_rank1_host_expected = marker_value_from_line(
+        strict_rank_lines[1], "payload_host_expected_fingerprint")
+    strict_rank1_host_sample_bytes = marker_value_from_line(
+        strict_rank_lines[1], "payload_host_sample_bytes")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_runtime_package_source = marker_value(strict, "package_source")
     strict_runtime_package_tar = marker_value(strict, "package_aicpu_tar")
@@ -3761,6 +3810,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + `payload_descriptor_fingerprint=passed` + "
         "`payload_data_flow=passed` + "
+        "`payload_host_data=passed` + "
         "`payload_trace=passed` + "
         "`payload_trace_ret_order=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
@@ -3826,6 +3876,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
             f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
             f"| payload data flow | {'passed' if strict_data_flow_ok else strict_data_flow_reason} | source fingerprint must propagate from rank0 user HBM into rank0 local HCCL Buffer and then into rank1 output HBM through the selected read/write/direct-output path |",
+            f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
@@ -4150,10 +4201,15 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_echo=passed,payload_descriptor_fingerprint=passed,"
             "payload_data_probe=observed,"
             "payload_data_flow=passed,"
+            "payload_host_data=passed,"
             "payload_data_user_entry_fingerprint=,"
             "payload_data_local_exit_fingerprint=,"
             "payload_data_user_exit_fingerprint=,"
             "payload_data_sample_bytes=,"
+            "payload_host_source_fingerprint=,"
+            "payload_host_received_fingerprint=,"
+            "payload_host_expected_fingerprint=,"
+            "payload_host_sample_bytes=,"
             "payload_role=send/recv,"
             "payload_primitive_state=completed,payload_trace=passed,"
             "payload_trace_schema=v2,payload_trace_word_count=80,"
@@ -4609,7 +4665,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
         "markers, payload_echo=passed, payload_descriptor_fingerprint=passed, "
         "payload_data_probe=observed with user/local sampled fingerprints, "
-        "payload_data_flow=passed, "
+        "payload_data_flow=passed, payload_host_data=passed, "
         "payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
         "payload_trace_schema=v2, payload_trace_word_count=80, "

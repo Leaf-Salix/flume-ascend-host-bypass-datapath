@@ -336,7 +336,7 @@ Strict-positive success must include
 `stage3b3e_payload_sync=passed`, `payload_kernel_status=success`,
 `payload_failure_step=none`, `payload_status_word=0`, `payload_kernel_hcomm_ret=0`,
 `payload_status_schema=v4`, `payload_status_word_count=14`,
-`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`, `payload_data_flow=passed`, `payload_primitive_state=completed`,
+`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`, `payload_data_flow=passed`, `payload_host_data=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_schema=v2`, `payload_trace_word_count=80`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_ret_order=passed`,
 `payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`,
