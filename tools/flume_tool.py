@@ -330,14 +330,35 @@ def MaybeAutoBuildPayloadPackage(
     if package_result.returncode != 0:
         return args, package_result
     note = runner.run_dir / "HCOMM_PAYLOAD_AUTO_PACKAGE.txt"
+    rerun_command = [
+        "python3 tools/flume_tool.py",
+        f"  --build-dir {Path(args.build_dir)}",
+        "  --hccl-devices <device-a>,<device-b>",
+        "  --hccl-host-ifname <host-ifname>",
+        "  --hccl-host-ip <host-ip>",
+        "  --build-hcomm-custom-op",
+        f"  --custom-op-root {export_root}",
+        "  --hcomm-require-payload-copy",
+        "  --hccl-debug-logs",
+        "  hcomm-payload-strict-positive",
+    ]
     note.write_text(
         "Flume auto-built an isolated direct ACL HCOMM payload package for "
         "this run.\n"
         f"custom_op_root: {export_root}\n"
+        "package_preflight: payload-ready\n"
         "The package was built with hcomm-custom-op-direct-build and exported "
         "under this log directory; no system CANN/OPP installation was "
         "modified. Reuse it with --custom-op-root if the strict smoke needs "
-        "to be rerun against the same artifacts.\n",
+        "to be rerun against the same artifacts.\n"
+        "\n"
+        "Focused rerun command:\n"
+        + " \\\n".join(rerun_command) + "\n"
+        "\n"
+        "The run is only a true HCOMM payload-copy success when the strict "
+        "decision tree reports both ranks passed with fallback=none, "
+        "stage3b3e_payload_copy=passed, payload_semantic_v8=present, and "
+        "payload_trace_order=passed.\n",
         encoding="utf-8",
     )
     print(f"[ok] payload auto package -> {note}")
@@ -2818,6 +2839,11 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v2,payload_status_word_count=8,"
             "payload_echo=passed,payload_role=send/recv,"
+            "payload_primitive_state=completed,payload_trace=passed,"
+            "payload_trace_event=kernel-exit,payload_trace_order=passed,"
+            "payload_trace_result=success,payload_desc_batch_tag=,"
+            "payload_recv_path=,payload_semantic_v6=present,"
+            "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_batch_mode=on,"
             "payload_thread_notify_order=,"
             "payload_pattern=strict-v1,"
@@ -2925,6 +2951,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         required=False,
         timeout_seconds=args.step_timeout_sec,
     )
+    args, package_result = MaybeAutoBuildPayloadPackage(
+        runner, args, package_result)
     package_text = ""
     try:
         package_text = package_result.log_path.read_text(
