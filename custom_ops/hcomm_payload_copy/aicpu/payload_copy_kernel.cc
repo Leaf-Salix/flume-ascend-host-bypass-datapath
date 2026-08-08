@@ -305,3 +305,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
   return 1U;
 }
+
+extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {
+  return FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
+}
+
+extern "C" unsigned int FlumeHcommPayloadStatusWordCount() {
+  return FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
+}

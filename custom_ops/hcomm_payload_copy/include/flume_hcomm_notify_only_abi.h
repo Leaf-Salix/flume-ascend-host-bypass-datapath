@@ -48,6 +48,10 @@ extern "C" {
   "FlumeHcommPayloadCopySemanticVersion"
 #define FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC \
   "FlumeHcommPayloadCopyRequiresCommAcquire"
+#define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC \
+  "FlumeHcommPayloadStatusSchemaVersion"
+#define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC \
+  "FlumeHcommPayloadStatusWordCount"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES 128U
 #define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT 8U

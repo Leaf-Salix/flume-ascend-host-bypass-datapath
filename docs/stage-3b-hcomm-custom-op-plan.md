@@ -369,6 +369,10 @@ kernel descriptor gained `comm_name` for `HcommAcquireComm` /
 `HcommReleaseComm`. The preflight also requires
 `FlumeHcommPayloadCopyRequiresCommAcquire` so a package built before the
 communicator acquire/release handoff cannot be misclassified as payload-ready.
+It also requires `FlumeHcommPayloadStatusSchemaVersion` and
+`FlumeHcommPayloadStatusWordCount`, in both JSON and the tar-contained SO, so
+the host can reject packages that predate the current device-visible status
+schema before attempting a strict payload launch.
 When the package JSON declares only
 the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
@@ -380,6 +384,10 @@ Flume headers before running strict smoke.
 When `FlumeHcommPayloadCopyRequiresCommAcquire` is missing, rebuild from the
 current Flume tree before running strict smoke; that package predates the
 HCOMM communicator acquire/release contract.
+When `FlumeHcommPayloadStatusSchemaVersion` or
+`FlumeHcommPayloadStatusWordCount` is missing, rebuild from the current tree;
+that package predates the current success-status schema and cannot prove
+`payload_kernel_hcomm_ret=0` with the expected status word layout.
 
 `ascend-probe` records the same check as
 `hcomm-custom-op-package-preflight` when payload or notify-only smoke is

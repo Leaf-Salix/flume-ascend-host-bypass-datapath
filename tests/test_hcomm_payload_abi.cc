@@ -144,6 +144,12 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
+      "FlumeHcommPayloadStatusSchemaVersion") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC,
+      "FlumeHcommPayloadStatusWordCount") == 0);
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);

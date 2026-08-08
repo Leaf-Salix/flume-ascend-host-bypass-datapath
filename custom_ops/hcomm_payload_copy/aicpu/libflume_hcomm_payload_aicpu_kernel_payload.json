@@ -83,6 +83,20 @@
       "functionName": "FlumeHcommPayloadCopyRequiresCommAcquire"
     }
   },
+  "FlumeHcommPayloadStatusSchemaVersion": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadStatusSchemaVersion"
+    }
+  },
+  "FlumeHcommPayloadStatusWordCount": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadStatusWordCount"
+    }
+  },
   "FlumeHcommPayloadBuildModeInternalPayload": {
     "opInfo": {
       "opKernelLib": "AICPUKernel",

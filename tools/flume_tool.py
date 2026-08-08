@@ -38,6 +38,8 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_abi_v4": "FlumeHcommPayloadCopyAbiVersion4",
     "payload_semantic": "FlumeHcommPayloadCopySemanticVersion",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
+    "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
+    "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
     "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
@@ -49,6 +51,8 @@ HCOMM_PAYLOAD_COPY_ABI_VERSION_V3 = "FlumeHcommPayloadCopyAbiVersion3"
 HCOMM_PAYLOAD_COPY_ABI_VERSION_V4 = "FlumeHcommPayloadCopyAbiVersion4"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION = "FlumeHcommPayloadCopySemanticVersion"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
+HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
+HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
@@ -2162,6 +2166,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_abi_v4")
         required_functions.append("payload_semantic")
         required_functions.append("payload_requires_comm_acquire")
+        required_functions.append("payload_status_schema")
+        required_functions.append("payload_status_word_count")
         required_functions.append("build_mode_internal")
 
     found_any_json = False
@@ -2174,6 +2180,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_abi_v3_marker = False
     found_payload_semantic_marker = False
     found_payload_requires_comm_acquire_marker = False
+    found_payload_status_schema_marker = False
+    found_payload_status_word_count_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -2215,6 +2223,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_ABI_VERSION_V4,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
+            HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
+            HCOMM_PAYLOAD_STATUS_WORD_COUNT,
         ]
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
@@ -2240,6 +2250,24 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 if symbol_state == "present":
                     print(f"function_so.{label}.{function_name}="
                           f"{'present' if symbols_present.get(function_name, False) else 'missing'}")
+            found_internal_payload_marker = (
+                found_internal_payload_marker or
+                functions_present.get("build_mode_internal", False))
+            found_payload_abi_version_marker = (
+                found_payload_abi_version_marker or
+                functions_present.get("payload_abi_v4", False))
+            found_payload_semantic_marker = (
+                found_payload_semantic_marker or
+                functions_present.get("payload_semantic", False))
+            found_payload_requires_comm_acquire_marker = (
+                found_payload_requires_comm_acquire_marker or
+                functions_present.get("payload_requires_comm_acquire", False))
+            found_payload_status_schema_marker = (
+                found_payload_status_schema_marker or
+                functions_present.get("payload_status_schema", False))
+            found_payload_status_word_count_marker = (
+                found_payload_status_word_count_marker or
+                functions_present.get("payload_status_word_count", False))
             legacy_payload_present = JsonDeclaresFunction(
                 payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
                 HCOMM_CUSTOM_OP_KERNEL_SO)
@@ -2274,6 +2302,14 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
                                         False))
+                found_payload_status_schema_marker = (
+                    found_payload_status_schema_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
+                                        False))
+                found_payload_status_word_count_marker = (
+                    found_payload_status_word_count_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT,
+                                        False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
@@ -2301,6 +2337,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
+                print("function_so.payload_status_schema."
+                      f"{HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) else 'missing'}")
+                print("function_so.payload_status_word_count."
+                      f"{HCOMM_PAYLOAD_STATUS_WORD_COUNT}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -2331,7 +2373,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False) and
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False))
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False))
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
@@ -2341,6 +2385,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
+            print("required_payload_status_schema_symbol="
+                  f"{HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION}")
+            print("required_payload_status_word_count_symbol="
+                  f"{HCOMM_PAYLOAD_STATUS_WORD_COUNT}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok
@@ -2392,6 +2440,16 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   not found_payload_requires_comm_acquire_marker):
                 print("reason=payload kernel package is missing the payload "
                       "comm-acquire marker")
+                print("action=rebuild package with current Flume payload "
+                      "kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  (not found_payload_status_schema_marker or
+                   not found_payload_status_word_count_marker)):
+                print("reason=payload kernel package is missing the payload "
+                      "status schema marker")
                 print("action=rebuild package with current Flume payload "
                       "kernel")
             else:

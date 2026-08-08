@@ -79,6 +79,16 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "unsigned int FlumeHcommPayloadCopyRequiresCommAcquire(void) "
             "{ return 1; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v4_no_status_schema"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadStatusSchemaVersion(void) "
+            "{ return 2; }"
+        )
+        lines.append(
+            "unsigned int FlumeHcommPayloadStatusWordCount(void) "
+            "{ return 8; }"
+        )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
@@ -171,6 +181,22 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopyRequiresCommAcquire",
             }
         }
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v4_no_status_schema"):
+        payload["FlumeHcommPayloadStatusSchemaVersion"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadStatusSchemaVersion",
+            }
+        }
+        payload["FlumeHcommPayloadStatusWordCount"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadStatusWordCount",
+            }
+        }
     if mode != "canary":
         payload["FlumeHcommPayloadBuildModeInternalPayload"] = {
             "opInfo": {
@@ -234,7 +260,8 @@ def main() -> int:
             encoding="utf-8"))
         for label in ("canary_direct_aclrt", "payload_direct_aclrt",
                       "payload_abi_v2", "payload_abi_v3", "payload_abi_v4",
-                      "payload_semantic"):
+                      "payload_semantic", "payload_status_schema",
+                      "payload_status_word_count"):
             assert flume_tool.JsonDeclaresFunction(
                 static_canary, flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS[label],
                 KERNEL_SO), label
@@ -271,6 +298,8 @@ def main() -> int:
         assert "function_so.payload_abi_version_v4.FlumeHcommPayloadCopyAbiVersion4=present" in canary.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in canary.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in canary.stdout
+        assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in canary.stdout
+        assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in canary.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
@@ -329,6 +358,17 @@ def main() -> int:
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v4.stdout
         assert "reason=payload kernel package is missing the payload comm-acquire marker" in stale_v4.stdout
 
+        stale_schema_json, stale_schema_tar = write_package(
+            tmp, mode="stale_v4_no_status_schema")
+        stale_schema = run_preflight(repo, stale_schema_json, stale_schema_tar)
+        if stale_schema.returncode == 0:
+            print(stale_schema.stdout)
+            print(stale_schema.stderr, file=sys.stderr)
+            raise AssertionError("stale V4 package without status schema marker passed")
+        assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=missing" in stale_schema.stdout
+        assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing" in stale_schema.stdout
+        assert "reason=payload kernel package is missing the payload status schema marker" in stale_schema.stdout
+
         v4_json, v4_tar = write_package(tmp, mode="v4")
         v4 = run_preflight(repo, v4_json, v4_tar)
         if v4.returncode != 0:
@@ -345,6 +385,10 @@ def main() -> int:
         assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v4.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
+        assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
+        assert "function_so.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
+        assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
+        assert "function_so.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "status=PASS" in v4.stdout
 

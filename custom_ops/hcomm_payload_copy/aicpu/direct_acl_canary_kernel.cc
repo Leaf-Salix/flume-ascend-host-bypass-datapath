@@ -92,6 +92,14 @@ extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion4() {
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {
   return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION;
 }
+
+extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {
+  return FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
+}
+
+extern "C" unsigned int FlumeHcommPayloadStatusWordCount() {
+  return FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
+}
 #endif
 
 #ifndef FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH
