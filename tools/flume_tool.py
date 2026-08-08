@@ -35,6 +35,8 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
 HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY = "FlumeHcommPayloadBuildModeCanaryOnly"
 HCOMM_PAYLOAD_BUILD_MODE_INTERNAL = "FlumeHcommPayloadBuildModeInternalPayload"
+HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
+HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
 
 def ResolveHcclInitMode(args: argparse.Namespace) -> str:
@@ -209,6 +211,15 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
         command.append("--require-hcomm-payload-kernel")
     command.append("hcomm-custom-op-package")
     return command
+
+
+def ResolveHcclSourceRoot(args: argparse.Namespace) -> Path:
+    if args.hccl_source_root:
+        return Path(args.hccl_source_root).expanduser().resolve()
+    env_root = os.environ.get("FLUME_HCCL_SOURCE_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+    return (REPO_ROOT / "refer" / "cann-src" / "hccl").resolve()
 
 
 @dataclass
@@ -1462,6 +1473,119 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def FindBuiltCustomOpArtifacts(hccl_source_root: Path,
+                               vendor: str) -> tuple[Optional[Path], Optional[Path], list[Path]]:
+    roots = [
+        hccl_source_root / "build_out",
+        hccl_source_root / "output",
+        hccl_source_root / "build",
+        hccl_source_root / "build_device",
+    ]
+    json_path: Optional[Path] = None
+    tar_path: Optional[Path] = None
+    run_files: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        if json_path is None:
+            matches = sorted(root.rglob(HCOMM_CUSTOM_OP_JSON))
+            if matches:
+                preferred = [
+                    item for item in matches
+                    if f"vendors/{vendor}/" in item.as_posix()
+                ]
+                json_path = (preferred or matches)[0]
+        if tar_path is None:
+            matches = sorted(root.rglob(HCOMM_CUSTOM_OP_TAR))
+            if matches:
+                preferred = [
+                    item for item in matches
+                    if f"vendors/{vendor}/" in item.as_posix()
+                ]
+                tar_path = (preferred or matches)[0]
+        run_files.extend(sorted(root.rglob("*.run")))
+    return json_path, tar_path, run_files
+
+
+def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    hccl_source_root = ResolveHcclSourceRoot(args)
+    build_sh = hccl_source_root / "build.sh"
+    if not build_sh.exists():
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(
+            "missing HCCL source build.sh for custom-op packaging\n"
+            f"checked: {build_sh}\n"
+            "Provide --hccl-source-root=<path-to-cann-hccl-source> or set "
+            "FLUME_HCCL_SOURCE_ROOT. The source tree is only needed to run "
+            "the CANN/HCCL custom-op packaging flow; Flume runtime tests do "
+            "not depend on the local refer/ clone.\n",
+            encoding="utf-8",
+        )
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
+
+    vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
+    env_updates: dict[str, str] = {}
+    if args.custom_op_build_mode == "payload":
+        env_updates["FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY"] = "ON"
+    else:
+        env_updates["FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY"] = "OFF"
+    if args.build_public_hccl_launch:
+        env_updates["FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH"] = "ON"
+
+    command = [
+        "bash",
+        str(build_sh),
+        f"--vendor={vendor}",
+        f"--ops={HCOMM_CUSTOM_OP_NAME}",
+        f"--custom_ops_path={HCOMM_CUSTOM_OP_PATH}",
+        "--pkg-type=run",
+    ]
+    result = runner.run(
+        "hcomm-custom-op-build",
+        command,
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+        env_updates=env_updates,
+    )
+
+    artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_BUILD_ARTIFACTS.txt"
+    json_path, tar_path, run_files = FindBuiltCustomOpArtifacts(
+        hccl_source_root, vendor)
+    lines = [
+        f"hccl_source_root: {hccl_source_root}",
+        f"custom_ops_path: {HCOMM_CUSTOM_OP_PATH}",
+        f"vendor: {vendor}",
+        f"mode: {args.custom_op_build_mode}",
+        f"json: {json_path if json_path else '<not-found>'}",
+        f"aicpu_tar: {tar_path if tar_path else '<not-found>'}",
+        "run_packages:",
+    ]
+    if run_files:
+        lines.extend(f"- {item}" for item in run_files)
+    else:
+        lines.append("- <not-found>")
+    artifact_note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] custom-op build artifacts -> {artifact_note}")
+
+    if result.returncode == 0 and json_path is not None and tar_path is not None:
+        preflight_args = copy.copy(args)
+        preflight_args.custom_op_json = str(json_path)
+        preflight_args.custom_op_aicpu_tar = str(tar_path)
+        preflight_args.custom_op_root = ""
+        runner.run(
+            "hcomm-custom-op-build-preflight",
+            HcommCustomOpPackageCommand(
+                preflight_args,
+                require_payload=args.custom_op_build_mode == "payload"),
+            required=True,
+            timeout_seconds=args.step_timeout_sec,
+        )
+    return runner.write_summary()
+
+
 def run_env(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -1765,6 +1889,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-hcomm-payload-kernel", action="store_true",
                         help=("Require the Stage 3B.3E payload-copy kernel "
                               "function in hcomm-custom-op-package"))
+    parser.add_argument("--hccl-source-root", default="",
+                        help=("HCCL source tree used by hcomm-custom-op-build. "
+                              "Defaults to FLUME_HCCL_SOURCE_ROOT or the local "
+                              "ignored refer/cann-src/hccl checkout."))
+    parser.add_argument("--custom-op-build-mode",
+                        choices=["payload", "canary"],
+                        default="payload",
+                        help=("Package mode for hcomm-custom-op-build. payload "
+                              "enables the internal HCOMM primitive kernel; "
+                              "canary builds the no-internal-header canary."))
+    parser.add_argument("--build-public-hccl-launch", action="store_true",
+                        help=("Also build the legacy public HCCL-launch "
+                              "notify-only entrypoint when the CANN package "
+                              "exposes hccl_launch.h."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")
@@ -1774,6 +1912,10 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "hcomm-payload-strict-positive",
         help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
+    subparsers.add_parser(
+        "hcomm-custom-op-build",
+        help=("Build the Flume HCOMM custom-op package through a HCCL source "
+              "tree custom-op packaging flow"))
     subparsers.add_parser("hcomm-custom-op-package",
                           help=("Inspect installed Flume HCOMM custom-op JSON "
                                 "and AICPU package"))
@@ -1833,6 +1975,8 @@ def main() -> int:
         return run_ascend_full_matrix(args)
     if args.command == "hcomm-payload-strict-positive":
         return run_hcomm_payload_strict_positive(args)
+    if args.command == "hcomm-custom-op-build":
+        return run_hcomm_custom_op_build(args)
     if args.command == "hcomm-custom-op-package":
         return run_hcomm_custom_op_package(args)
     raise AssertionError(args.command)

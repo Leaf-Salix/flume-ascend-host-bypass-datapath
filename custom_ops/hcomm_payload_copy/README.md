@@ -164,6 +164,12 @@ custom-op packaging flow before a target host can load
 Packaging sketch:
 
 ```bash
+cd <flume-repo>
+python3 tools/flume_tool.py \
+  --hccl-source-root <hccl-source-root> \
+  --custom-op-build-mode canary \
+  hcomm-custom-op-build
+
 cd <hccl-source-root>
 bash build.sh \
   --vendor=flume \
@@ -175,9 +181,16 @@ bash build.sh \
 
 By default this builds the no-internal-header canary package. To build the
 experimental HCOMM primitive payload package, enable the internal kernel mode
-through the environment before invoking HCCL `build.sh`:
+through the Flume helper or through the environment before invoking HCCL
+`build.sh`:
 
 ```bash
+cd <flume-repo>
+python3 tools/flume_tool.py \
+  --hccl-source-root <hccl-source-root> \
+  --custom-op-build-mode payload \
+  hcomm-custom-op-build
+
 cd <hccl-source-root>
 FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
 bash build.sh \

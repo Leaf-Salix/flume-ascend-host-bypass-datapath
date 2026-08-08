@@ -118,17 +118,38 @@ status word，应优先检查 descriptor handoff、status pointer 和 kernel
 构建 Flume custom-op package 时有两种模式：
 
 ```bash
-# 默认：只构建 no-internal-header canary kernel，用于 Stage 3B.3D
+# 推荐：由 Flume 工具调用 HCCL custom-op packaging flow，并自动做产物 preflight
+python3 tools/flume_tool.py \
+  --hccl-source-root <path-to-cann-hccl-source> \
+  --custom-op-build-mode payload \
+  hcomm-custom-op-build
+
+# 如只想构建 no-internal-header canary kernel，用于 Stage 3B.3D
+python3 tools/flume_tool.py \
+  --hccl-source-root <path-to-cann-hccl-source> \
+  --custom-op-build-mode canary \
+  hcomm-custom-op-build
+
+# 等价的底层 HCCL build.sh 形式：
 bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 
-# 实验：同时构建 HCOMM primitive payload kernel，用于 Stage 3B.3E
 FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON \
 bash build.sh --vendor=flume --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 ```
 
-第二种包需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和 device-side `ccl_kernel` 链接能力，但 direct ACL payload 路线不需要 `hccl/hccl_launch.h`。只有在目标 CANN 明确暴露 `hccl_launch.h` 且需要测试 legacy public-HCCL-launch notify-only 入口时，才额外打开 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。
+`hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
+`FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON`，生成 Stage 3B.3E 所需的
+internal HCOMM primitive payload package。该模式需要目标 CANN/HCCL 源码构建环境能提供 HCOMM primitive 头和
+device-side `ccl_kernel` 链接能力，但 direct ACL payload 路线不需要
+`hccl/hccl_launch.h`。只有在目标 CANN 明确暴露 `hccl_launch.h` 且需要测试
+legacy public-HCCL-launch notify-only 入口时，才额外传
+`--build-public-hccl-launch` 或打开
+`FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。如果 35 上还没有 HCCL
+source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`，
+这表示缺 packaging toolchain，不是 Flume runtime 或 HCOMM payload kernel
+逻辑失败。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 
