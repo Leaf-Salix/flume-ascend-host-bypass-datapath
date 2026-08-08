@@ -112,8 +112,28 @@ def strict_log_with_canary_build_mode() -> str:
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
             "payload_abi_v4,payload_semantic,payload_requires_comm_acquire,"
+            "payload_status_schema,payload_status_word_count,"
             "build_mode_internal\n"
             "status=PASS\n")
+
+
+def stale_status_schema_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=missing",
+        "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=missing",
+        "status=FAIL",
+        "reason=payload kernel package is missing the payload status schema marker",
+        "",
+    ])
+
+
+def old_pass_without_status_schema_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
+        "status=PASS",
+        "",
+    ])
 
 
 def stale_semantic_package_log() -> str:
@@ -261,6 +281,28 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "current Flume V4 ABI headers" in text
+
+        stale_status_schema_package = write(
+            tmp / "package-stale-status-schema.log",
+            stale_status_schema_package_log())
+        stale_status_schema_dir = tmp / "stale-status-schema-package"
+        stale_status_schema_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            stale_status_schema_dir, smoke, None, stale_status_schema_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "current payload status schema" in text
+
+        old_pass_without_schema_package = write(
+            tmp / "package-old-pass-without-status-schema.log",
+            old_pass_without_status_schema_package_log())
+        old_pass_without_schema_dir = tmp / "old-pass-without-status-schema"
+        old_pass_without_schema_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            old_pass_without_schema_dir, smoke, None,
+            old_pass_without_schema_package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
 
         strict_canary_mode = write(tmp / "strict-canary-mode.log",
                                    strict_log_with_canary_build_mode())

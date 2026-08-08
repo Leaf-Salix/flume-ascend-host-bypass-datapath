@@ -269,7 +269,17 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_abi_v4" in required_set and
         "payload_semantic" in required_set and
         "payload_requires_comm_acquire" in required_set and
+        "payload_status_schema" in required_set and
+        "payload_status_word_count" in required_set and
         "build_mode_internal" in required_set)
+
+
+def PackageTextLooksPayloadRequired(package_text: str) -> bool:
+    required_match = re.search(r"^required=([^\n]+)$", package_text,
+                               re.MULTILINE)
+    required = required_match.group(1).split(",") if required_match else []
+    required_set = {item.strip() for item in required if item.strip()}
+    return "payload_direct_aclrt" in required_set
 
 
 def PackageTextCanaryReady(package_text: str) -> bool:
@@ -277,7 +287,9 @@ def PackageTextCanaryReady(package_text: str) -> bool:
                                re.MULTILINE)
     required = required_match.group(1).split(",") if required_match else []
     required_set = {item.strip() for item in required if item.strip()}
-    return "status=PASS" in package_text and "canary_direct_aclrt" in required_set
+    return ("status=PASS" in package_text and
+            "canary_direct_aclrt" in required_set and
+            not PackageTextLooksPayloadRequired(package_text))
 
 
 def PackageTextReason(package_text: str) -> str:
@@ -303,6 +315,10 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package predates HCOMM comm "
                 "acquire handoff")
+    if "status schema marker" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package predates the current "
+                "payload status schema")
     if "no Flume HCOMM custom-op JSON found" in reason:
         return "install the Stage 3B.3E internal payload custom-op package"
     if "missing or incomplete" in reason:
