@@ -21,6 +21,10 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusWordCount() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT);
+  FLUME_TEST_CHECK(FlumeHcommPayloadTraceSchemaVersion() ==
+                   FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
+  FLUME_TEST_CHECK(FlumeHcommPayloadTraceWordCount() ==
+                   FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(nullptr) == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(nullptr) == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(nullptr) == 1U);

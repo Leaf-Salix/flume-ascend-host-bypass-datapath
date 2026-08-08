@@ -136,6 +136,10 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusWordCount() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT);
+  FLUME_TEST_CHECK(FlumeHcommPayloadTraceSchemaVersion() ==
+                   FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
+  FLUME_TEST_CHECK(FlumeHcommPayloadTraceWordCount() ==
+                   FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
 
   uint8_t user[64] = {};
   uint8_t local[64] = {};

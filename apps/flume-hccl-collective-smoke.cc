@@ -408,6 +408,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_echo=passed",
       "payload_primitive_state=completed",
       "payload_trace=passed",
+      "payload_trace_schema=v2",
+      "payload_trace_word_count=80",
       "payload_trace_event=kernel-exit",
       "payload_trace_order=passed",
       std::string("payload_trace_primitive_path=") +

@@ -182,6 +182,12 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC,
       "FlumeHcommPayloadStatusWordCount") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC,
+      "FlumeHcommPayloadTraceSchemaVersion") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC,
+      "FlumeHcommPayloadTraceWordCount") == 0);
 
   flume_hcomm_payload_copy_desc_v1 payload = {};
   flume_hcomm_payload_copy_desc_init(&payload);

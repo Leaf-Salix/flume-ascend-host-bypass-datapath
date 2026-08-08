@@ -1623,6 +1623,8 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_echo=passed",
     "payload_primitive_state=completed",
     "payload_trace=passed",
+    "payload_trace_schema=v2",
+    "payload_trace_word_count=80",
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
     "payload_trace_primitive_path=",
@@ -2781,6 +2783,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
     strict_trace = marker_value(strict, "payload_trace")
+    strict_trace_schema = marker_value(strict, "payload_trace_schema")
+    strict_trace_word_count = marker_value(strict, "payload_trace_word_count")
     strict_trace_event = marker_value(strict, "payload_trace_event")
     strict_trace_order = marker_value(strict, "payload_trace_order")
     strict_rank0_trace_path = marker_value_from_line(
@@ -3009,7 +3013,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
-            f"| payload primitive trace | {strict_trace} | event={strict_trace_event}, order={strict_trace_order}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, result={strict_trace_result}; trace must end at `kernel-exit` with expected HCOMM primitive order/path and success |",
+            f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
@@ -3268,6 +3272,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_status_schema=v2,payload_status_word_count=8,"
             "payload_echo=passed,payload_role=send/recv,"
             "payload_primitive_state=completed,payload_trace=passed,"
+            "payload_trace_schema=v2,payload_trace_word_count=80,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*,"
             "payload_trace_result=success,payload_desc_batch_tag=,"
@@ -3695,6 +3700,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
         "markers, payload_echo=passed, payload_primitive_state=completed, "
         "payload_trace=passed, payload_trace_event=kernel-exit, "
+        "payload_trace_schema=v2, payload_trace_word_count=80, "
         "payload_trace_order=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-*, "
         "payload_trace_result=success, "
