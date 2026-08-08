@@ -184,8 +184,9 @@ def main() -> int:
         installed_tar = installed_json.parents[1] / "kernel" / AICPU_TAR
         installed_json.parent.mkdir(parents=True)
         installed_tar.parent.mkdir(parents=True)
-        installed_json.write_text("{}", encoding="utf-8")
-        installed_tar.write_bytes(b"placeholder")
+        installed_json.write_text(v2_json.read_text(encoding="utf-8"),
+                                  encoding="utf-8")
+        installed_tar.write_bytes(v2_tar.read_bytes())
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(installed_json)))
         assert ok, message
@@ -198,6 +199,25 @@ def main() -> int:
         next_steps_text = next_steps.read_text(encoding="utf-8")
         assert str(installed_json) in next_steps_text
         assert "hcomm-payload-strict-positive" in next_steps_text
+        inferred_tar_preflight = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--custom-op-json={installed_json}",
+                "--require-hcomm-payload-kernel",
+                "hcomm-custom-op-package",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if inferred_tar_preflight.returncode != 0:
+            print(inferred_tar_preflight.stdout)
+            print(inferred_tar_preflight.stderr, file=sys.stderr)
+            raise AssertionError("installed JSON did not infer matching AICPU tar")
+        assert f"aicpu_tar_path={installed_tar}" in inferred_tar_preflight.stdout
+        assert "status=PASS" in inferred_tar_preflight.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v2_json)))

@@ -93,17 +93,30 @@ def AscendHomeCandidates(extra_roots: Optional[Iterable[str]] = None) -> list[Pa
     return unique
 
 
+def RuntimeAicpuTarForJson(json_path: Path) -> Optional[Path]:
+    parts = json_path.parts
+    if len(parts) < 3:
+        return None
+    if parts[-3:] != ("aicpu", "config", HCOMM_CUSTOM_OP_JSON):
+        return None
+    return Path(*parts[:-2]) / "kernel" / HCOMM_CUSTOM_OP_TAR
+
+
 def HcommCustomOpPackageCandidates(
         vendors: list[str], extra_roots: Optional[Iterable[str]] = None,
         explicit_json: str = "", explicit_tar: str = ""
 ) -> list[tuple[Path, str, Optional[Path], Optional[Path]]]:
     candidates: list[tuple[Path, str, Optional[Path], Optional[Path]]] = []
     if explicit_json or explicit_tar:
+        json_path = Path(explicit_json) if explicit_json else None
+        tar_path = Path(explicit_tar) if explicit_tar else None
+        if tar_path is None and json_path is not None:
+            tar_path = RuntimeAicpuTarForJson(json_path)
         candidates.append((
             Path("<explicit>"),
             "explicit",
-            Path(explicit_json) if explicit_json else None,
-            Path(explicit_tar) if explicit_tar else None,
+            json_path,
+            tar_path,
         ))
     for root in AscendHomeCandidates(extra_roots):
         for vendor in vendors:
@@ -227,15 +240,6 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
         command.append("--require-hcomm-payload-kernel")
     command.append("hcomm-custom-op-package")
     return command
-
-
-def RuntimeAicpuTarForJson(json_path: Path) -> Optional[Path]:
-    parts = json_path.parts
-    if len(parts) < 3:
-        return None
-    if parts[-3:] != ("aicpu", "config", HCOMM_CUSTOM_OP_JSON):
-        return None
-    return Path(*parts[:-2]) / "kernel" / HCOMM_CUSTOM_OP_TAR
 
 
 def ValidateRuntimeCustomOpJson(args: argparse.Namespace) -> tuple[bool, str]:
