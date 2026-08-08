@@ -1769,9 +1769,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "requires a payload-ready Flume custom-op package, configures Flume "
         "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline, and "
         "then requires real HCOMM payload copy. Success requires both ranks "
-        "to pass with stage3b3e_payload_copy=passed, payload_kernel_status="
-        "success, payload_status_word=0, payload_verify=passed, and "
-        "fallback=none.\n",
+        "to pass with stage3b3e_payload_copy=passed, direct ACL payload launch/"
+        "sync passed, payload_kernel_status=success, payload_status_word=0, "
+        "payload_kernel_hcomm_ret=0, payload_verify=passed, and fallback=none.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
