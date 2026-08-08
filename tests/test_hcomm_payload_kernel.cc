@@ -224,6 +224,24 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 77U);
 
   Reset();
+  local_copy_ret = 78;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
+  send_desc.thread_notify_mode = FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  send_desc.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
+  FLUME_TEST_CHECK(status[1] == 78U);
+  const int thread_notify_failure_calls[] = {
+      kAcquireComm, kThreadWait, kBatchStart, kLocalCopy,
+      kBatchEnd, kThreadRecord, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(thread_notify_failure_calls, 7));
+
+  Reset();
   read_ret = 88;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;

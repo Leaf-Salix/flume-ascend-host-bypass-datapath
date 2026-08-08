@@ -190,10 +190,10 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   } else {
     StorePayloadStatus(desc, result);
   }
-  if (use_thread_notify && result == kFlumePayloadSuccess) {
+  if (use_thread_notify) {
     ret = HcommThreadNotifyRecordOnThread(
         thread, static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
-    if (ret != 0) {
+    if (ret != 0 && result == kFlumePayloadSuccess) {
       StorePayloadPrimitiveRet(desc, ret);
       StorePayloadStatus(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_THREAD_NOTIFY_RECORD_FAILED);
