@@ -153,6 +153,17 @@ def strict_log_with_cross_line_false_positive() -> str:
     ])
 
 
+def strict_write_path_log(include_verify: bool) -> str:
+    text = strict_log(include_verify)
+    text = text.replace("payload_transfer_mode=read",
+                        "payload_transfer_mode=write")
+    text = text.replace("payload_trace_primitive_path=send-local-copy",
+                        "payload_trace_primitive_path=send-write")
+    text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
+                        "payload_trace_primitive_path=recv-write-local-copy")
+    return text
+
+
 def strict_log_with_nonzero_hcomm_ret() -> str:
     return strict_log(True).replace(
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
@@ -682,6 +693,7 @@ def main() -> int:
                     required=required)
 
         candidate_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": True,
             "auto_run_hcomm_payload_channel_fence_diagnostic": True,
             "auto_run_hcomm_payload_direct_output_diagnostic": True,
             "auto_run_hcomm_payload_nobatch_diagnostic": True,
@@ -718,6 +730,81 @@ def main() -> int:
                 "channel-fence-candidate | 0 | yes | passed"
                 in candidate_matrix_text)
         assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
+
+        strict_write_channel_handle = strict_write_path_log(True).replace(
+            "payload_comm_acquire=default payload_comm_binding=comm-name",
+            "payload_comm_acquire=skipped payload_comm_binding=channel-handle")
+        strict_write_channel_handle_no_batch_fence = (
+            strict_log_with_channel_fence(
+                strict_write_channel_handle.replace(
+                    "payload_batch_mode=on", "payload_batch_mode=off")))
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_channel_handle_no_batch_fence)[0]
+
+        class FakeWriteCandidateRunner:
+            def __init__(self, run_dir: Path) -> None:
+                self.run_dir = run_dir
+                self.run_dir.mkdir()
+                self.calls: list[tuple[str, list[str]]] = []
+
+            def run(self, name, command, *, required=False,
+                    timeout_seconds=0, env_updates=None):
+                del timeout_seconds, env_updates
+                self.calls.append((name, list(command)))
+                log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
+                if name == ("hcomm-payload-write-path-channel-handle-"
+                             "nobatch-channel-fence-candidate"):
+                    text = strict_write_channel_handle_no_batch_fence
+                    returncode = 0
+                else:
+                    text = strict_log(False).replace(
+                        "payload_failure_step=none",
+                        "payload_failure_step=remote-read")
+                    returncode = 1
+                log_path.write_text(text, encoding="utf-8")
+                return flume_tool.StepResult(
+                    name=name,
+                    command=list(command),
+                    returncode=returncode,
+                    seconds=0.0,
+                    log_path=log_path,
+                    required=required)
+
+        fake_write_runner = FakeWriteCandidateRunner(tmp / "write-sequence")
+        selected_write_candidate = (
+            flume_tool.RunHcommPayloadWritePathFallbackCandidates(
+                fake_write_runner,
+                ["flume-hccl-collective-smoke",
+                 "--hcomm-require-payload-copy",
+                 "--hcomm-payload-recv-direct-output"],
+                None,
+                10,
+                channel_log,
+                candidate_args))
+        assert selected_write_candidate is not None
+        assert selected_write_candidate.name.endswith(
+            "hcomm-payload-write-path-channel-handle-nobatch-"
+            "channel-fence-candidate.log")
+        assert fake_write_runner.calls[-1][0] == (
+            "hcomm-payload-write-path-channel-handle-nobatch-"
+            "channel-fence-candidate")
+        final_write_command = fake_write_runner.calls[-1][1]
+        assert "--hcomm-payload-write-path" in final_write_command
+        assert "--hcomm-payload-comm-binding=channel-handle" in final_write_command
+        assert "--hcomm-payload-disable-batch" in final_write_command
+        assert "--hcomm-payload-channel-fence" in final_write_command
+        assert "--hcomm-payload-recv-direct-output" not in final_write_command
+        write_candidate_matrix = (
+            fake_write_runner.run_dir /
+            "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md")
+        assert write_candidate_matrix.exists()
+        write_candidate_matrix_text = write_candidate_matrix.read_text(
+            encoding="utf-8")
+        assert "candidates_run: `5`" in write_candidate_matrix_text
+        assert ("hcomm-payload-write-path-channel-handle-nobatch-"
+                "channel-fence-candidate | 0 | yes | passed"
+                in write_candidate_matrix_text)
+        assert "| write | recv-write-local-copy |" in write_candidate_matrix_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",

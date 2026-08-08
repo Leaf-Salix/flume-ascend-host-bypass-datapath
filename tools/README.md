@@ -131,6 +131,23 @@ channel-handle 候选失败后还会追加
 ChannelHandle 绑定和 recv direct-output 的交叉组合；完整通过时同样可以作为
 strict-positive evidence。
 
+如果默认 read-path 卡在 `payload_failure_step=remote-read`，可以追加
+`--hcomm-payload-write-path` 直接测试 send 端
+`HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)`。也可以让
+focused gate 自动跑 write-path 候选矩阵：
+`--auto-run-hcomm-payload-write-path-candidate`。该矩阵先跑 plain
+write-path；如果同时启用了 channel-handle、channel-fence 或 no-batch
+自动诊断，还会继续跑对应交叉组合：
+`hcomm-payload-write-path-channel-handle-candidate`、
+`hcomm-payload-write-path-channel-handle-channel-fence-candidate`、
+`hcomm-payload-write-path-channel-handle-nobatch-candidate` 和
+`hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate`。
+write-path 矩阵会剥离 `--hcomm-payload-recv-direct-output`，因为 direct-output
+只适用于 read-path。每次自动运行都会生成
+`HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`；只有同时满足
+`payload_transfer_mode=write`、完整 trace、checksum match 和 `fallback=none`
+的候选才会被选为真正 HCOMM payload-copy evidence。
+
 若默认路径卡在 recv 端 `payload_failure_step=output-copy`，可以追加诊断开关：
 
 ```bash
@@ -569,6 +586,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
   --auto-run-hcomm-payload-channel-handle-candidate \
+  --auto-run-hcomm-payload-write-path-candidate \
+  --auto-run-hcomm-payload-channel-fence-diagnostic \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --auto-run-hcomm-payload-direct-output-diagnostic \
@@ -597,6 +616,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
   --auto-run-hcomm-payload-channel-handle-candidate \
+  --auto-run-hcomm-payload-write-path-candidate \
+  --auto-run-hcomm-payload-channel-fence-diagnostic \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --auto-run-hcomm-payload-direct-output-diagnostic \

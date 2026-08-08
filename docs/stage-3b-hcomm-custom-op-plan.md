@@ -387,6 +387,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
   --auto-run-hcomm-payload-channel-handle-candidate \
+  --auto-run-hcomm-payload-write-path-candidate \
+  --auto-run-hcomm-payload-channel-fence-diagnostic \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --collect-cann-compat-label host-b-cann \
@@ -405,6 +407,19 @@ problems, and primitive-copy problems. If a no-batch, tagged-batch, or
 direct-output rerun produces the full strict-positive marker set with checksum
 match and `fallback=none`, the tools accept that log as real HCOMM payload-copy
 evidence and record the variant explicitly in the decision tree.
+
+If the default read-path fails around `HcommReadOnThread`, enable
+`--auto-run-hcomm-payload-write-path-candidate`. That path tries the send-side
+`HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)` transfer mode
+instead of recv-side remote read. The auto runner writes
+`HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`; with the channel-handle,
+channel-fence, and no-batch auto flags enabled, the matrix covers plain write,
+write + channel-handle, write + channel-handle + channel-fence, write +
+channel-handle + no-batch, and write + channel-handle + no-batch +
+channel-fence. It strips recv direct-output from write-path commands because
+direct-output is read-path-only. A selected write-path candidate must still show
+`payload_transfer_mode=write`, full rank trace evidence, matching checksums,
+and `fallback=none`.
 
 If the recv side appears to need stronger read completion semantics, pass
 `--hcomm-payload-channel-fence` or enable
@@ -685,6 +700,8 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
   --auto-run-hcomm-payload-channel-handle-candidate \
+  --auto-run-hcomm-payload-write-path-candidate \
+  --auto-run-hcomm-payload-channel-fence-diagnostic \
   --auto-run-hcomm-payload-nobatch-diagnostic \
   --auto-run-hcomm-payload-tagged-diagnostic \
   --collect-cann-compat-label host-b-cann \
@@ -694,9 +711,10 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
 The command records both `hcomm-payload-strict-evidence` and
 `hcomm-storage-strict-evidence`; the second gate requires strict-positive
 payload copy plus `storage_hbm=hcomm-payload-staging`. If the storage-over-HCOMM
-gate fails after package preflight, the optional no-batch and tagged-batch
-reruns collect the same A/B evidence as the focused payload gate, but the final
-storage gate still requires the HCOMM payload path and
+gate fails after package preflight, the optional write-path matrix, no-batch,
+tagged-batch, and channel-fence reruns collect the same A/B evidence as the
+focused payload gate, but the final storage gate still requires the HCOMM
+payload path, complete trace/checksum evidence, `fallback=none`, and
 `storage_hbm=hcomm-payload-staging`; batch-enabled mode remains a separate
 compatibility signal when a no-batch path is the first one to pass.
 

@@ -1709,22 +1709,39 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank1_binding = MarkerValueFromLine(rank_lines[1], "payload_comm_binding")
     rank0_batch_mode = MarkerValueFromLine(rank_lines[0], "payload_batch_mode")
     rank1_batch_mode = MarkerValueFromLine(rank_lines[1], "payload_batch_mode")
+    rank0_transfer_mode = MarkerValueFromLine(rank_lines[0],
+                                              "payload_transfer_mode")
+    rank1_transfer_mode = MarkerValueFromLine(rank_lines[1],
+                                              "payload_transfer_mode")
+    rank0_trace_path = MarkerValueFromLine(rank_lines[0],
+                                           "payload_trace_primitive_path")
+    rank1_trace_path = MarkerValueFromLine(rank_lines[1],
+                                           "payload_trace_primitive_path")
     binding_ok = (
         rank0_binding == rank1_binding and
         rank0_binding in ("comm-name", "channel-handle"))
     batch_mode_ok = (
         rank0_batch_mode == rank1_batch_mode and
         rank0_batch_mode in ("on", "off"))
+    transfer_ok = (
+        rank0_transfer_mode == rank1_transfer_mode and
+        rank0_transfer_mode in ("read", "write"))
+    if rank0_transfer_mode == "write":
+        rank0_trace_ok = rank0_trace_path == "send-write"
+        rank1_trace_ok = rank1_trace_path == "recv-write-local-copy"
+    else:
+        rank0_trace_ok = rank0_trace_path == "send-local-copy"
+        rank1_trace_ok = rank1_trace_path.startswith("recv-read")
     rank0_ok = bool(rank_lines[0]) and any(
         all(marker in rank_lines[0] for marker in markers)
         for markers in accepted_marker_sets) and (
             "payload_role=send" in rank_lines[0] and
-            "payload_trace_primitive_path=send-local-copy" in rank_lines[0])
+            rank0_trace_ok)
     rank1_ok = (bool(rank_lines[1]) and any(
         all(marker in rank_lines[1] for marker in markers)
         for markers in accepted_marker_sets) and
                 "payload_role=recv" in rank_lines[1] and
-                "payload_trace_primitive_path=recv-read" in rank_lines[1] and
+                rank1_trace_ok and
                 "payload_verify=passed" in rank_lines[1])
     source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
                              rank_lines[0])
@@ -1737,6 +1754,7 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
+            transfer_ok and
             checksum_ok,
             rank0_ok, rank1_ok)
 
@@ -2128,6 +2146,25 @@ def PayloadCommandWithoutWritePath(command: list[str]) -> list[str]:
     ]
 
 
+def BuildWritePathCandidateCommand(base_command: list[str],
+                                   *,
+                                   channel_handle: bool = False,
+                                   channel_fence: bool = False,
+                                   no_batch: bool = False) -> list[str]:
+    command = PayloadCommandWithoutWritePath(base_command)
+    if channel_handle:
+        command = PayloadCommandWithoutCommBinding(command)
+    if "--hcomm-payload-write-path" not in command:
+        command.append("--hcomm-payload-write-path")
+    if channel_fence and "--hcomm-payload-channel-fence" not in command:
+        command.append("--hcomm-payload-channel-fence")
+    if no_batch and "--hcomm-payload-disable-batch" not in command:
+        command.append("--hcomm-payload-disable-batch")
+    if channel_handle:
+        command.append("--hcomm-payload-comm-binding=channel-handle")
+    return command
+
+
 def WriteHcommPayloadWritePathCandidate(
         run_dir: Path,
         default_log: Optional[Path],
@@ -2213,11 +2250,20 @@ def RunHcommPayloadWritePathCandidate(
         base_command: list[str],
         env_updates: Optional[dict[str, str]],
         timeout_seconds: int,
-        default_log: Optional[Path]) -> Optional[Path]:
-    command = PayloadCommandWithoutWritePath(base_command)
-    command.append("--hcomm-payload-write-path")
+        default_log: Optional[Path],
+        *,
+        channel_handle: bool = False,
+        channel_fence: bool = False,
+        no_batch: bool = False,
+        step_name: str = "hcomm-payload-write-path-candidate") -> StepResult:
+    command = BuildWritePathCandidateCommand(
+        base_command,
+        channel_handle=channel_handle,
+        channel_fence=channel_fence,
+        no_batch=no_batch,
+    )
     result = runner.run(
-        "hcomm-payload-write-path-candidate",
+        step_name,
         command,
         required=False,
         timeout_seconds=timeout_seconds,
@@ -2227,11 +2273,183 @@ def RunHcommPayloadWritePathCandidate(
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadWritePathCandidate(
         runner.run_dir, default_log, result.log_path)
-    try:
-        text = result.log_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        text = ""
-    return result.log_path if StrictPayloadRankEvidencePassed(text)[0] else None
+    return result
+
+
+def WriteHcommPayloadWritePathCandidateMatrix(
+        run_dir: Path,
+        default_log: Optional[Path],
+        candidate_results: list[StepResult],
+        selected_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md"
+    rows = []
+    for result in candidate_results:
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError as exc:
+            text = f"failed to read log: {exc}"
+        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+        rows.append({
+            "step": result.name,
+            "returncode": str(result.returncode),
+            "selected": "yes" if selected_log == result.log_path else "no",
+            "evidence": "passed" if passed else "not-passed",
+            "rank0": "passed" if rank0_ok else "missing",
+            "rank1": "passed" if rank1_ok else "missing",
+            "failure": _CandidateMarker(text, "payload_failure_step"),
+            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "binding": _CandidateMarker(text, "payload_comm_binding"),
+            "batch": _CandidateMarker(text, "payload_batch_mode"),
+            "completion": _CandidateMarker(text, "payload_completion_mode"),
+            "transfer": _CandidateMarker(text, "payload_transfer_mode"),
+            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+            "fallback": _CandidateMarker(text, "fallback"),
+            "log": result.log_path.name,
+        })
+
+    if selected_log is not None:
+        decision = (
+            "a write-path candidate produced complete strict-positive HCOMM "
+            "payload evidence")
+    elif candidate_results:
+        decision = (
+            "no write-path candidate produced complete strict-positive "
+            "evidence; inspect the first non-missing failure step below")
+    else:
+        decision = "no write-path candidates were executed"
+
+    lines = [
+        "# HCOMM Payload Write-Path Candidate Matrix",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- candidates_run: `{len(candidate_results)}`",
+        "",
+        f"decision: {decision}",
+        "",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['step']} | {row['returncode']} | {row['selected']} | "
+            f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | {row['binding']} | "
+            f"{row['batch']} | {row['completion']} | {row['transfer']} | "
+            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+    lines.extend([
+        "",
+        "A write-path candidate can satisfy the strict-positive gate only "
+        "when both ranks show `payload_transfer_mode=write`, complete payload "
+        "trace evidence, checksum match, and `fallback=none`. This table is a "
+        "triage aid; it does not weaken the gate.",
+    ])
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload write-path candidate matrix -> {note}")
+    return note
+
+
+def RunHcommPayloadWritePathFallbackCandidates(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path],
+        args: argparse.Namespace) -> Optional[Path]:
+    candidate_results: list[StepResult] = []
+    selected_log: Optional[Path] = None
+
+    def remember(result: StepResult) -> Optional[Path]:
+        nonlocal selected_log
+        candidate_results.append(result)
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError:
+            text = ""
+        transfer_mode = MarkerValue(text, "payload_transfer_mode")
+        if StrictPayloadRankEvidencePassed(text)[0] and transfer_mode == "write":
+            selected_log = result.log_path
+            return result.log_path
+        return None
+
+    write_result = RunHcommPayloadWritePathCandidate(
+        runner, base_command, env_updates, timeout_seconds, default_log)
+    passed_log = remember(write_result)
+    if passed_log is not None:
+        WriteHcommPayloadWritePathCandidateMatrix(
+            runner.run_dir, default_log, candidate_results, selected_log)
+        return passed_log
+
+    can_try_channel_handle = (
+        args.auto_run_hcomm_payload_channel_handle_candidate and
+        not CommandUsesChannelHandleBinding(base_command))
+    can_try_channel_fence = (
+        args.auto_run_hcomm_payload_channel_fence_diagnostic and
+        not CommandUsesChannelFence(base_command))
+    can_try_no_batch = (
+        args.auto_run_hcomm_payload_nobatch_diagnostic and
+        not CommandUsesNoBatch(base_command))
+
+    if can_try_channel_handle:
+        channel_result = RunHcommPayloadWritePathCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            channel_handle=True,
+            step_name="hcomm-payload-write-path-channel-handle-candidate")
+        passed_log = remember(channel_result)
+        if passed_log is not None:
+            WriteHcommPayloadWritePathCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+        if can_try_channel_fence:
+            channel_fence_result = RunHcommPayloadWritePathCandidate(
+                runner, base_command, env_updates, timeout_seconds, default_log,
+                channel_handle=True,
+                channel_fence=True,
+                step_name=("hcomm-payload-write-path-channel-handle-"
+                           "channel-fence-candidate"))
+            passed_log = remember(channel_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadWritePathCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
+
+        if can_try_no_batch:
+            channel_no_batch_result = RunHcommPayloadWritePathCandidate(
+                runner, base_command, env_updates, timeout_seconds, default_log,
+                channel_handle=True,
+                no_batch=True,
+                step_name=("hcomm-payload-write-path-channel-handle-"
+                           "nobatch-candidate"))
+            passed_log = remember(channel_no_batch_result)
+            if passed_log is not None:
+                WriteHcommPayloadWritePathCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
+
+            if can_try_channel_fence:
+                channel_no_batch_fence_result = RunHcommPayloadWritePathCandidate(
+                    runner, base_command, env_updates, timeout_seconds,
+                    default_log,
+                    channel_handle=True,
+                    no_batch=True,
+                    channel_fence=True,
+                    step_name=("hcomm-payload-write-path-channel-handle-"
+                               "nobatch-channel-fence-candidate"))
+                passed_log = remember(channel_no_batch_fence_result)
+                if passed_log is not None:
+                    WriteHcommPayloadWritePathCandidateMatrix(
+                        runner.run_dir, default_log, candidate_results,
+                        selected_log)
+                    return passed_log
+
+    WriteHcommPayloadWritePathCandidateMatrix(
+        runner.run_dir, default_log, candidate_results, selected_log)
+    return None
 
 
 def WriteHcommPayloadChannelHandleCandidate(
@@ -3596,6 +3814,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 rank for rank in (0, 1)
                 if rank_status[rank]["primitive_state"] == "pending")
             next_action = rank_status[bad_rank]["action"]
+        elif (strict_transfer_mode != "write" and
+              any(rank_status[rank]["failure_step"] == "remote-read"
+                  for rank in (0, 1))):
+            next_action = (
+                "rerun with --auto-run-hcomm-payload-write-path-candidate "
+                "or directly add --hcomm-payload-write-path to test the "
+                "HcommWriteOnThread send-side transfer path")
         elif any(rank_status[rank]["failure_step"] == "output-copy"
                  for rank in (0, 1)):
             bad_rank = next(
@@ -3686,6 +3911,10 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-channel-fence-diagnostic",
     "hcomm-payload-tagged-diagnostic",
     "hcomm-payload-write-path-candidate",
+    "hcomm-payload-write-path-channel-handle-candidate",
+    "hcomm-payload-write-path-channel-handle-channel-fence-candidate",
+    "hcomm-payload-write-path-channel-handle-nobatch-candidate",
+    "hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate",
     "hcomm-payload-channel-handle-candidate",
     "hcomm-payload-channel-handle-channel-fence-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
@@ -4013,9 +4242,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             if (args.auto_run_hcomm_payload_write_path_candidate and
                     package_payload_ready and
                     not CommandUsesWritePath(strict_command)):
-                write_candidate_log = RunHcommPayloadWritePathCandidate(
+                write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
                     runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path)
+                    args.hccl_smoke_timeout_sec, strict_result.log_path, args)
                 if write_candidate_log is not None:
                     strict_tree_log = write_candidate_log
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
@@ -4077,8 +4306,13 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "are also enabled and plain channel-handle still fails, the matrix "
         "tries a channel-handle + direct-output candidate. If "
         "--auto-run-hcomm-payload-write-path-candidate is enabled, a failed "
-        "read-path strict run triggers a HcommWriteOnThread candidate that can "
-        "also satisfy the gate with complete evidence. Before "
+        "read-path strict run triggers a HcommWriteOnThread candidate matrix: "
+        "plain write path, optional channel-handle, optional channel-fence, "
+        "and optional no-batch cross-products. The write-path matrix strips "
+        "recv direct-output because direct-output only applies to the read "
+        "path. A write-path candidate can satisfy the gate only with "
+        "payload_transfer_mode=write, complete trace/checksum evidence, and "
+        "fallback=none. Before "
         "the smoke, it runs hcomm-custom-op-package-preflight to record "
         "whether the installed package is canary-ready or payload-ready. The "
         "matrix also runs Stage 3A storage_hbm=hccl-p2p-staging: rank0 reads "
@@ -4209,9 +4443,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         strict_tree_log = candidate_log
                 if (args.auto_run_hcomm_payload_write_path_candidate and
                         not CommandUsesWritePath(spec.command)):
-                    write_candidate_log = RunHcommPayloadWritePathCandidate(
+                    write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
                         runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
+                        result.log_path, args)
                     if write_candidate_log is not None:
                         strict_tree_log = write_candidate_log
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
@@ -4282,7 +4516,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "evidence from that candidate can make the required evidence gate "
         "pass. If --auto-run-hcomm-payload-write-path-candidate is enabled, "
         "a failed read-path run may be followed by a HcommWriteOnThread "
-        "candidate that can also satisfy the gate with complete evidence. "
+        "candidate matrix. The matrix includes the plain write path plus "
+        "enabled channel-handle/channel-fence/no-batch cross-products, strips "
+        "recv direct-output because it is read-path-only, and can satisfy the "
+        "gate only with payload_transfer_mode=write, full trace/checksum "
+        "evidence, and fallback=none. "
         "If no-batch auto diagnostics are enabled and plain "
         "channel-handle still fails, the gate tries a channel-handle + "
         "no-batch candidate. If direct-output auto diagnostics are also "
@@ -4412,9 +4650,9 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         strict_tree_log = candidate_log
                 if (args.auto_run_hcomm_payload_write_path_candidate and
                         not CommandUsesWritePath(spec.command)):
-                    write_candidate_log = RunHcommPayloadWritePathCandidate(
+                    write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
                         runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
+                        result.log_path, args)
                     if write_candidate_log is not None:
                         strict_tree_log = write_candidate_log
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
@@ -4471,7 +4709,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "comm-name run may be followed by an explicit channel-handle storage "
         "candidate. With --auto-run-hcomm-payload-write-path-candidate, a "
         "failed read-path storage run may be followed by a HcommWriteOnThread "
-        "storage candidate. If no-batch auto diagnostics are enabled and plain "
+        "storage candidate matrix. The write-path matrix includes the plain "
+        "write path plus enabled channel-handle/channel-fence/no-batch "
+        "cross-products, strips recv direct-output because it is read-path-only, "
+        "and still requires payload_transfer_mode=write, full trace/checksum "
+        "evidence, fallback=none, and storage verification. If no-batch auto "
+        "diagnostics are enabled and plain "
         "channel-handle still fails, it tries a channel-handle + no-batch "
         "storage candidate. If direct-output auto diagnostics are also enabled, "
         "it can additionally try channel-handle + direct-output and "
@@ -5849,10 +6092,13 @@ def parse_args() -> argparse.Namespace:
                         action="store_true",
                         help=("When a payload-ready package is present and "
                               "the strict payload gate fails, automatically "
-                              "rerun the same smoke with "
-                              "--hcomm-payload-write-path and write "
-                              "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE.md. A "
-                              "complete write-path HCOMM primitive copy can "
+                              "rerun a write-path candidate matrix. The "
+                              "matrix starts with --hcomm-payload-write-path "
+                              "and, when the matching auto flags are enabled, "
+                              "adds channel-handle, channel-fence, and "
+                              "no-batch cross-products. It writes "
+                              "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md. "
+                              "A complete write-path HCOMM primitive copy can "
                               "satisfy the strict-positive evidence gate."))
     parser.add_argument("--auto-run-hcomm-payload-no-comm-acquire-diagnostic",
                         action="store_true",
