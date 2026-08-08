@@ -108,6 +108,11 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-direct-output --run-
 ```
 
 该模式让 recv kernel 直接执行 `HcommReadOnThread(remote_hccl_buffer -> output HBM)`，贴近公开 custom P2P 示例，用于判断失败是否来自第二段 `HcommLocalCopyOnThread(local_hccl_buffer -> output)`。默认 strict-positive 仍使用 local-buffer staging；日志中的 `payload_recv_path=local-buffer|direct-output` 会进入 decision tree 的 host descriptor fingerprint。
+如果希望 strict-positive 失败时自动采集这个 A/B 证据，可以追加
+`--auto-run-hcomm-payload-direct-output-diagnostic`。该自动诊断会额外生成
+`HCOMM_PAYLOAD_DIRECT_OUTPUT_DIAGNOSTIC.md`，但不会把失败的默认
+strict-positive 结果改成通过；若 direct-output 诊断通过，应再显式带
+`--hcomm-payload-recv-direct-output` 跑一次主 strict-positive 作为最终证据。
 
 已有日志也可以离线复核 strict-positive 门禁：
 

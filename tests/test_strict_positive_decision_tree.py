@@ -600,6 +600,28 @@ def main() -> int:
         assert "tag=custom" in text
         assert "tagged HCOMM payload copy passed; rerun strict-positive" in text
 
+        direct_output_dir = tmp / "direct-output"
+        direct_output_dir.mkdir()
+        output_copy_failure = write(
+            tmp / "strict-output-copy-failure-for-direct-output.log",
+            strict_log_with_rank1_output_copy_failure())
+        direct_output_log = write(
+            direct_output_dir / "04-hcomm-payload-direct-output-diagnostic.log",
+            strict_log(True).replace("payload_recv_path=local-buffer",
+                                     "payload_recv_path=direct-output"))
+        direct_output_note = (
+            flume_tool.WriteHcommPayloadDirectOutputDiagnostic(
+                direct_output_dir, output_copy_failure, direct_output_log))
+        direct_output_text = direct_output_note.read_text(encoding="utf-8")
+        assert "direct_payload_copy_and_verify: `passed`" in direct_output_text
+        assert "default local-buffer path is likely failing" in direct_output_text
+        tree = flume_tool.WriteMatrixDecisionTree(
+            direct_output_dir, smoke, output_copy_failure, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM payload direct-output diagnostic | passed |" in text
+        assert "recv_path=direct-output" in text
+        assert "direct-output HCOMM payload copy passed; rerun" in text
+
         strict_no_verify = write(tmp / "strict-no-verify.log",
                                  strict_log(False))
         no_verify_dir = tmp / "no-verify"
@@ -752,7 +774,7 @@ def main() -> int:
         assert "| rank1 kernel status | output-copy-failed |" in text
         assert "| rank1 kernel failure step | output-copy |" in text
         assert "| rank1 kernel HCOMM ret | 91 |" in text
-        assert "inspect rank 1 local HCCL Buffer to user HBM output copy" in text
+        assert "--hcomm-payload-recv-direct-output" in text
 
         strict_rank1_pending_remote_read = write(
             tmp / "strict-rank1-pending-remote-read.log",

@@ -1913,6 +1913,137 @@ def WriteHcommPayloadTaggedDiagnostic(
     return note
 
 
+def WriteHcommPayloadDirectOutputDiagnostic(
+        run_dir: Path,
+        default_log: Optional[Path],
+        direct_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_DIRECT_OUTPUT_DIAGNOSTIC.md"
+    try:
+        default_text = (default_log.read_text(encoding="utf-8",
+                                              errors="replace")
+                        if default_log is not None else "")
+    except OSError as exc:
+        default_text = f"failed to read default log: {exc}"
+    try:
+        direct_text = (direct_log.read_text(encoding="utf-8",
+                                            errors="replace")
+                       if direct_log is not None else "")
+    except OSError as exc:
+        direct_text = f"failed to read direct-output log: {exc}"
+
+    default_rank_lines = ExtractStrictPayloadRankLines(default_text)
+    direct_rank_lines = ExtractStrictPayloadRankLines(direct_text)
+    direct_ok, direct_rank0_ok, direct_rank1_ok = (
+        StrictPayloadRankEvidencePassed(direct_text))
+    default_recv_path = MarkerValue(default_text, "payload_recv_path")
+    direct_recv_path = MarkerValue(direct_text, "payload_recv_path")
+    direct_path_ok = direct_recv_path == "direct-output"
+    default_failure_step = MarkerValue(default_text, "payload_failure_step")
+    direct_rank0_failure_step = MarkerValueFromLine(
+        direct_rank_lines[0], "payload_failure_step")
+    direct_rank1_failure_step = MarkerValueFromLine(
+        direct_rank_lines[1], "payload_failure_step")
+    direct_failure_step = (
+        direct_rank1_failure_step
+        if direct_rank1_failure_step not in ("missing", "none") else
+        direct_rank0_failure_step)
+    direct_kernel = MarkerValue(direct_text, "payload_kernel_status")
+    direct_hcomm_ret = MarkerValue(direct_text, "payload_kernel_hcomm_ret")
+    direct_source = MarkerValueFromLine(
+        direct_rank_lines[0], "payload_source_checksum")
+    direct_payload = MarkerValueFromLine(
+        direct_rank_lines[1], "payload_checksum")
+    direct_expected = MarkerValueFromLine(
+        direct_rank_lines[1], "payload_expected_checksum")
+    direct_checksum_match = (
+        direct_source != "missing" and direct_source == direct_payload and
+        direct_payload == direct_expected)
+
+    if direct_ok and direct_path_ok:
+        decision = (
+            "direct-output HCOMM payload copy and checksum verification "
+            "passed; the default local-buffer path is likely failing in the "
+            "recv output local-copy stage")
+        next_action = (
+            "rerun hcomm-payload-strict-positive explicitly with "
+            "--hcomm-payload-recv-direct-output, then use that green strict "
+            "gate as the Stage 3B.3E evidence before wiring Stage 3B.4 storage")
+    elif direct_failure_step != "missing":
+        decision = (
+            "direct-output diagnostic reached the payload kernel but failed "
+            f"inside `{direct_failure_step}`")
+        next_action = StrictPayloadFailureAction(1, direct_failure_step)
+    elif direct_kernel != "missing":
+        decision = (
+            "direct-output diagnostic launched but did not produce complete "
+            "rank evidence")
+        next_action = "inspect direct-output rank logs and payload kernel status"
+    else:
+        decision = "direct-output diagnostic did not reach payload kernel evidence"
+        next_action = "inspect direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload Direct-Output Diagnostic",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- direct_output_log: `{direct_log}`",
+        f"- default_recv_path: `{default_recv_path}`",
+        f"- direct_recv_path: `{direct_recv_path}`",
+        f"- default_failure_step: `{default_failure_step}`",
+        f"- direct_kernel_status: `{direct_kernel}`",
+        f"- direct_failure_step: `{direct_failure_step}`",
+        f"- direct_rank0_failure_step: `{direct_rank0_failure_step}`",
+        f"- direct_rank1_failure_step: `{direct_rank1_failure_step}`",
+        f"- direct_hcomm_ret: `{direct_hcomm_ret}`",
+        f"- direct_rank0_evidence: `{'passed' if direct_rank0_ok else 'missing'}`",
+        f"- direct_rank1_evidence: `{'passed' if direct_rank1_ok else 'missing'}`",
+        f"- direct_checksum_match: `{'yes' if direct_checksum_match else 'no'}`",
+        f"- direct_payload_copy_and_verify: `{'passed' if direct_ok and direct_path_ok else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "The direct-output path is diagnostic unless the user explicitly reruns "
+        "the strict-positive gate with --hcomm-payload-recv-direct-output. It "
+        "does not make a failed default strict run pass retroactively.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- default_rank0: `{default_rank_lines[0]}`",
+        f"- default_rank1: `{default_rank_lines[1]}`",
+        f"- direct_rank0: `{direct_rank_lines[0]}`",
+        f"- direct_rank1: `{direct_rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload direct-output diagnostic -> {note}")
+    return note
+
+
+def RunHcommPayloadDirectOutputDiagnostic(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = [
+        item for item in base_command
+        if item != "--hcomm-payload-recv-direct-output"
+    ]
+    command.append("--hcomm-payload-recv-direct-output")
+    result = runner.run(
+        "hcomm-payload-direct-output-diagnostic",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadDirectOutputDiagnostic(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
@@ -2142,6 +2273,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     no_batch = read(no_batch_log)
     tagged_log = FindStepLog(run_dir, ["hcomm-payload-tagged-diagnostic"])
     tagged = read(tagged_log)
+    direct_output_log = FindStepLog(
+        run_dir, ["hcomm-payload-direct-output-diagnostic"])
+    direct_output = read(direct_output_log)
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
@@ -2288,6 +2422,19 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     tagged_failure_step = marker_value(tagged, "payload_failure_step")
     tagged_batch_tag = marker_value(tagged, "payload_desc_batch_tag")
     tagged_hcomm_ret = marker_value(tagged, "payload_kernel_hcomm_ret")
+    direct_output_ok, direct_output_rank0_ok, direct_output_rank1_ok = (
+        StrictPayloadRankEvidencePassed(direct_output))
+    direct_output_recv_path = marker_value(direct_output, "payload_recv_path")
+    direct_output_effective_ok = (
+        direct_output_ok and direct_output_recv_path == "direct-output")
+    direct_output_result = (
+        "passed" if direct_output_effective_ok else (
+            "partial" if direct_output_rank0_ok or direct_output_rank1_ok else (
+                "not-run" if not direct_output else "not-passed")))
+    direct_output_failure_step = marker_value(
+        direct_output, "payload_failure_step")
+    direct_output_hcomm_ret = marker_value(
+        direct_output, "payload_kernel_hcomm_ret")
     rank_status = {}
     for rank in (0, 1):
         rank_line = strict_rank_lines[rank]
@@ -2381,6 +2528,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCOMM payload tagged-batch diagnostic | {tagged_result} | "
         f"tag={tagged_batch_tag}, tagged failure `{tagged_failure_step}`, "
         f"hcomm ret `{tagged_hcomm_ret}` |")
+    lines.append(
+        f"| HCOMM payload direct-output diagnostic | {direct_output_result} | "
+        f"recv_path={direct_output_recv_path}, failure "
+        f"`{direct_output_failure_step}`, hcomm ret "
+        f"`{direct_output_hcomm_ret}` |")
     if strict_log is not None:
         lines.extend([
             "",
@@ -2464,6 +2616,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 "tagged HCOMM payload copy passed; rerun strict-positive with "
                 "the same --hcomm-payload-batch-tag and then wire Stage 3B.4 "
                 "storage")
+        elif direct_output_effective_ok and strict_recv_path != "direct-output":
+            next_action = (
+                "direct-output HCOMM payload copy passed; rerun "
+                "strict-positive with --hcomm-payload-recv-direct-output and "
+                "use that green strict gate as Stage 3B.3E evidence")
         elif no_batch_ok and strict_batch_mode in ("on", "missing"):
             next_action = (
                 "no-batch HCOMM payload copy passed; inspect "
@@ -2799,6 +2956,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                     runner, strict_command, smoke_spec.env_updates,
                     args.hccl_smoke_timeout_sec, strict_result.log_path,
                     args.hcomm_payload_diagnostic_batch_tag)
+            if (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                    package_payload_ready and
+                    "--hcomm-payload-recv-direct-output" not in strict_command):
+                RunHcommPayloadDirectOutputDiagnostic(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -2943,6 +3106,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path,
                         args.hcomm_payload_diagnostic_batch_tag)
+                if (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                        "--hcomm-payload-recv-direct-output" not in spec.command):
+                    RunHcommPayloadDirectOutputDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -3083,6 +3251,11 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         runner, spec.command, spec.env_updates, timeout,
                         result.log_path,
                         args.hcomm_payload_diagnostic_batch_tag)
+                if (args.auto_run_hcomm_payload_direct_output_diagnostic and
+                        "--hcomm-payload-recv-direct-output" not in spec.command):
+                    RunHcommPayloadDirectOutputDiagnostic(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -4214,6 +4387,16 @@ def parse_args() -> argparse.Namespace:
                               "--hcomm-payload-batch-tag set. This collects "
                               "default-batch vs tagged-batch evidence only and "
                               "does not turn the strict-positive gate green."))
+    parser.add_argument("--auto-run-hcomm-payload-direct-output-diagnostic",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the strict payload gate fails, automatically "
+                              "rerun the same smoke with "
+                              "--hcomm-payload-recv-direct-output and write "
+                              "HCOMM_PAYLOAD_DIRECT_OUTPUT_DIAGNOSTIC.md. "
+                              "This collects local-buffer vs direct-output "
+                              "recv evidence only and does not turn the "
+                              "strict-positive gate green."))
     parser.add_argument("--hcomm-payload-diagnostic-batch-tag",
                         default="flume-payload-v1",
                         help=("Batch tag used by "
