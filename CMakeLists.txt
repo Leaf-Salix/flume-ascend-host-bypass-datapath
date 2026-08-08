@@ -692,6 +692,11 @@ if(FLUME_BUILD_TESTS)
       ${PROJECT_SOURCE_DIR}/tests/test_strict_positive_decision_tree.py
       ${PROJECT_SOURCE_DIR})
 
+  add_test(NAME hccl_smoke_marker_contract
+    COMMAND ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/test_hccl_smoke_marker_contract.py
+      ${PROJECT_SOURCE_DIR})
+
   add_executable(test_sim_collective_failures tests/test_sim_collective_failures.cc)
   target_link_libraries(test_sim_collective_failures PRIVATE flume)
   target_include_directories(test_sim_collective_failures PRIVATE ${PROJECT_SOURCE_DIR}/src)
