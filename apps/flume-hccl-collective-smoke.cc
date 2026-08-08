@@ -1992,6 +1992,12 @@ int main(int argc, char** argv) {
             << " hcomm_payload_probe=" << OnOff(caps.hcomm_payload_probe)
             << " hcomm_payload_scheduler="
             << (caps.hcomm_payload_scheduler ? "on" : "not-implemented")
+            << " hcomm_payload_scheduler_candidate="
+            << OnOff(caps.hcomm_payload_scheduler_candidate)
+            << " hcomm_payload_direct_aclrt="
+            << OnOff(caps.hcomm_payload_direct_aclrt)
+            << " hcomm_payload_thread_notify="
+            << OnOff(caps.hcomm_payload_thread_notify)
             << " hcomm_launcher_public_hccl="
             << (FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH ? "on" : "off")
             << " hcomm_launcher_direct_aclrt="

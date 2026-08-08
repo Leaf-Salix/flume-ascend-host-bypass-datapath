@@ -104,6 +104,9 @@ typedef struct {
   uint32_t fallback_hccl_p2p;
   uint32_t fallback_runtime_staging;
   flume_hcomm_engine_t hcomm_default_engine;
+  uint32_t hcomm_payload_scheduler_candidate;
+  uint32_t hcomm_payload_direct_aclrt;
+  uint32_t hcomm_payload_thread_notify;
 } flume_backend_caps_t;
 
 const char *flume_status_string(int status);

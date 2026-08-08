@@ -360,6 +360,8 @@ Success changes backend capability semantics from:
 
 ```text
 hcomm_payload_scheduler=not-implemented
+hcomm_payload_scheduler_candidate=on
+hcomm_payload_direct_aclrt=on
 fallback=hccl-p2p
 ```
 
@@ -370,6 +372,12 @@ hcomm_payload_scheduler=custom-op-aicpu
 hcomm_payload=on
 fallback=none
 ```
+
+`hcomm_payload_scheduler_candidate=on` is not a success marker by itself. It
+means the Flume binary was built with the direct ACL custom-op launcher and
+HCOMM primitive headers needed to attempt the scheduler. Runtime readiness
+still depends on the installed custom-op package and is proven only by strict
+payload smoke passing with `stage3b3e_payload_copy=passed` and `fallback=none`.
 
 ## Stage 3B.4: Storage HBM Integration
 

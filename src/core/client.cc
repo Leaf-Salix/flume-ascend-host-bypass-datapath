@@ -3184,6 +3184,14 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
   caps.storage_hbm = sim_attached ? 1U : 0U;
   caps.fallback_hccl_p2p = (FLUME_HAVE_HCCL_P2P || sim_attached) ? 1U : 0U;
   caps.fallback_runtime_staging = (!sim_attached && hccl_attached) ? 1U : 0U;
+  caps.hcomm_payload_direct_aclrt =
+      (FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH) ? 1U : 0U;
+  caps.hcomm_payload_thread_notify =
+      (FLUME_HAVE_HCOMM_THREAD_EXPORT && FLUME_HAVE_HCOMM_PRIMITIVES) ? 1U : 0U;
+  caps.hcomm_payload_scheduler_candidate =
+      (sim_attached ||
+       (FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES &&
+        FLUME_HAVE_HCOMM_PRIMITIVES && caps.hcomm_payload_direct_aclrt)) ? 1U : 0U;
 #if FLUME_HAVE_HCOMM_THREAD_EXPORT
   caps.hcomm_default_engine = FLUME_HCOMM_ENGINE_AICPU_TS;
 #else

@@ -1074,9 +1074,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         primitives = "present"
     elif "hcomm_primitives=off" in caps:
         primitives = "absent"
-    scheduler_missing = ("hcomm_payload_scheduler=not-implemented" in caps or
-                         "custom-op/AICPU scheduler" in smoke or
-                         "custom-op launch" in smoke)
+    scheduler_candidate = "hcomm_payload_scheduler_candidate=on" in caps
+    scheduler_missing = (not hcomm_payload_ok and
+                         ("hcomm_payload_scheduler=not-implemented" in caps or
+                          "custom-op/AICPU scheduler" in smoke or
+                          "custom-op launch" in smoke))
     package_payload_ready = ("required=canary_direct_aclrt,payload_direct_aclrt" in
                              package and "status=PASS" in package)
     package_canary_ready = ("required=canary_direct_aclrt" in package and
@@ -1112,6 +1114,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     lines.append(
         f"| HCOMM custom-op package payload-ready? | {package_status} | "
         "`hcomm-custom-op-package-preflight` log |")
+    lines.append(
+        f"| HCOMM payload scheduler candidate built? | "
+        f"{'yes' if scheduler_candidate else 'no'} | "
+        "`hcomm_payload_scheduler_candidate` in caps |")
     lines.append(
         f"| Storage to HBM fallback path ok? | {'yes' if storage_hbm_ok else 'no'} | "
         "`storage HBM smoke passed` marker |")

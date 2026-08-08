@@ -12,6 +12,7 @@ int main() {
   FLUME_TEST_CHECK(flume_get_backend_caps(nullptr, &global_caps) == FLUME_OK);
   FLUME_TEST_CHECK(global_caps.size == sizeof(global_caps));
   FLUME_TEST_CHECK(global_caps.hcomm_payload_scheduler == 0);
+  FLUME_TEST_CHECK(global_caps.hcomm_payload_scheduler_candidate == 0);
   FLUME_TEST_CHECK(global_caps.storage_hbm == 0);
 
   flume_backend_caps_t too_small = {};
@@ -41,6 +42,7 @@ int main() {
   FLUME_TEST_CHECK(sim_caps.hcomm_channel_res == 1);
   FLUME_TEST_CHECK(sim_caps.hcomm_payload_probe == 1);
   FLUME_TEST_CHECK(sim_caps.hcomm_payload_scheduler == 1);
+  FLUME_TEST_CHECK(sim_caps.hcomm_payload_scheduler_candidate == 1);
   FLUME_TEST_CHECK(sim_caps.storage_hbm == 1);
   FLUME_TEST_CHECK(sim_caps.fallback_hccl_p2p == 1);
 
