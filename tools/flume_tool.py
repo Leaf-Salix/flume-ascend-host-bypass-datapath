@@ -1837,6 +1837,85 @@ def AnalyzeNpuRuntimeDiagnostics(run_dir: Path,
     return ("unknown", "no NPU runtime preflight signal", "continue strict-positive")
 
 
+def FindCannCompatFixtureDir(run_dir: Path) -> Optional[Path]:
+    for log in sorted(run_dir.glob("*-collect-cann-compat.log"), reverse=True):
+        try:
+            text = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        match = re.search(r"CANN compatibility fixture -> (.+)", text)
+        if not match:
+            continue
+        path = Path(match.group(1).strip())
+        if path.exists():
+            return path
+    return None
+
+
+def HcommPrimitiveAbiFixtureStatus(
+        run_dir: Path) -> tuple[str, str, str, str]:
+    fixture = FindCannCompatFixtureDir(run_dir)
+    if fixture is None:
+        return (
+            "not-collected",
+            "missing `collect-cann-compat` fixture",
+            "run `tools/collect_cann_compat.py` with the latest strict log",
+            "missing",
+        )
+    probe_path = fixture / "hcomm-primitive-call-shape-probe.txt"
+    symbols_path = fixture / "hcomm-primitive-symbols.txt"
+    try:
+        probe_text = probe_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return (
+            "missing",
+            f"failed to read `{probe_path.name}`: {exc}",
+            "rerun CANN compatibility fixture collection",
+            str(fixture),
+        )
+    status_match = re.search(r"^status:\s*(\S+)", probe_text, re.MULTILINE)
+    status = status_match.group(1) if status_match else "missing"
+    if status == "PASS":
+        result = "call-shape-pass"
+        next_action = (
+            "ABI call shape matches; continue debugging HCOMM primitive "
+            "runtime ordering/batch semantics")
+    elif status == "FAIL":
+        result = "call-shape-fail"
+        next_action = (
+            "fix AICPU payload kernel primitive call signatures before "
+            "rerunning strict-positive")
+    else:
+        result = "call-shape-unknown"
+        next_action = "inspect hcomm-primitive-call-shape-probe.txt"
+    symbol_summary = "missing"
+    try:
+        symbols_text = symbols_path.read_text(encoding="utf-8",
+                                              errors="replace")
+        missing = []
+        present = []
+        for name in (
+                "HcommAcquireComm", "HcommLocalCopyOnThread",
+                "HcommReadOnThread", "HcommBatchModeStart",
+                "HcommBatchModeEnd"):
+            state_match = re.search(rf"^{re.escape(name)}:\s*(\S+)",
+                                    symbols_text, re.MULTILINE)
+            state = state_match.group(1) if state_match else "missing"
+            if state == "present":
+                present.append(name)
+            elif state == "missing":
+                missing.append(name)
+        symbol_summary = (
+            f"present={','.join(present) or 'none'}; "
+            f"missing={','.join(missing) or 'none'}")
+    except OSError:
+        symbol_summary = "hcomm-primitive-symbols.txt missing"
+    evidence = (
+        f"`{probe_path.name}` status `{status}`; {symbol_summary}; "
+        f"fixture `{fixture}`")
+    return result, evidence, next_action, str(fixture)
+
+
 def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                              strict_log: Optional[Path],
                              package_log: Optional[Path]) -> Path:
@@ -1866,6 +1945,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
+    hcomm_abi_status, hcomm_abi_evidence, hcomm_abi_next_action, _fixture = (
+        HcommPrimitiveAbiFixtureStatus(run_dir))
     lines = [
         "# Flume Ascend Full Matrix Decision Tree",
         "",
@@ -2026,6 +2107,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCOMM custom-op package reason | {package_reason} | "
         "`reason=` from preflight log |")
     lines.append(
+        f"| HCOMM primitive ABI fixture | {hcomm_abi_status} | "
+        f"{hcomm_abi_evidence} |")
+    lines.append(
         f"| NPU runtime ready for strict payload? | {npu_runtime_status} | "
         f"{npu_runtime_evidence} |")
     lines.append(
@@ -2166,6 +2250,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect payload checksum mismatch"
         elif strict_fallback not in ("none", "missing"):
             next_action = "remove unexpected fallback from strict payload path"
+        elif hcomm_abi_status in (
+                "not-collected", "missing", "call-shape-fail",
+                "call-shape-unknown"):
+            next_action = hcomm_abi_next_action
         else:
             next_action = "inspect hcomm-payload-strict-positive failure"
     elif (hccl_ok and p2p_ok and hcomm_channel_ok and storage_hbm_ok and

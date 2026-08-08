@@ -485,6 +485,30 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
         assert "| rank1 verify | missing |" in text
+        assert "| HCOMM primitive ABI fixture | not-collected |" in text
+        assert "run `tools/collect_cann_compat.py`" in text
+
+        abi_fixture = tmp / "fixture" / "host-b-cann"
+        write(abi_fixture / "hcomm-primitive-call-shape-probe.txt",
+              "status: PASS\n")
+        write(abi_fixture / "hcomm-primitive-symbols.txt",
+              "\n".join([
+                  "HcommAcquireComm: present",
+                  "HcommLocalCopyOnThread: present",
+                  "HcommReadOnThread: present",
+                  "HcommBatchModeStart: present",
+                  "HcommBatchModeEnd: present",
+                  "",
+              ]))
+        abi_pass_dir = tmp / "abi-pass"
+        abi_pass_dir.mkdir()
+        write(abi_pass_dir / "99-collect-cann-compat.log",
+              f"[ok] CANN compatibility fixture -> {abi_fixture}\n")
+        tree = flume_tool.WriteMatrixDecisionTree(
+            abi_pass_dir, smoke, strict_no_verify, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| HCOMM primitive ABI fixture | call-shape-pass |" in text
+        assert "present=HcommAcquireComm,HcommLocalCopyOnThread,HcommReadOnThread,HcommBatchModeStart,HcommBatchModeEnd" in text
         assert "inspect hcomm-payload-strict-positive failure" in text
 
         strict_cross_line = write(tmp / "strict-cross-line.log",
