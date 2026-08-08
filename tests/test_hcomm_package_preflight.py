@@ -56,18 +56,22 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
     with tarfile.open(tar_path, "w:gz") as tar:
         tar.add(so_path, arcname=f"aicpu_kernels_device/{KERNEL_SO}")
 
+    kernel_so = (
+        "libwrong_flume_hcomm_payload_aicpu_kernel.so"
+        if mode == "wrong_so" else KERNEL_SO
+    )
     payload = {
         "FlumeHcommCanaryDirectAclrtKernel": {
             "opInfo": {
                 "opKernelLib": "AICPUKernel",
-                "kernelSo": KERNEL_SO,
+                "kernelSo": kernel_so,
                 "functionName": "FlumeHcommCanaryDirectAclrtKernel",
             }
         },
         "FlumeHcommPayloadCopyDirectAclrtKernelV2": {
             "opInfo": {
                 "opKernelLib": "AICPUKernel",
-                "kernelSo": KERNEL_SO,
+                "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopyDirectAclrtKernelV2",
             }
         },
@@ -76,7 +80,7 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
         payload["FlumeHcommPayloadCopyAbiVersion2"] = {
             "opInfo": {
                 "opKernelLib": "AICPUKernel",
-                "kernelSo": KERNEL_SO,
+                "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopyAbiVersion2",
             }
         }
@@ -131,6 +135,21 @@ def main() -> int:
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "reason=payload kernel package is canary-only" in canary.stdout
+
+        wrong_so_json, wrong_so_tar = write_package(tmp, mode="wrong_so")
+        wrong_so = run_preflight(repo, wrong_so_json, wrong_so_tar)
+        if wrong_so.returncode == 0:
+            print(wrong_so.stdout)
+            print(wrong_so.stderr, file=sys.stderr)
+            raise AssertionError("package with mismatched JSON kernelSo passed")
+        assert "aicpu_tar_so.libflume_hcomm_payload_aicpu_kernel.so=present" in wrong_so.stdout
+        assert "function.canary_direct_aclrt.FlumeHcommCanaryDirectAclrtKernel=missing" in wrong_so.stdout
+        assert (
+            "function.payload_direct_aclrt."
+            "FlumeHcommPayloadCopyDirectAclrtKernelV2=missing"
+        ) in wrong_so.stdout
+        assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=missing" in wrong_so.stdout
+        assert "status=FAIL" in wrong_so.stdout
 
         v2_json, v2_tar = write_package(tmp, mode="v2")
         v2 = run_preflight(repo, v2_json, v2_tar)

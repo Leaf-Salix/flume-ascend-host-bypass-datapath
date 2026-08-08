@@ -114,20 +114,33 @@ def HcommCustomOpPackageCandidates(
     return candidates
 
 
-def JsonDeclaresFunction(payload: object, function_name: str) -> bool:
+def JsonDeclaresFunction(payload: object, function_name: str,
+                         kernel_so: str = "") -> bool:
+    def kernel_matches(node: object) -> bool:
+        if not kernel_so:
+            return True
+        if not isinstance(node, dict):
+            return False
+        op_info = node.get("opInfo")
+        if isinstance(op_info, dict):
+            return op_info.get("kernelSo") == kernel_so
+        return node.get("kernelSo") == kernel_so
+
     if isinstance(payload, dict):
         direct = payload.get(function_name)
         if isinstance(direct, dict):
             op_info = direct.get("opInfo", {})
             if isinstance(op_info, dict) and (
-                    op_info.get("functionName") == function_name):
+                    op_info.get("functionName") == function_name and
+                    kernel_matches(direct)):
                 return True
-        if payload.get("functionName") == function_name:
+        if payload.get("functionName") == function_name and kernel_matches(payload):
             return True
-        return any(JsonDeclaresFunction(value, function_name)
+        return any(JsonDeclaresFunction(value, function_name, kernel_so)
                    for value in payload.values())
     if isinstance(payload, list):
-        return any(JsonDeclaresFunction(item, function_name) for item in payload)
+        return any(JsonDeclaresFunction(item, function_name, kernel_so)
+                   for item in payload)
     return False
 
 
@@ -1785,7 +1798,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print(f"json_error={exc}")
                 payload = {}
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
-                ok = JsonDeclaresFunction(payload, function_name)
+                ok = JsonDeclaresFunction(
+                    payload, function_name, HCOMM_CUSTOM_OP_KERNEL_SO)
                 functions_present[label] = ok
                 print(f"function.{label}.{function_name}="
                       f"{'present' if ok else 'missing'}")
@@ -1793,7 +1807,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     print(f"function_so.{label}.{function_name}="
                           f"{'present' if symbols_present.get(function_name, False) else 'missing'}")
             legacy_payload_present = JsonDeclaresFunction(
-                payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT)
+                payload, HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
+                HCOMM_CUSTOM_OP_KERNEL_SO)
             found_legacy_payload = (
                 found_legacy_payload or legacy_payload_present)
             if symbol_state == "present":
