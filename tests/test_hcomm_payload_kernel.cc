@@ -20,6 +20,8 @@ int32_t notify_wait_ret = 0;
 int32_t channel_drain_ret = 0;
 int calls[32] = {};
 int call_count = 0;
+char batch_start_tag[64] = {};
+char batch_end_tag[64] = {};
 
 void RecordCall(int call) {
   if (call_count < static_cast<int>(sizeof(calls) / sizeof(calls[0]))) {
@@ -40,6 +42,8 @@ void Reset() {
   notify_wait_ret = 0;
   channel_drain_ret = 0;
   std::memset(calls, 0, sizeof(calls));
+  std::memset(batch_start_tag, 0, sizeof(batch_start_tag));
+  std::memset(batch_end_tag, 0, sizeof(batch_end_tag));
   call_count = 0;
 }
 
@@ -84,7 +88,6 @@ flume_hcomm_payload_copy_desc_v1 MakeDesc(
   desc.local_hccl_buffer_bytes = 64;
   desc.remote_hccl_buffer_bytes = 64;
   desc.status_word = reinterpret_cast<uint64_t>(status_words);
-  std::memcpy(desc.batch_tag, "unit_payload", sizeof("unit_payload"));
   std::memcpy(desc.comm_name, "flume_unit_comm", sizeof("flume_unit_comm"));
   return desc;
 }
@@ -124,6 +127,7 @@ int main() {
   reset_status();
   auto send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                             status);
+  FLUME_TEST_CHECK(send_desc.batch_tag[0] == '\0');
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
@@ -139,6 +143,8 @@ int main() {
                             kNotifyRecord, kNotifyWait, kBatchEnd,
                             kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(send_calls, 7));
+  FLUME_TEST_CHECK(std::strcmp(batch_start_tag, "") == 0);
+  FLUME_TEST_CHECK(std::strcmp(batch_end_tag, "") == 0);
 
   Reset();
   std::memset(user, 0, sizeof(user));

@@ -36,6 +36,8 @@ extern int32_t notify_wait_ret;
 extern int32_t channel_drain_ret;
 extern int calls[32];
 extern int call_count;
+extern char batch_start_tag[64];
+extern char batch_end_tag[64];
 
 void RecordCall(int call);
 
@@ -53,15 +55,21 @@ inline int32_t HcommReleaseComm(const char*) {
   return release_comm_ret;
 }
 
-inline int32_t HcommBatchModeStart(const char*) {
+inline int32_t HcommBatchModeStart(const char* tag) {
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kBatchStart);
+  strncpy(batch_start_tag, tag == nullptr ? "<null>" : tag,
+          sizeof(batch_start_tag) - 1);
+  batch_start_tag[sizeof(batch_start_tag) - 1] = '\0';
   return batch_start_ret;
 }
 
-inline int32_t HcommBatchModeEnd(const char*) {
+inline int32_t HcommBatchModeEnd(const char* tag) {
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kBatchEnd);
+  strncpy(batch_end_tag, tag == nullptr ? "<null>" : tag,
+          sizeof(batch_end_tag) - 1);
+  batch_end_tag[sizeof(batch_end_tag) - 1] = '\0';
   return batch_end_ret;
 }
 

@@ -58,8 +58,11 @@ recv rank: HcommChannelNotifyWaitOnThread(ready)
 ```
 
 The descriptor also carries a batch tag and a device-visible `status_word`.
-The kernel wraps the pair-copy primitive sequence in
-`HcommBatchModeStart/End(batch_tag)`, then writes a concrete status such as
+The default host descriptor uses an empty batch tag, which HCOMM treats as a
+temporary batch task; this keeps AICPU+TS on the required batch-mode path while
+avoiding non-empty tag caching semantics. The kernel wraps the pair-copy
+primitive sequence in `HcommBatchModeStart/End(batch_tag)`, then writes a
+concrete status such as
 `success`, `local-copy-failed`, `remote-read-failed`, or
 `ready-notify-wait-failed` before returning so host-side strict smoke can
 distinguish a package/launch problem from a specific HCOMM primitive execution

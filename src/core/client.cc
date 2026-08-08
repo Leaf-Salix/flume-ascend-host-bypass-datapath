@@ -1933,7 +1933,7 @@ std::string MakeHcommNotifyOnlyDetail(
 }
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
-const char kFlumeHcommPayloadBatchTag[] = "flume_hcomm_payload";
+const char kFlumeHcommPayloadBatchTag[] = "";
 
 void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
                              const CommState& state,
@@ -1995,6 +1995,8 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       reinterpret_cast<uint64_t>(resource_info.remote_buffer);
   desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
   desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
+  // Empty tag still enables HCOMM temporary batch mode. HCOMM docs note that
+  // non-empty tag caching is not fully supported on AICPU+TS.
   static_assert(sizeof(kFlumeHcommPayloadBatchTag) <=
                     FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES,
                 "Flume HCOMM payload batch tag exceeds descriptor field");

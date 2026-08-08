@@ -107,7 +107,8 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 
 payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`，后者会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done，避免把“读请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on` 和
-`payload_kernel_status=success`。如果 CANN 暴露 host/AICPU thread-export，
+`payload_kernel_status=success`。payload kernel 使用 HCOMM 空 tag 临时批量任务，
+避免 AICPU+TS 非空 tag 缓存语义影响 pair-copy smoke。如果 CANN 暴露 host/AICPU thread-export，
 日志还会包含
 `payload_thread_notify=host-aicpu payload_completion=thread-notify+stream-sync+status-word`；
 否则会保留 direct ACL 路线并标记

@@ -198,7 +198,6 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
 
   unsigned int result = kFlumePayloadSuccess;
   bool batch_started = false;
-  const bool use_batch_mode = desc.batch_tag[0] != '\0';
 
   if (use_thread_notify) {
     ret = HcommThreadNotifyWaitOnThread(thread, 0, desc.timeout_sec);
@@ -208,7 +207,7 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
     }
   }
 
-  if (result == kFlumePayloadSuccess && use_batch_mode) {
+  if (result == kFlumePayloadSuccess) {
     ret = HcommBatchModeStart(desc.batch_tag);
     if (ret != 0) {
       StorePayloadPrimitiveRet(desc, ret);
