@@ -410,10 +410,11 @@ fallback=none
 ```
 
 `hcomm_payload_scheduler_candidate=on` is not a success marker by itself. It
-means the Flume binary was built with the direct ACL custom-op launcher and
-HCOMM primitive headers needed to attempt the scheduler. Runtime readiness
-still depends on the installed custom-op package and is proven only by strict
-payload smoke passing with `stage3b3e_payload_copy=passed`,
+means the Flume binary was built with the direct ACL custom-op launcher needed
+to attempt the scheduler. Host-side `hcomm_primitives=off` does not block this
+route because the HCOMM primitive calls live inside the installed custom-op
+package. Runtime readiness still depends on that package and is proven only by
+strict payload smoke passing with `stage3b3e_payload_copy=passed`,
 `payload_verify=passed`, and `fallback=none`. `thread_export=off` changes the
 completion marker to `payload_completion=stream-sync+status-word`; it does not
 by itself block the direct ACL payload candidate.

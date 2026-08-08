@@ -2113,7 +2113,8 @@ HcommLauncherDecision DecideHcommLauncherBackend() {
     AppendMissing(&decision.missing, "ACL runtime custom-op launch APIs unavailable");
   }
   if (!decision.hcomm_primitives) {
-    AppendMissing(&decision.missing, "HCOMM primitive APIs unavailable");
+    AppendMissing(&decision.missing,
+                  "host HCOMM primitive APIs unavailable");
   }
   if (!decision.package.installed) {
     AppendMissing(&decision.missing, "Flume custom-op package not installed");
@@ -2123,7 +2124,7 @@ HcommLauncherDecision DecideHcommLauncherBackend() {
       decision.package.installed) {
     decision.backend = HcommLauncherBackend::kPublicHcclLaunch;
   } else if (decision.custom_op_build && decision.direct_aclrt_launch &&
-             decision.hcomm_primitives && decision.package.installed) {
+             decision.package.installed) {
     decision.backend = HcommLauncherBackend::kDirectAclrtPending;
   }
   return decision;
@@ -2153,7 +2154,7 @@ std::string DescribeHcommLauncherDecision(
   }
   std::string direct_candidate =
       decision.custom_op_build && decision.direct_aclrt_launch &&
-              decision.hcomm_primitives && decision.package.installed ?
+              decision.package.installed ?
           "available" :
           "blocked";
   std::string direct_canary_candidate =
@@ -3285,7 +3286,7 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
   caps.hcomm_payload_scheduler_candidate =
       (sim_attached ||
        (FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES &&
-        FLUME_HAVE_HCOMM_PRIMITIVES && caps.hcomm_payload_direct_aclrt)) ? 1U : 0U;
+        caps.hcomm_payload_direct_aclrt)) ? 1U : 0U;
 #if FLUME_HAVE_HCOMM_THREAD_EXPORT
   caps.hcomm_default_engine = FLUME_HCOMM_ENGINE_AICPU_TS;
 #else
@@ -4035,16 +4036,18 @@ int flume_hcomm_payload_probe_ex(
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload primitive symbols are available, but Flume "
-                  "Stage 3B has not implemented custom-op launch yet; "
+      std::string("host HCOMM payload primitive symbols are available; "
+                  "run strict payload smoke to verify the direct ACL "
+                  "custom-op payload scheduler; "
                   "fallback=") +
           fallback_path + "; " + plan_detail);
   return FLUME_OK;
 #else
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("HCOMM payload primitives are unavailable in this build; "
-                  "fallback=") +
+      std::string("host HCOMM payload primitive symbols are unavailable in "
+                  "this build; direct ACL payload may still run through an "
+                  "installed payload-ready custom-op package; fallback=") +
           fallback_path + "; " + plan_detail);
   return FLUME_OK;
 #endif
