@@ -26,3 +26,26 @@ extern "C" unsigned int FlumeHcommCanaryDirectAclrtKernel(void* param) {
   desc->observed_token = desc->expected_token;
   return kFlumeCanarySuccess;
 }
+
+#ifndef FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY
+extern "C" unsigned int FlumeHcommNotifyOnlyDirectAclrtKernel(void* param) {
+  (void)param;
+  return kFlumeCanaryInvalidArgument;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV2(void* param) {
+  (void)param;
+  return kFlumeCanaryInvalidArgument;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopyDirectAclrtKernel(void* param) {
+  return FlumeHcommPayloadCopyDirectAclrtKernelV2(param);
+}
+#endif
+
+#ifndef FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH
+extern "C" unsigned int FlumeHcommNotifyOnlyAicpuKernel(void* param) {
+  (void)param;
+  return kFlumeCanaryInvalidArgument;
+}
+#endif

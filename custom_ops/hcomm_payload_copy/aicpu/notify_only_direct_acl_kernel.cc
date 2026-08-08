@@ -61,10 +61,3 @@ extern "C" unsigned int FlumeHcommNotifyOnlyDirectAclrtKernel(void* param) {
   auto* desc = static_cast<flume_hcomm_notify_only_desc_v1*>(param);
   return RunNotifyOnlyDirectAcl(*desc);
 }
-
-#ifndef FLUME_HCOMM_PAYLOAD_ENABLE_PUBLIC_HCCL_LAUNCH
-extern "C" unsigned int FlumeHcommNotifyOnlyAicpuKernel(void* param) {
-  (void)param;
-  return kFlumeKernelInvalidArgument;
-}
-#endif

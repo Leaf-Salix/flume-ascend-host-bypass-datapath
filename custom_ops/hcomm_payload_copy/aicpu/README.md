@@ -18,10 +18,15 @@ The Stage 3B.3C direct ACL notify-only path is:
 - exported function: `FlumeHcommNotifyOnlyDirectAclrtKernel`
 - includes `hcomm_primitives.h`
 
-When `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=OFF`, this file also
-exports a stub `FlumeHcommNotifyOnlyAicpuKernel` so the static package JSON
-stays consistent with the shared object. The stub only preserves loader
-compatibility; it is not a working public-HCCL-launch kernel.
+When `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=OFF`,
+`direct_acl_canary_kernel.cc` exports a stub
+`FlumeHcommNotifyOnlyAicpuKernel` so the static package JSON stays consistent
+with the shared object. The stub only preserves loader compatibility; it is
+not a working public-HCCL-launch kernel.
+When `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=OFF`, `direct_acl_canary_kernel.cc`
+also exports stubs for the direct ACL notify-only and payload-copy entrypoints.
+Those stubs keep canary-only packages loadable with the static JSON; they are
+not success paths for notify or payload smoke.
 
 The older Stage 3B.3A public-HCCL-launch notify-only experiment is:
 

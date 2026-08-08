@@ -94,6 +94,9 @@ if(KERNEL_MODE)
     target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
       ${FLUME_HCOMM_PAYLOAD_INTERNAL_INCLUDE_LIST}
     )
+    target_compile_definitions(flume_hcomm_payload_aicpu_kernel PRIVATE
+      FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1
+    )
   else()
     target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE
       ${FLUME_HCOMM_PAYLOAD_INCLUDE_LIST}
