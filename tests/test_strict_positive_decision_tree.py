@@ -560,6 +560,18 @@ def missing_aicpu_tar_package_log() -> str:
     ])
 
 
+def metadata_mismatch_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_requires_comm_acquire,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=10 expected=11 status=mismatch",
+        "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=14 status=mismatch",
+        "payload_metadata_values=mismatch",
+        "status=FAIL",
+        "reason=payload kernel package is missing or incomplete",
+        "",
+    ])
+
+
 def multi_candidate_payload_package_log() -> str:
     return "\n".join([
         "root=/tmp/old-cann",
@@ -1306,6 +1318,20 @@ def main() -> int:
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "| HCOMM custom-op package reason | custom-op AICPU tar missing |" in text
         assert "matching AICPU tar are both present" in text
+
+        metadata_mismatch_package = write(
+            tmp / "package-metadata-mismatch.log",
+            metadata_mismatch_package_log())
+        metadata_mismatch_dir = tmp / "metadata-mismatch-package"
+        metadata_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            metadata_mismatch_dir, smoke, None, metadata_mismatch_package)
+        text = tree.read_text(encoding="utf-8")
+        assert not flume_tool.PackageTextPayloadReady(
+            metadata_mismatch_package_log())
+        assert ("| HCOMM custom-op package reason | payload kernel package "
+                "metadata function returned unexpected value |") in text
+        assert "exports stale ABI, semantic, status, or trace metadata values" in text
 
         multi_payload_package = write(
             tmp / "package-multi-candidate-payload.log",

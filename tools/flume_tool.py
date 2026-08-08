@@ -503,6 +503,10 @@ def PackageTextReason(package_text: str) -> str:
     match = re.search(r"^reason=(.+)$", package_text, re.MULTILINE)
     reason = match.group(1).strip() if match else "missing"
     if reason.endswith("missing or incomplete"):
+        if re.search(r"^payload_metadata_values=mismatch$",
+                     package_text, re.MULTILINE):
+            return ("payload kernel package metadata function returned "
+                    "unexpected value")
         if re.search(r"^aicpu_tar=missing$", package_text, re.MULTILINE):
             return "custom-op AICPU tar missing"
         if re.search(r"^aicpu_tar_readable=(missing|unreadable)$",
@@ -541,6 +545,10 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package does not reference "
                 "the required HCOMM primitive APIs")
+    if "metadata function returned unexpected value" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package exports stale ABI, "
+                "semantic, status, or trace metadata values")
     if "status schema marker" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package predates the current "
