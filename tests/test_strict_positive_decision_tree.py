@@ -107,13 +107,14 @@ def strict_log_with_canary_build_mode() -> str:
 
 def payload_ready_package_log() -> str:
     return ("required=canary_direct_aclrt,payload_direct_aclrt,"
-            "payload_abi_v3,payload_semantic,build_mode_internal\n"
+            "payload_abi_v3,payload_semantic,payload_requires_comm_acquire,"
+            "build_mode_internal\n"
             "status=PASS\n")
 
 
 def stale_semantic_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
         "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=missing",
         "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=missing",
         "status=FAIL",
@@ -124,7 +125,7 @@ def stale_semantic_package_log() -> str:
 
 def canary_only_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
         "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present",
         "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing",
         "status=FAIL",
@@ -135,7 +136,7 @@ def canary_only_package_log() -> str:
 
 def abi_missing_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v3,payload_semantic,payload_requires_comm_acquire,build_mode_internal",
         "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing",
         "status=FAIL",
         "reason=payload kernel package is missing the payload ABI version marker",

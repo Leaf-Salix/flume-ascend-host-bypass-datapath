@@ -363,7 +363,10 @@ diagnostic ABI and the HCCL comm-name handoff. It also requires the SO symbol
 the JSON so the runtime loader can verify the package before descriptor
 handoff. This marks the current payload descriptor semantic ABI after the
 kernel descriptor gained `comm_name` for `HcommAcquireComm` /
-`HcommReleaseComm`. When the package JSON declares only
+`HcommReleaseComm`. The preflight also requires
+`FlumeHcommPayloadCopyRequiresCommAcquire` so a package built before the
+communicator acquire/release handoff cannot be misclassified as payload-ready.
+When the package JSON declares only
 the legacy entrypoint, the preflight reports
 `reason.payload_direct_aclrt=legacy-entrypoint-present` and
 `action.payload_direct_aclrt=rebuild-with-current-flume`; treat that as a
@@ -371,6 +374,9 @@ package refresh problem, not as evidence that HCOMM payload primitives failed.
 When the V3 entrypoint and internal-payload marker exist but
 `FlumeHcommPayloadCopyAbiVersion3` is missing, rebuild the package with current
 Flume headers before running strict smoke.
+When `FlumeHcommPayloadCopyRequiresCommAcquire` is missing, rebuild from the
+current Flume tree before running strict smoke; that package predates the
+HCOMM communicator acquire/release contract.
 
 `ascend-probe` records the same check as
 `hcomm-custom-op-package-preflight` when payload or notify-only smoke is

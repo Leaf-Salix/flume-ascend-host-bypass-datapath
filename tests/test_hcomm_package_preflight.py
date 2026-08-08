@@ -66,6 +66,12 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "unsigned int FlumeHcommPayloadCopySemanticVersion(void) "
             "{ return 3; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_v3_no_comm_acquire",
+                    "canary"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopyRequiresCommAcquire(void) "
+            "{ return 1; }"
+        )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
@@ -131,6 +137,15 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopySemanticVersion",
+            }
+        }
+    if mode not in ("legacy", "stale_v2", "stale_v3_no_comm_acquire",
+                    "canary"):
+        payload["FlumeHcommPayloadCopyRequiresCommAcquire"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopyRequiresCommAcquire",
             }
         }
     if mode != "canary":
@@ -228,6 +243,7 @@ def main() -> int:
         assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in canary.stdout
         assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=present" in canary.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in canary.stdout
+        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in canary.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
         assert "function_so.build_mode.canary_only.FlumeHcommPayloadBuildModeCanaryOnly=present" in canary.stdout
         assert "function_so.build_mode.internal_payload.FlumeHcommPayloadBuildModeInternalPayload=missing" in canary.stdout
@@ -261,6 +277,19 @@ def main() -> int:
         assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=missing" in stale_v2.stdout
         assert "reason=payload kernel package is stale ABI v2" in stale_v2.stdout
 
+        stale_v3_json, stale_v3_tar = write_package(
+            tmp, mode="stale_v3_no_comm_acquire")
+        stale_v3 = run_preflight(repo, stale_v3_json, stale_v3_tar)
+        if stale_v3.returncode == 0:
+            print(stale_v3.stdout)
+            print(stale_v3.stderr, file=sys.stderr)
+            raise AssertionError("stale V3 package without comm-acquire marker passed")
+        assert "function.payload_abi_v3.FlumeHcommPayloadCopyAbiVersion3=present" in stale_v3.stdout
+        assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in stale_v3.stdout
+        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v3.stdout
+        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=missing" in stale_v3.stdout
+        assert "reason=payload kernel package is missing the payload comm-acquire marker" in stale_v3.stdout
+
         v3_json, v3_tar = write_package(tmp, mode="v3")
         v3 = run_preflight(repo, v3_json, v3_tar)
         if v3.returncode != 0:
@@ -273,6 +302,8 @@ def main() -> int:
         assert "function_so.payload_abi_version_v3.FlumeHcommPayloadCopyAbiVersion3=present" in v3.stdout
         assert "function.payload_semantic.FlumeHcommPayloadCopySemanticVersion=present" in v3.stdout
         assert "function_so.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=present" in v3.stdout
+        assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v3.stdout
+        assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v3.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v3.stdout
         assert "status=PASS" in v3.stdout
 

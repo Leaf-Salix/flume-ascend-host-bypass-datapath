@@ -224,9 +224,11 @@ exports `FlumeHcommPayloadBuildModeInternalPayload`; a canary-only package may
 export the V3 payload function as a compatibility stub, but it is not accepted
 as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopyAbiVersion3` and
-`FlumeHcommPayloadCopySemanticVersion`, which mark the descriptor ABI with
-HCCL comm-name handoff plus the success-status semantics where the second
-status word is written as `payload_kernel_hcomm_ret=0`.
+`FlumeHcommPayloadCopySemanticVersion`, and
+`FlumeHcommPayloadCopyRequiresCommAcquire`, which mark the descriptor ABI with
+HCCL comm-name handoff, the success-status semantics where the second status
+word is written as `payload_kernel_hcomm_ret=0`, and the requirement that the
+kernel acquires/releases the HCOMM communicator by name.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and

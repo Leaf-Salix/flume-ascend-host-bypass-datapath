@@ -250,3 +250,7 @@ extern "C" unsigned int FlumeHcommPayloadCopyAbiVersion3() {
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion() {
   return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION;
 }
+
+extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
+  return 1U;
+}

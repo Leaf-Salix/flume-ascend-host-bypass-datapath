@@ -35,6 +35,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_abi_v2": "FlumeHcommPayloadCopyAbiVersion2",
     "payload_abi_v3": "FlumeHcommPayloadCopyAbiVersion3",
     "payload_semantic": "FlumeHcommPayloadCopySemanticVersion",
+    "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
@@ -44,6 +45,7 @@ HCOMM_PAYLOAD_COPY_ABI_VERSION = "FlumeHcommPayloadCopyAbiVersion"
 HCOMM_PAYLOAD_COPY_ABI_VERSION_V2 = "FlumeHcommPayloadCopyAbiVersion2"
 HCOMM_PAYLOAD_COPY_ABI_VERSION_V3 = "FlumeHcommPayloadCopyAbiVersion3"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION = "FlumeHcommPayloadCopySemanticVersion"
+HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 
@@ -259,6 +261,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_direct_aclrt" in required_set and
         "payload_abi_v3" in required_set and
         "payload_semantic" in required_set and
+        "payload_requires_comm_acquire" in required_set and
         "build_mode_internal" in required_set)
 
 
@@ -289,6 +292,10 @@ def PackageTextNextAction(package_text: str) -> str:
     if "semantic marker" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package has stale semantics")
+    if "comm-acquire marker" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from current Flume; installed package predates HCOMM comm "
+                "acquire handoff")
     if "no Flume HCOMM custom-op JSON found" in reason:
         return "install the Stage 3B.3E internal payload custom-op package"
     if "missing or incomplete" in reason:
@@ -1458,7 +1465,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v3 + semantic + internal markers + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v3 + semantic + comm-acquire + internal markers + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| payload loader | {strict_loader} | `stage3b3e_direct_aclrt_payload_loader` |",
@@ -2141,6 +2148,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_direct_aclrt")
         required_functions.append("payload_abi_v3")
         required_functions.append("payload_semantic")
+        required_functions.append("payload_requires_comm_acquire")
         required_functions.append("build_mode_internal")
 
     found_any_json = False
@@ -2151,6 +2159,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_abi_version_marker = False
     found_payload_abi_v2_marker = False
     found_payload_semantic_marker = False
+    found_payload_requires_comm_acquire_marker = False
     print("HCOMM custom-op package inspection")
     print(f"json: {HCOMM_CUSTOM_OP_JSON}")
     print(f"aicpu_tar: {HCOMM_CUSTOM_OP_TAR}")
@@ -2190,6 +2199,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_ABI_VERSION_V2,
             HCOMM_PAYLOAD_COPY_ABI_VERSION_V3,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION,
+            HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
         ]
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
@@ -2241,6 +2251,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_semantic_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION,
                                         False))
+                found_payload_requires_comm_acquire_marker = (
+                    found_payload_requires_comm_acquire_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
+                                        False))
                 print("function_so.payload_direct_aclrt.legacy."
                       f"{HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT}="
                       f"{'present' if symbols_present.get(HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT, False) else 'missing'}")
@@ -2262,6 +2276,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_semantic_version."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False) else 'missing'}")
+                print("function_so.payload_requires_comm_acquire."
+                      f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
             if (args.require_hcomm_payload_kernel and
                     not functions_present.get("payload_direct_aclrt", False) and
                     legacy_payload_present):
@@ -2291,7 +2308,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     required_ok and
                     symbols_present.get(HCOMM_PAYLOAD_BUILD_MODE_INTERNAL, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, False) and
-                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False))
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False))
         print(f"required={','.join(required_functions)}")
         if args.require_hcomm_payload_kernel:
             print("required_build_mode=internal_payload")
@@ -2299,6 +2317,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_ABI_VERSION_V3}")
             print("required_payload_semantic_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION}")
+            print("required_payload_comm_acquire_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
         print(f"status={'PASS' if required_ok else 'FAIL'}")
         print("")
         found_required = found_required or required_ok
@@ -2336,6 +2356,14 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   not found_payload_semantic_marker):
                 print("reason=payload kernel package is missing the payload "
                       "semantic marker")
+                print("action=rebuild package with current Flume payload "
+                      "kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  not found_payload_requires_comm_acquire_marker):
+                print("reason=payload kernel package is missing the payload "
+                      "comm-acquire marker")
                 print("action=rebuild package with current Flume payload "
                       "kernel")
             else:

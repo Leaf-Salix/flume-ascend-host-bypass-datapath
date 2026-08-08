@@ -62,6 +62,13 @@
       "functionName": "FlumeHcommPayloadCopySemanticVersion"
     }
   },
+  "FlumeHcommPayloadCopyRequiresCommAcquire": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopyRequiresCommAcquire"
+    }
+  },
   "FlumeHcommPayloadBuildModeInternalPayload": {
     "opInfo": {
       "opKernelLib": "AICPUKernel",

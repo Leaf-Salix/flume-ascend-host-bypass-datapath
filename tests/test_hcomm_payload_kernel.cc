@@ -100,6 +100,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyAbiVersion3() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion() ==
                    FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
 
   uint8_t user[64] = {};
   uint8_t local[64] = {};

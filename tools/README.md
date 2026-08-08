@@ -195,7 +195,8 @@ canary-only 包或 payload 包不完整；如果同时出现
 `reason.payload_direct_aclrt=legacy-entrypoint-present`，说明当前安装的是
 旧 payload 包。当前 payload-ready 要求 JSON 声明
 `FlumeHcommPayloadCopyDirectAclrtKernelV3`、`FlumeHcommPayloadCopyAbiVersion3`
-和 `FlumeHcommPayloadCopySemanticVersion`，旧包只声明
+、`FlumeHcommPayloadCopySemanticVersion` 和
+`FlumeHcommPayloadCopyRequiresCommAcquire`，旧包只声明
 `FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic marker 时会被明确判为
 stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_INTERNAL_NOTIFY=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
@@ -205,12 +206,14 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopyDirectAclrtKernelV3` 和
 `FlumeHcommPayloadBuildModeInternalPayload`，并要求
 `FlumeHcommPayloadCopyAbiVersion3` 和
-`FlumeHcommPayloadCopySemanticVersion` 同时出现在 JSON 和 SO 里，作为当前
-descriptor ABI 与 payload success-status 语义 marker。默认 canary-only
+`FlumeHcommPayloadCopySemanticVersion` 以及
+`FlumeHcommPayloadCopyRequiresCommAcquire` 同时出现在 JSON 和 SO 里，作为当前
+descriptor ABI、payload success-status 与 HCOMM comm acquire/release 语义
+marker。默认 canary-only
 包可能为了 JSON/SO 兼容导出 V3 stub；没有 internal build-mode marker、
-ABI v3 marker 或 semantic marker 时不会被判为 payload-ready，避免把空包、
-坏包、stub 包、旧 ABI 包、旧语义包或 JSON/SO 不一致的包误判为可跑 strict
-payload。
+ABI v3 marker、semantic marker 或 comm-acquire marker 时不会被判为
+payload-ready，避免把空包、坏包、stub 包、旧 ABI 包、旧语义包、缺 HCOMM
+comm acquire/release 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 
 `ascend-probe` 在运行 `--run-hcomm-payload-smoke` 或
 `--run-hcomm-notify-only-smoke` 时会自动追加
