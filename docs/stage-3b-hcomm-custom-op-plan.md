@@ -386,11 +386,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
-  --auto-run-hcomm-payload-channel-handle-candidate \
-  --auto-run-hcomm-payload-write-path-candidate \
-  --auto-run-hcomm-payload-channel-fence-diagnostic \
-  --auto-run-hcomm-payload-nobatch-diagnostic \
-  --auto-run-hcomm-payload-tagged-diagnostic \
+  --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
 ```
@@ -398,37 +394,40 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
 The auto path exports the package under the current log directory and retries
 the strict gate with that isolated runtime root. It does not install into the
 system CANN/OPP tree, so it is the preferred first attempt on shared hosts.
-If the batch-enabled strict gate fails, the optional no-batch rerun writes
-`HCOMM_PAYLOAD_NOBATCH_DIAGNOSTIC.md`, the optional tagged-batch rerun writes
-`HCOMM_PAYLOAD_TAGGED_DIAGNOSTIC.md`, and the CANN fixture adds
+If the default strict gate fails, `--auto-run-hcomm-payload-candidate-matrix`
+tries channel-handle, write-path, channel-fence, no-batch, tagged-batch,
+direct-output, and no-comm-acquire variants. Only candidates with complete
+checksum/trace/`fallback=none` evidence can satisfy the gate; no-comm-acquire
+remains diagnostic-only. The CANN fixture also adds
 `hcomm-primitive-call-shape-probe.txt` so the same log bundle can distinguish
-ABI call-shape problems, default-tag batch compatibility, batch submit/ordering
-problems, and primitive-copy problems. If a no-batch, tagged-batch, or
+ABI call-shape problems, binding choices, batch compatibility, and completion
+ordering problems, and primitive-copy problems. If a no-batch, tagged-batch, or
 direct-output rerun produces the full strict-positive marker set with checksum
 match and `fallback=none`, the tools accept that log as real HCOMM payload-copy
 evidence and record the variant explicitly in the decision tree.
 
-If the default read-path fails around `HcommReadOnThread`, enable
-`--auto-run-hcomm-payload-write-path-candidate`. That path tries the send-side
+If the default read-path fails around `HcommReadOnThread`, the recommended
+one-shot path is still `--auto-run-hcomm-payload-candidate-matrix`. Its
+write-path branch tries the send-side
 `HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)` transfer mode
 instead of recv-side remote read. The auto runner writes
-`HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`; with the channel-handle,
-channel-fence, and no-batch auto flags enabled, the matrix covers plain write,
+`HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`; the matrix covers plain write,
 write + channel-handle, write + channel-handle + channel-fence, write +
 channel-handle + no-batch, and write + channel-handle + no-batch +
 channel-fence. It strips recv direct-output from write-path commands because
 direct-output is read-path-only. A selected write-path candidate must still show
 `payload_transfer_mode=write`, full rank trace evidence, matching checksums,
-and `fallback=none`.
+and `fallback=none`. Use `--auto-run-hcomm-payload-write-path-candidate` only
+when you intentionally want to isolate the write-path branch.
 
 If the recv side appears to need stronger read completion semantics, pass
 `--hcomm-payload-channel-fence` or enable
-`--auto-run-hcomm-payload-channel-fence-diagnostic`. That variant keeps the same
+`--auto-run-hcomm-payload-candidate-matrix`. Its channel-fence variant keeps the same
 payload path but forces `HcommChannelFenceOnThread` after `HcommReadOnThread`,
 including on HCCS/SIO protocols where the default is ordered notify. A complete
 channel-fence pass is accepted as HCOMM payload-copy evidence and is recorded as
 `payload_completion_mode=channel-fence`.
-When channel-handle auto candidates are enabled, the same diagnostic also tries
+When channel-handle auto candidates are enabled, the same matrix also tries
 the enabled channel-handle cross-product candidates, including
 `hcomm-payload-channel-handle-channel-fence-candidate`,
 `hcomm-payload-channel-handle-direct-output-channel-fence-candidate`,
@@ -496,10 +495,10 @@ behavior as a candidate backend rather than a diagnostic, run the strict smoke
 with `--hcomm-payload-comm-binding=channel-handle`; that path can satisfy the
 final gate only if both ranks pass with checksum match and `fallback=none`.
 For one-shot remote collection, add
-`--auto-run-hcomm-payload-channel-handle-candidate`; if the default
-`comm-name` run fails, the tool reruns the same strict smoke with
-`channel-handle` binding and writes
-`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md`.
+`--auto-run-hcomm-payload-candidate-matrix`; if the default `comm-name` run
+fails, the tool reruns the same strict smoke across ChannelHandle, write-path,
+channel-fence, no-batch, tagged-batch, direct-output, and no-comm-acquire
+variants.
 
 Before running strict smoke against an existing package, inspect it:
 
@@ -706,11 +705,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
   --auto-build-hcomm-payload-package \
-  --auto-run-hcomm-payload-channel-handle-candidate \
-  --auto-run-hcomm-payload-write-path-candidate \
-  --auto-run-hcomm-payload-channel-fence-diagnostic \
-  --auto-run-hcomm-payload-nobatch-diagnostic \
-  --auto-run-hcomm-payload-tagged-diagnostic \
+  --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-storage-strict-positive
 ```

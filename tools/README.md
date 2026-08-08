@@ -118,35 +118,25 @@ host 侧不再要求 `HcclGetCommName`，kernel 侧也不要求非空 comm name�
 checksum、trace 和 `fallback=none` 都通过时才算真实 HCOMM payload copy；
 `diagnostic-skip` 只用于隔离问题。
 
-也可以让 focused gate 自动跑这个候选分支：
-`--auto-run-hcomm-payload-channel-handle-candidate`。当默认 `comm-name`
-strict-positive 失败时，工具会额外运行
-`--hcomm-payload-comm-binding=channel-handle`，生成
-`HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE.md`；如果该候选分支给出完整
-strict-positive 证据，最终 evidence gate 可以通过。它不同于
-`--auto-run-hcomm-payload-no-comm-acquire-diagnostic`，后者仍然只是诊断。
-如果同时打开 `--auto-run-hcomm-payload-direct-output-diagnostic`，普通
-channel-handle 候选失败后还会追加
-`hcomm-payload-channel-handle-direct-output-candidate`，用于一次性测试
-ChannelHandle 绑定和 recv direct-output 的交叉组合；完整通过时同样可以作为
-strict-positive evidence。
+推荐让 focused gate 自动跑完整候选矩阵：
+`--auto-run-hcomm-payload-candidate-matrix`。当默认 `comm-name`
+strict-positive 失败时，工具会依次收集 ChannelHandle、write-path、
+channel-fence、no-batch、tagged-batch、direct-output 和 no-comm-acquire
+证据；只有给出完整 strict-positive、checksum、trace 和 `fallback=none`
+的候选才能通过最终 evidence gate。no-comm-acquire 仍然只是诊断，不会被
+选成最终成功证据。专家模式下也可以只打开
+`--auto-run-hcomm-payload-channel-handle-candidate` 或
+`--auto-run-hcomm-payload-no-comm-acquire-diagnostic` 来缩小问题范围。
 
 如果默认 read-path 卡在 `payload_failure_step=remote-read`，可以追加
 `--hcomm-payload-write-path` 直接测试 send 端
-`HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)`。也可以让
-focused gate 自动跑 write-path 候选矩阵：
-`--auto-run-hcomm-payload-write-path-candidate`。该矩阵先跑 plain
-write-path；如果同时启用了 channel-handle、channel-fence 或 no-batch
-自动诊断，还会继续跑对应交叉组合：
-`hcomm-payload-write-path-channel-handle-candidate`、
-`hcomm-payload-write-path-channel-handle-channel-fence-candidate`、
-`hcomm-payload-write-path-channel-handle-nobatch-candidate` 和
-`hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate`。
-write-path 矩阵会剥离 `--hcomm-payload-recv-direct-output`，因为 direct-output
-只适用于 read-path。每次自动运行都会生成
-`HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`；只有同时满足
-`payload_transfer_mode=write`、完整 trace、checksum match 和 `fallback=none`
-的候选才会被选为真正 HCOMM payload-copy evidence。
+`HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)`。完整候选矩阵
+会自动覆盖 write-path 及其 ChannelHandle、channel-fence、no-batch
+交叉组合，并生成 `HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`。write-path
+矩阵会剥离 `--hcomm-payload-recv-direct-output`，因为 direct-output 只适用于
+read-path。只有同时满足 `payload_transfer_mode=write`、完整 trace、
+checksum match 和 `fallback=none` 的候选才会被选为真正 HCOMM
+payload-copy evidence。
 如果手工同时传 `--hcomm-payload-write-path` 和
 `--hcomm-payload-recv-direct-output`，运行日志会显示
 `payload_recv_direct_output=on payload_recv_direct_output_effective=off`；
@@ -160,9 +150,9 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-direct-output --run-
 
 该模式让 recv kernel 直接执行 `HcommReadOnThread(remote_hccl_buffer -> output HBM)`，贴近公开 custom P2P 示例，用于判断失败是否来自第二段 `HcommLocalCopyOnThread(local_hccl_buffer -> output)`。默认 strict-positive 仍使用 local-buffer staging；日志中的 `payload_recv_path=local-buffer|direct-output` 会进入 decision tree 的 host descriptor fingerprint。
 如果希望 strict-positive 失败时自动采集这个 A/B 证据，可以追加
-`--auto-run-hcomm-payload-direct-output-diagnostic`。该自动诊断会额外生成
-`HCOMM_PAYLOAD_DIRECT_OUTPUT_DIAGNOSTIC.md`；如果该日志包含完整
-strict-positive 证据、checksum match 和 `fallback=none`，工具会把它选为
+`--auto-run-hcomm-payload-candidate-matrix`，或者专家模式只打开
+`--auto-run-hcomm-payload-direct-output-diagnostic`。direct-output 日志包含完整
+strict-positive 证据、checksum match 和 `fallback=none` 时，工具会把它选为
 通过的 HCOMM payload-copy evidence。此时 accepted recv path 会明确记录为
 `payload_recv_path=direct-output`。
 
@@ -172,17 +162,9 @@ strict-positive 证据、checksum match 和 `fallback=none`，工具会把它选
 `payload_completion_mode=channel-fence` 和
 `payload_trace_primitive_path=recv-read-local-copy|recv-read-direct-output`。
 如果希望 strict-positive 失败时自动采集这个 completion 语义对照，可以追加
+`--auto-run-hcomm-payload-candidate-matrix`，或者专家模式只打开
 `--auto-run-hcomm-payload-channel-fence-diagnostic`；完整通过时同样可以作为
-HCOMM payload-copy evidence。
-如果同时打开 `--auto-run-hcomm-payload-channel-handle-candidate`，plain
-channel-handle 候选失败后，会按已启用的 diagnostics 继续追加交叉组合：
-`hcomm-payload-channel-handle-channel-fence-candidate`、
-`hcomm-payload-channel-handle-direct-output-channel-fence-candidate`、
-`hcomm-payload-channel-handle-nobatch-channel-fence-candidate` 和
-`hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate`。
-这些候选仍必须满足完整 strict-positive evidence、checksum match 和
-`fallback=none` 才会被选为真正 HCOMM payload-copy 证据。每次自动运行
-channel-handle 候选时都会生成
+HCOMM payload-copy evidence。完整候选矩阵会生成
 `HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md`，汇总每个候选的
 `payload_failure_step`、`payload_kernel_hcomm_ret`、`payload_recv_path`、
 completion mode、rank evidence 和 selected 状态；真机失败时优先看这个
