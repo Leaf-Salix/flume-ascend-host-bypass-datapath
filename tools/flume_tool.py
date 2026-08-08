@@ -1662,6 +1662,15 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
     strict_primitive_state = marker_value(strict, "payload_primitive_state")
+    strict_desc_bytes = marker_value(strict, "payload_desc_bytes")
+    strict_desc_ready_notify = marker_value(strict,
+                                            "payload_desc_ready_notify_idx")
+    strict_desc_done_notify = marker_value(strict,
+                                           "payload_desc_done_notify_idx")
+    strict_desc_completion = marker_value(strict,
+                                          "payload_desc_completion_mode")
+    strict_desc_thread_notify = marker_value(
+        strict, "payload_desc_thread_notify_mode")
     strict_semantic = marker_value(strict, "payload_semantic")
     strict_build_mode = marker_value(strict, "payload_build_mode")
     strict_verify = marker_value(strict, "payload_verify")
@@ -1760,6 +1769,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
+            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify} | `payload_desc_*` fields passed to the direct ACL kernel |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",

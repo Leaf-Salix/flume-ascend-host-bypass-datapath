@@ -28,6 +28,19 @@ def write(path: Path, text: str) -> Path:
 
 def strict_log(include_verify: bool) -> str:
     verify = " payload_verify=passed payload_checksum=1234" if include_verify else ""
+    desc = (" payload_desc_role=0 payload_desc_local_rank=0 "
+            "payload_desc_peer_rank=1 payload_desc_rank_size=2 "
+            "payload_desc_bytes=4096 payload_desc_ready_notify_idx=0 "
+            "payload_desc_done_notify_idx=1 "
+            "payload_desc_thread_notify_mode=0 "
+            "payload_desc_completion_mode=0 "
+            "payload_desc_timeout_sec=60 payload_desc_status_schema=v2 "
+            "payload_desc_status_word_count=8")
+    recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
+    recv_desc = recv_desc.replace("payload_desc_local_rank=0",
+                                  "payload_desc_local_rank=1")
+    recv_desc = recv_desc.replace("payload_desc_peer_rank=1",
+                                  "payload_desc_peer_rank=0")
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
         "rank 0 hcomm payload smoke passed: fallback=none detail=\""
@@ -39,7 +52,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_status_word_count=8 payload_echo=passed" + desc +
+        " fallback=none\" "
         "payload_source_checksum=1234",
         "rank 1 hcomm payload smoke passed: fallback=none" + verify +
         " detail=\"stage3b3e_payload_copy=passed "
@@ -50,7 +64,8 @@ def strict_log(include_verify: bool) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
-        "payload_status_word_count=8 payload_echo=passed fallback=none\" "
+        "payload_status_word_count=8 payload_echo=passed" + recv_desc +
+        " fallback=none\" "
         "payload_expected_checksum=1234",
         "",
     ])
@@ -354,6 +369,8 @@ def main() -> int:
         assert "`payload_echo=passed`" in text
         assert "| kernel failure step | none |" in text
         assert "| payload checksum match | yes |" in text
+        assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
+                "done=1, completion=0, thread_notify=0 |") in text
         assert "start Stage 3B.4 storage rewiring" in text
 
         strict_no_verify = write(tmp / "strict-no-verify.log",
