@@ -389,7 +389,11 @@ marker-only 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 `hcomm-custom-op-package-preflight` 诊断步骤；`ascend-full-matrix` 会默认用
 payload-required 模式检查包体，并在
 `ASCEND_FULL_MATRIX_DECISION_TREE.md` 里标记 package 是 `not-ready`、
-`canary-ready` 还是 `payload-ready`。
+`canary-ready` 还是 `payload-ready`。如果传入
+`--auto-build-hcomm-payload-package`，`ascend-full-matrix` 会在初始
+payload-required preflight 失败后先执行 isolated direct-build/export，再用
+导出的 `--custom-op-root` 重跑 preflight 和 strict payload gate；这个路径不安装
+或修改系统 CANN/OPP。
 `--custom-op-root`、`--custom-op-json`、`--custom-op-aicpu-tar` 和
 `--custom-op-vendor` 也会传给真实 HCOMM smoke runtime；`--custom-op-json`
 是 authoritative，路径写错时 runtime 不会悄悄回退到系统安装目录。
@@ -568,7 +572,9 @@ package 还没 ready，则该步骤保留为 optional expected negative。当前
 payload package 时预期 readiness 返回 `unsupported` / `fallback=hccl-p2p`，
 strict negative 失败但在 summary 中标为 optional；这说明缺的是可安装的
 Flume custom-op/AICPU payload package，而不是 HCCL collective 或 HCCL P2P
-baseline。
+baseline。追加 `--auto-build-hcomm-payload-package` 后，full matrix 会先尝试
+从当前 toolkit 直接构建并导出 isolated payload package；若导出包通过
+payload-ready preflight，strict payload copy 会升级为 required positive。
 
 payload package 已经通过 preflight 后，可以用更窄的严格正例入口，只验证
 Stage 3B.3E 真实 HCOMM payload copy：

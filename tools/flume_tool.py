@@ -421,6 +421,18 @@ def MaybeAutoBuildPayloadPackage(
         "  --hccl-debug-logs",
         "  hcomm-payload-strict-positive",
     ]
+    matrix_rerun_command = [
+        "python3 tools/flume_tool.py",
+        f"  --build-dir {Path(args.build_dir)}",
+        "  --hccl-devices <device-a>,<device-b>",
+        "  --hccl-host-ifname <host-ifname>",
+        "  --hccl-host-ip <host-ip>",
+        "  --build-hcomm-custom-op",
+        f"  --custom-op-root {export_root}",
+        "  --auto-run-hcomm-payload-candidate-matrix",
+        "  --hccl-debug-logs",
+        "  ascend-full-matrix",
+    ]
     note.write_text(
         "Flume auto-built an isolated direct ACL HCOMM payload package for "
         "this run.\n"
@@ -433,6 +445,9 @@ def MaybeAutoBuildPayloadPackage(
         "\n"
         "Focused rerun command:\n"
         + " \\\n".join(rerun_command) + "\n"
+        "\n"
+        "Full-matrix rerun command:\n"
+        + " \\\n".join(matrix_rerun_command) + "\n"
         "\n"
         "The run is only a true HCOMM payload-copy success when the strict "
         "decision tree reports both ranks passed with fallback=none, "
@@ -6650,7 +6665,8 @@ def parse_args() -> argparse.Namespace:
                               "aarch64-linux include/lib64 tree."))
     parser.add_argument("--auto-build-hcomm-payload-package",
                         action="store_true",
-                        help=("For hcomm-payload-strict-positive and "
+                        help=("For ascend-full-matrix, "
+                              "hcomm-payload-strict-positive, and "
                               "hcomm-storage-strict-positive, if the payload "
                               "custom-op package preflight fails, build the "
                               "direct ACL payload package from the installed "

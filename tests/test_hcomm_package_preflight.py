@@ -886,6 +886,58 @@ def main() -> int:
         assert any(item.startswith("--custom-op-export-root=")
                    for item in auto_command)
         assert any(item.startswith("--log-root=") for item in auto_command)
+
+        class FakeAutoBuildRunner:
+            def __init__(self, run_dir: Path):
+                self.run_dir = run_dir
+                self.calls: list[str] = []
+
+            def run(self, name, command, required, timeout_seconds,
+                    env_updates=None):
+                del required, timeout_seconds, env_updates
+                self.calls.append(name)
+                log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                if name == "hcomm-custom-op-package-preflight-autobuilt":
+                    log_path.write_text("status=PASS\n", encoding="utf-8")
+                else:
+                    log_path.write_text("$ " + " ".join(command) + "\n",
+                                        encoding="utf-8")
+                return flume_tool.StepResult(name, list(command), 0, 0.0,
+                                             log_path, True)
+
+        auto_runner = FakeAutoBuildRunner(tmp / "auto-build-run")
+        failed_package = flume_tool.StepResult(
+            "hcomm-custom-op-package-preflight", [], 1, 0.0,
+            auto_runner.run_dir / "00-package.log", False)
+        auto_args, auto_package = flume_tool.MaybeAutoBuildPayloadPackage(
+            auto_runner,
+            SimpleNamespace(build_dir=str(tmp / "strict-build"),
+                            jobs=3,
+                            custom_op_vendor="flume",
+                            cann_package_root=str(auto_cann),
+                            custom_op_root="",
+                            custom_op_json="",
+                            custom_op_aicpu_tar="",
+                            auto_build_hcomm_payload_package=True,
+                            hccl_smoke_timeout_sec=30,
+                            step_timeout_sec=30),
+            failed_package)
+        assert auto_package.returncode == 0
+        assert auto_runner.calls == [
+            "hcomm-payload-auto-direct-build",
+            "hcomm-custom-op-package-preflight-autobuilt",
+        ]
+        assert str(auto_runner.run_dir / "hcomm-payload-auto-runtime") == (
+            auto_args.custom_op_root)
+        auto_note = auto_runner.run_dir / "HCOMM_PAYLOAD_AUTO_PACKAGE.txt"
+        auto_note_text = auto_note.read_text(encoding="utf-8")
+        assert "Focused rerun command:" in auto_note_text
+        assert "Full-matrix rerun command:" in auto_note_text
+        assert "hcomm-payload-strict-positive" in auto_note_text
+        assert "ascend-full-matrix" in auto_note_text
+        assert "--auto-run-hcomm-payload-candidate-matrix" in auto_note_text
+
         inferred_tar_preflight = subprocess.run(
             [
                 sys.executable,

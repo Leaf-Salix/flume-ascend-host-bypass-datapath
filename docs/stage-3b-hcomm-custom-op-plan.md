@@ -392,8 +392,10 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
 ```
 
 The auto path exports the package under the current log directory and retries
-the strict gate with that isolated runtime root. It does not install into the
-system CANN/OPP tree, so it is the preferred first attempt on shared hosts.
+the strict gate with that isolated runtime root. `ascend-full-matrix` uses the
+same isolated package flow before deciding whether strict payload copy is a
+required positive gate, so the full matrix can be the first one-shot attempt on
+shared hosts. It does not install into the system CANN/OPP tree.
 If the default strict gate fails, `--auto-run-hcomm-payload-candidate-matrix`
 tries channel-handle, write-path, channel-fence, no-batch, tagged-batch,
 direct-output, and no-comm-acquire variants. Only candidates with complete
