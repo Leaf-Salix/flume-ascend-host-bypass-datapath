@@ -164,6 +164,17 @@ def strict_write_path_log(include_verify: bool) -> str:
     return text
 
 
+def strict_write_path_with_direct_output_log() -> str:
+    text = strict_write_path_log(True)
+    marker = "payload_recv_path=local-buffer"
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing rank recv path markers")
+    return text[:second] + text[second:].replace(
+        marker, "payload_recv_path=direct-output", 1)
+
+
 def strict_log_with_nonzero_hcomm_ret() -> str:
     return strict_log(True).replace(
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
@@ -925,6 +936,10 @@ def main() -> int:
         assert "direct_rank1:" in direct_output_text
         assert "payload_recv_path=direct-output" in direct_output_text
         assert "payload_trace_primitive_path=recv-read-direct-output" in direct_output_text
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_recv_direct_output())[0]
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_path_with_direct_output_log())[0]
         tree = flume_tool.WriteMatrixDecisionTree(
             direct_output_dir, smoke, output_copy_failure, package)
         text = tree.read_text(encoding="utf-8")

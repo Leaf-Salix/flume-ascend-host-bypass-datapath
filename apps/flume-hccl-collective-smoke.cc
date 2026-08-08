@@ -1637,6 +1637,9 @@ void RankMain(RankContext* ctx) {
              << (ctx->hcomm_require_payload_copy ? "on" : "off")
              << " payload_recv_direct_output="
              << (ctx->hcomm_payload_recv_direct_output ? "on" : "off")
+             << " payload_recv_direct_output_effective="
+             << ((ctx->hcomm_payload_recv_direct_output &&
+                  !ctx->hcomm_payload_write_path) ? "on" : "off")
              << " payload_channel_fence="
              << (ctx->hcomm_payload_channel_fence ? "on" : "off")
              << " payload_transfer_mode="
@@ -2414,6 +2417,9 @@ int main(int argc, char** argv) {
             << (hcomm_require_payload_copy ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_recv_direct_output_effective="
+            << ((hcomm_payload_recv_direct_output &&
+                 !hcomm_payload_write_path) ? "on" : "off")
             << " hcomm_payload_channel_fence="
             << (hcomm_payload_channel_fence ? "on" : "off")
             << " hcomm_payload_write_path="
@@ -2755,6 +2761,9 @@ int main(int argc, char** argv) {
             << (hcomm_payload_disable_batch ? "on" : "off")
             << " hcomm_payload_recv_direct_output="
             << (hcomm_payload_recv_direct_output ? "on" : "off")
+            << " hcomm_payload_recv_direct_output_effective="
+            << ((hcomm_payload_recv_direct_output &&
+                 !hcomm_payload_write_path) ? "on" : "off")
             << " hcomm_payload_channel_fence="
             << (hcomm_payload_channel_fence ? "on" : "off")
             << " hcomm_payload_write_path="

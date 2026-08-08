@@ -1717,6 +1717,7 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
                                            "payload_trace_primitive_path")
     rank1_trace_path = MarkerValueFromLine(rank_lines[1],
                                            "payload_trace_primitive_path")
+    rank1_recv_path = MarkerValueFromLine(rank_lines[1], "payload_recv_path")
     binding_ok = (
         rank0_binding == rank1_binding and
         rank0_binding in ("comm-name", "channel-handle"))
@@ -1729,9 +1730,15 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     if rank0_transfer_mode == "write":
         rank0_trace_ok = rank0_trace_path == "send-write"
         rank1_trace_ok = rank1_trace_path == "recv-write-local-copy"
+        recv_path_ok = rank1_recv_path == "local-buffer"
     else:
         rank0_trace_ok = rank0_trace_path == "send-local-copy"
         rank1_trace_ok = rank1_trace_path.startswith("recv-read")
+        recv_path_ok = (
+            (rank1_trace_path == "recv-read-local-copy" and
+             rank1_recv_path == "local-buffer") or
+            (rank1_trace_path == "recv-read-direct-output" and
+             rank1_recv_path == "direct-output"))
     rank0_ok = bool(rank_lines[0]) and any(
         all(marker in rank_lines[0] for marker in markers)
         for markers in accepted_marker_sets) and (
@@ -1754,7 +1761,7 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
-            transfer_ok and
+            transfer_ok and recv_path_ok and
             checksum_ok,
             rank0_ok, rank1_ok)
 

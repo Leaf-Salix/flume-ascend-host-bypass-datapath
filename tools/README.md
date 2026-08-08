@@ -147,6 +147,10 @@ write-path 矩阵会剥离 `--hcomm-payload-recv-direct-output`，因为 direct-
 `HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md`；只有同时满足
 `payload_transfer_mode=write`、完整 trace、checksum match 和 `fallback=none`
 的候选才会被选为真正 HCOMM payload-copy evidence。
+如果手工同时传 `--hcomm-payload-write-path` 和
+`--hcomm-payload-recv-direct-output`，运行日志会显示
+`payload_recv_direct_output=on payload_recv_direct_output_effective=off`；
+strict gate 仍要求 write-path 的 recv marker 为 `payload_recv_path=local-buffer`。
 
 若默认路径卡在 recv 端 `payload_failure_step=output-copy`，可以追加诊断开关：
 
