@@ -1580,6 +1580,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_echo=passed",
     "payload_role=",
     "payload_batch_mode=on",
+    "payload_desc_batch_tag=",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -2263,6 +2264,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_verify = marker_value(strict, "payload_verify")
     strict_fallback = marker_value(strict, "fallback")
     strict_batch_mode = marker_value(strict, "payload_batch_mode")
+    strict_desc_batch_tag = marker_value(strict, "payload_desc_batch_tag")
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -2358,6 +2360,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
+        "`payload_desc_batch_tag=...` + "
         "`payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
         "`payload_verify=passed` + "
@@ -2398,11 +2401,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
-            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
+            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify}, batch_tag={strict_desc_batch_tag}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` must be `passed` so the kernel confirms role/peer/bytes |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
+            f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
             f"| payload checksum match | {strict_checksum_match} | source `{strict_source_checksum}`, received `{strict_payload_checksum}`, expected `{strict_expected_checksum}` |",
             f"| payload semantic marker | {strict_semantic} | `payload_semantic=missing` means stale package |",
@@ -2496,6 +2500,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect payload checksum mismatch"
         elif strict_fallback not in ("none", "missing"):
             next_action = "remove unexpected fallback from strict payload path"
+        elif strict_desc_batch_tag in ("missing", "empty"):
+            next_action = (
+                "inspect HCOMM payload batch tag descriptor fill; expected "
+                "the stable default tag or an explicit custom tag")
         elif hcomm_abi_status in (
                 "not-collected", "missing", "call-shape-fail",
                 "call-shape-unknown"):

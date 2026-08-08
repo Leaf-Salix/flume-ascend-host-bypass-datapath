@@ -106,6 +106,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_kernel_hcomm_ret=0 payload_status_schema=v2 "
         "payload_status_word_count=8 payload_echo=passed payload_role=send "
         "payload_batch_mode=on "
+        "payload_desc_batch_tag=default "
         "payload_thread_notify_order=not-used fallback=none "
         "payload_verify=passed\"",
         "rank 1 hcomm payload smoke passed: fallback=none "
@@ -505,12 +506,25 @@ def main() -> int:
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
-                "done=1, completion=0, thread_notify=0, local_buffer=8192, "
-                "remote_buffer=8192 |") in text
+                "done=1, completion=0, thread_notify=0, batch_tag=default, "
+                "local_buffer=8192, remote_buffer=8192 |") in text
+        assert "| payload batch tag | default |" in text
         assert ("| HCOMM resource fingerprint | engine=aicpu-ts, "
                 "protocol=hccs, channel_desc=rank-graph, channels=1, "
                 "notify_num=2, usable=8192, local=8192, remote=8192 |") in text
         assert "start Stage 3B.4 storage rewiring" in text
+
+        strict_no_batch_tag = write(
+            tmp / "strict-no-batch-tag.log",
+            strict_log(True).replace(" payload_desc_batch_tag=default", ""))
+        no_batch_tag_dir = tmp / "no-batch-tag"
+        no_batch_tag_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_batch_tag_dir, smoke, strict_no_batch_tag, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| payload batch tag | missing |" in text
+        assert ("inspect HCOMM payload batch tag descriptor fill" in text)
 
         strict_no_batch = write(
             tmp / "strict-no-batch.log",

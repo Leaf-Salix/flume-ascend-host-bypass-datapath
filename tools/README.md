@@ -99,7 +99,7 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 走 `HcommLocalCopyOnThread(input -> local_hccl_buffer) + Notify`，rank1 走 `Notify + HcommReadOnThread(remote_hccl_buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`，并校验 rank1 HBM 内容。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_desc_batch_tag=default|custom`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
 已有日志也可以离线复核 strict-positive 门禁：
 
@@ -107,7 +107,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-p
 python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestamp>
 ```
 
-该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_pattern=strict-v1`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v2`、`payload_status_word_count=8`、`payload_echo=passed`、`payload_desc_batch_tag=default|custom`、`payload_pattern=strict-v1`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
 若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
 把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
 `output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
@@ -128,7 +128,9 @@ kernel 按公开 HCCL custom P2P 示例的顺序先 record host completion notif
 否则会保留 direct ACL 路线并标记
 `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
 和 `payload_thread_notify_order=not-used`。
-默认 batch tag 为 `flume_hcomm_payload`。如果 batch-enabled strict gate 失败但
+默认 batch tag 为 `flume_hcomm_payload`。strict-positive 会要求日志里明确出现
+`payload_desc_batch_tag=default|custom`，以证明 descriptor 中的 batch tag
+已经被填充并进入 direct ACL payload 路径。如果 batch-enabled strict gate 失败但
 no-batch 诊断通过，可以加 `--hcomm-payload-batch-tag=flume-payload-v1`
 跑一次 alternate tag 对照；成功日志会用
 `payload_desc_batch_tag=empty|default|custom` 标出本次 descriptor 传入的 tag 形态。
