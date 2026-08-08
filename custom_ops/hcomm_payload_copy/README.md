@@ -208,6 +208,10 @@ bash build.sh \
 ./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
 ```
 
+`--install-custom-op-package` only installs after the build artifact preflight
+passes. If the JSON, AICPU tar, V2 payload entrypoint, or internal-payload build
+marker is missing, the helper stops before touching the target CANN/OPP install.
+
 The internal payload package is the one required for
 `stage3b3e_payload_copy=passed`.
 It still uses the direct ACL runtime launcher and intentionally avoids the

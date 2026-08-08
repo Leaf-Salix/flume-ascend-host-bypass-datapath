@@ -158,7 +158,8 @@ source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`�
 这表示缺 packaging toolchain，不是 Flume runtime 或 HCOMM payload kernel
 逻辑失败。`--install-custom-op-package` 会执行生成的 `.run --install` 并在
 安装后再跑一次 installed-package preflight；它是显式 opt-in，因为会修改目标
-CANN/OPP 安装状态。
+CANN/OPP 安装状态。安装前必须先通过 build artifact preflight；如果 JSON、
+AICPU tar、V2 payload entrypoint 或 internal-payload marker 不完整，工具会拒绝安装。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 

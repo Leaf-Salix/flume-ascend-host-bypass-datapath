@@ -1581,12 +1581,13 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     artifact_note.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"[ok] custom-op build artifacts -> {artifact_note}")
 
+    build_preflight_result: Optional[StepResult] = None
     if result.returncode == 0 and json_path is not None and tar_path is not None:
         preflight_args = copy.copy(args)
         preflight_args.custom_op_json = str(json_path)
         preflight_args.custom_op_aicpu_tar = str(tar_path)
         preflight_args.custom_op_root = ""
-        runner.run(
+        build_preflight_result = runner.run(
             "hcomm-custom-op-build-preflight",
             HcommCustomOpPackageCommand(
                 preflight_args,
@@ -1595,6 +1596,31 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
             timeout_seconds=args.step_timeout_sec,
         )
     if result.returncode == 0 and args.install_custom_op_package:
+        if json_path is None or tar_path is None:
+            setup_log = runner.run_dir / "CUSTOM_OP_INSTALL_ERROR.txt"
+            setup_log.write_text(
+                "cannot install Flume HCOMM custom-op package: build "
+                "succeeded but JSON or AICPU tar artifacts were not found, "
+                "so package preflight could not run\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] custom-op install setup -> {setup_log}")
+            runner.results.append(StepResult(
+                "hcomm-custom-op-install", ["<missing-build-artifacts>"], 1,
+                0.0, setup_log, True))
+            return runner.write_summary()
+        if build_preflight_result is None or build_preflight_result.returncode != 0:
+            setup_log = runner.run_dir / "CUSTOM_OP_INSTALL_ERROR.txt"
+            setup_log.write_text(
+                "refusing to install Flume HCOMM custom-op package because "
+                "hcomm-custom-op-build-preflight did not pass\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] custom-op install setup -> {setup_log}")
+            runner.results.append(StepResult(
+                "hcomm-custom-op-install", ["<preflight-failed>"], 1, 0.0,
+                setup_log, True))
+            return runner.write_summary()
         run_package = SelectCustomOpRunPackage(run_files)
         if run_package is None:
             setup_log = runner.run_dir / "CUSTOM_OP_INSTALL_ERROR.txt"
