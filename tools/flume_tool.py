@@ -229,6 +229,35 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
     return command
 
 
+def RuntimeAicpuTarForJson(json_path: Path) -> Optional[Path]:
+    parts = json_path.parts
+    if len(parts) < 3:
+        return None
+    if parts[-3:] != ("aicpu", "config", HCOMM_CUSTOM_OP_JSON):
+        return None
+    return Path(*parts[:-2]) / "kernel" / HCOMM_CUSTOM_OP_TAR
+
+
+def ValidateRuntimeCustomOpJson(args: argparse.Namespace) -> tuple[bool, str]:
+    if not args.custom_op_json:
+        return (True, "")
+    json_path = Path(args.custom_op_json).expanduser()
+    runtime_tar = RuntimeAicpuTarForJson(json_path)
+    if runtime_tar is not None and runtime_tar.exists():
+        return (True, "")
+    expected = (str(runtime_tar) if runtime_tar is not None
+                else "<custom-op-root>/opp/vendors/<vendor>/aicpu/kernel/" +
+                HCOMM_CUSTOM_OP_TAR)
+    message = (
+        "explicit --custom-op-json is not an installed/runtime-loadable "
+        "Flume custom-op JSON. The preflight --custom-op-aicpu-tar checks "
+        "symbols only; strict-positive runtime launches use "
+        "aclrtBinaryLoadFromFile(JSON). Install the package or point "
+        "--custom-op-json at the installed aicpu/config JSON with matching "
+        f"AICPU tar at {expected}")
+    return (False, message)
+
+
 def HcclHeaderSyntaxCommand() -> Optional[list[str]]:
     cxx = os.environ.get("CXX", "c++")
     if shutil.which(cxx) is None:
@@ -1359,6 +1388,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             required=False,
             timeout_seconds=args.step_timeout_sec,
         )
+    runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
+    if not runtime_json_ok:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",
         HcommCustomOpPackageCommand(args, require_payload=True),
@@ -1491,6 +1526,13 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             required=False,
             timeout_seconds=args.step_timeout_sec,
         )
+
+    runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
+    if not runtime_json_ok:
+        setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
+        print(f"[failed] command setup -> {setup_log}")
+        return 1
 
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",

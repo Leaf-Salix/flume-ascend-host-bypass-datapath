@@ -4,15 +4,30 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import platform
 import subprocess
 import sys
 import tarfile
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 
 KERNEL_SO = "libflume_hcomm_payload_aicpu_kernel.so"
+KERNEL_JSON = "libflume_hcomm_payload_aicpu_kernel.json"
+AICPU_TAR = "aicpu_flume_hcomm_payload.tar.gz"
+
+
+def load_flume_tool(repo: Path):
+    spec = importlib.util.spec_from_file_location(
+        "flume_tool_under_test", repo / "tools" / "flume_tool.py")
+    if spec is None or spec.loader is None:
+        raise AssertionError("failed to load tools/flume_tool.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def compile_kernel(tmp: Path, mode: str) -> Path:
@@ -113,6 +128,7 @@ def main() -> int:
     repo = Path(sys.argv[1]).resolve()
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
+        flume_tool = load_flume_tool(repo)
 
         legacy_json, legacy_tar = write_package(tmp, mode="legacy")
         legacy = run_preflight(repo, legacy_json, legacy_tar)
@@ -160,6 +176,27 @@ def main() -> int:
         assert "function.payload_abi_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v2.stdout
         assert "function_so.payload_abi_version_v2.FlumeHcommPayloadCopyAbiVersion2=present" in v2.stdout
         assert "status=PASS" in v2.stdout
+
+        installed_json = (
+            tmp / "runtime" / "opp" / "vendors" / "flume" / "aicpu" /
+            "config" / KERNEL_JSON
+        )
+        installed_tar = installed_json.parents[1] / "kernel" / AICPU_TAR
+        installed_json.parent.mkdir(parents=True)
+        installed_tar.parent.mkdir(parents=True)
+        installed_json.write_text("{}", encoding="utf-8")
+        installed_tar.write_bytes(b"placeholder")
+        ok, message = flume_tool.ValidateRuntimeCustomOpJson(
+            SimpleNamespace(custom_op_json=str(installed_json)))
+        assert ok, message
+
+        ok, message = flume_tool.ValidateRuntimeCustomOpJson(
+            SimpleNamespace(custom_op_json=str(v2_json)))
+        assert not ok
+        assert (
+            "strict-positive runtime launches use "
+            "aclrtBinaryLoadFromFile(JSON)"
+        ) in message
 
     return 0
 
