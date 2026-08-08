@@ -632,6 +632,12 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   add_test(NAME hcomm_payload_kernel COMMAND test_hcomm_payload_kernel)
 
+  add_executable(test_hcomm_canary_kernel tests/test_hcomm_canary_kernel.cc)
+  target_include_directories(test_hcomm_canary_kernel PRIVATE
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
+  add_test(NAME hcomm_canary_kernel COMMAND test_hcomm_canary_kernel)
+
   add_test(NAME hcomm_package_preflight
     COMMAND ${Python3_EXECUTABLE}
       ${PROJECT_SOURCE_DIR}/tests/test_hcomm_package_preflight.py
