@@ -63,7 +63,7 @@ struct NotifyOnlyPlan {
   uint32_t rank_size = 0;
   uint32_t ready_notify_idx = 0;
   uint32_t done_notify_idx = 1;
-  uint32_t timeout_sec = 1800;
+  uint32_t timeout_sec = 60;
   std::vector<NotifyOnlyStep> steps;
 };
 

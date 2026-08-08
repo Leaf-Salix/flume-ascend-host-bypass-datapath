@@ -87,6 +87,7 @@ typedef struct {
   flume_hcomm_engine_t engine;
   flume_hcomm_protocol_t protocol;
   uint32_t require_thread_export;
+  uint32_t timeout_sec;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {
@@ -253,6 +254,17 @@ int flume_hcomm_payload_send_async(flume_client_t *client,
                                   void *acl_stream,
                                   flume_io_t **out);
 
+int flume_hcomm_payload_send_ex(
+    flume_client_t *client,
+    flume_buffer_t *src,
+    size_t src_offset,
+    uint64_t count,
+    flume_data_type_t data_type,
+    uint32_t dest_rank,
+    const flume_hcomm_channel_probe_options_t *options,
+    void *acl_stream,
+    flume_io_t **out);
+
 int flume_hcomm_payload_recv_async(flume_client_t *client,
                                   flume_buffer_t *dst,
                                   size_t dst_offset,
@@ -261,6 +273,17 @@ int flume_hcomm_payload_recv_async(flume_client_t *client,
                                   uint32_t src_rank,
                                   void *acl_stream,
                                   flume_io_t **out);
+
+int flume_hcomm_payload_recv_ex(
+    flume_client_t *client,
+    flume_buffer_t *dst,
+    size_t dst_offset,
+    uint64_t count,
+    flume_data_type_t data_type,
+    uint32_t src_rank,
+    const flume_hcomm_channel_probe_options_t *options,
+    void *acl_stream,
+    flume_io_t **out);
 
 int flume_prepare_storage_block_async(flume_file_t *file,
                                      uint64_t file_offset,

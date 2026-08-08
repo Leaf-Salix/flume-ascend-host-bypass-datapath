@@ -34,6 +34,7 @@ extern "C" {
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE 0U
 #define FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU 1U
+#define FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC 60U
 #define FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS 0U
 #define FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT 1U
 #define FLUME_HCOMM_PAYLOAD_STATUS_HCOMM_ERROR 2U
@@ -143,7 +144,7 @@ static inline void flume_hcomm_payload_copy_desc_init(
   desc->magic = FLUME_HCOMM_PAYLOAD_COPY_MAGIC;
   desc->version = FLUME_HCOMM_PAYLOAD_COPY_VERSION;
   desc->size = (uint32_t)sizeof(flume_hcomm_payload_copy_desc_v1);
-  desc->timeout_sec = 1800;
+  desc->timeout_sec = FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC;
 }
 
 #ifdef __cplusplus

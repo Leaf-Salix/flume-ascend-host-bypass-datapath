@@ -116,6 +116,7 @@ struct RankContext {
   flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
+  uint32_t hcomm_timeout_sec = 60;
   bool hcomm_require_thread_export = false;
   bool hcomm_require_payload_copy = false;
   uint64_t sym_win_gb = 1;
@@ -1136,6 +1137,7 @@ void RankMain(RankContext* ctx) {
       options.engine = ctx->hcomm_engine;
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export = ctx->hcomm_require_thread_export ? 1U : 0U;
+      options.timeout_sec = ctx->hcomm_timeout_sec;
       if (!CheckFlume(flume_hcomm_channel_probe_ex(client, peer_rank, &options,
                                                    stream, &hcomm_channel_io),
                       "flume_hcomm_channel_probe", &error) ||
@@ -1153,6 +1155,7 @@ void RankMain(RankContext* ctx) {
            << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
            << " require_thread_export="
            << (ctx->hcomm_require_thread_export ? "on" : "off")
            << " thread_export="
@@ -1181,6 +1184,7 @@ void RankMain(RankContext* ctx) {
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export =
           ctx->hcomm_require_thread_export ? 1U : 0U;
+      options.timeout_sec = ctx->hcomm_timeout_sec;
       if (!CheckFlume(flume_hcomm_custom_op_launch_smoke_ex(
                           client, peer_rank, &options, stream,
                           &hcomm_custom_op_io),
@@ -1211,6 +1215,7 @@ void RankMain(RankContext* ctx) {
            << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
            << " channel_res="
            << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
            << " custom_op_build="
@@ -1237,6 +1242,7 @@ void RankMain(RankContext* ctx) {
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export =
           ctx->hcomm_require_thread_export ? 1U : 0U;
+      options.timeout_sec = ctx->hcomm_timeout_sec;
       if (!CheckFlume(flume_hcomm_resource_descriptor_smoke_ex(
                           client, peer_rank, &options, stream,
                           &hcomm_resource_descriptor_io),
@@ -1268,6 +1274,7 @@ void RankMain(RankContext* ctx) {
            << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
            << " channel_res="
            << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
            << " custom_op_build="
@@ -1295,6 +1302,7 @@ void RankMain(RankContext* ctx) {
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export =
           ctx->hcomm_require_thread_export ? 1U : 0U;
+      options.timeout_sec = ctx->hcomm_timeout_sec;
       if (!CheckFlume(flume_hcomm_notify_only_smoke_ex(
                           client, peer_rank, &options, stream,
                           &hcomm_notify_only_io),
@@ -1325,6 +1333,7 @@ void RankMain(RankContext* ctx) {
            << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
            << " channel_res="
            << (FLUME_HAVE_HCOMM_CHANNEL_RES ? "available" : "not-built")
            << " custom_op_build="
@@ -1350,6 +1359,7 @@ void RankMain(RankContext* ctx) {
       options.engine = ctx->hcomm_engine;
       options.protocol = ctx->hcomm_protocol;
       options.require_thread_export = ctx->hcomm_require_thread_export ? 1U : 0U;
+      options.timeout_sec = ctx->hcomm_timeout_sec;
       if (ctx->hcomm_require_payload_copy) {
         if (ctx->rank == 1) {
           auto* host = static_cast<float*>(host_buf);
@@ -1364,23 +1374,25 @@ void RankMain(RankContext* ctx) {
           }
         }
         if (ctx->rank == 0) {
-          if (!CheckFlume(flume_hcomm_payload_send_async(
+          if (!CheckFlume(flume_hcomm_payload_send_ex(
                                 client, reduce_send_buf,
                                 ctx->a3_symmetric ?
                                     layout.reduce_send_offset : 0,
                                 ctx->count, FLUME_DTYPE_FP32, peer_rank,
+                                &options,
                                 stream, &hcomm_payload_io),
-                          "flume_hcomm_payload_send_async", &error)) {
+                          "flume_hcomm_payload_send_ex", &error)) {
             goto cleanup;
           }
         } else {
-          if (!CheckFlume(flume_hcomm_payload_recv_async(
+          if (!CheckFlume(flume_hcomm_payload_recv_ex(
                                 client, reduce_recv_buf,
                                 ctx->a3_symmetric ?
                                     layout.reduce_recv_offset : 0,
                                 ctx->count, FLUME_DTYPE_FP32, peer_rank,
+                                &options,
                                 stream, &hcomm_payload_io),
-                          "flume_hcomm_payload_recv_async", &error)) {
+                          "flume_hcomm_payload_recv_ex", &error)) {
             goto cleanup;
           }
         }
@@ -1446,6 +1458,7 @@ void RankMain(RankContext* ctx) {
            << HcommEngineName(ResolveHcommSmokeEngine(ctx->hcomm_engine))
            << " protocol=" << HcommProtocolName(ctx->hcomm_protocol)
            << " notify_num=" << ctx->hcomm_notify_num
+           << " hcomm_timeout_sec=" << ctx->hcomm_timeout_sec
            << " require_thread_export="
            << (ctx->hcomm_require_thread_export ? "on" : "off")
            << " require_payload_copy="
@@ -1661,6 +1674,7 @@ int main(int argc, char** argv) {
   flume_hcomm_engine_t hcomm_engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t hcomm_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   uint32_t hcomm_notify_num = 2;
+  uint32_t hcomm_timeout_sec = 60;
   bool hcomm_require_thread_export = false;
   bool hcomm_require_payload_copy = false;
   uint64_t sym_win_gb = 1;
@@ -1754,6 +1768,14 @@ int main(int argc, char** argv) {
         return 2;
       }
       hcomm_notify_num = static_cast<uint32_t>(value);
+    } else if (arg.rfind("--hcomm-timeout-sec=", 0) == 0) {
+      uint64_t value = 0;
+      if (!ParseU64(arg.substr(std::string("--hcomm-timeout-sec=").size()),
+                    &value) || value == 0 || value > 86400) {
+        std::cerr << "invalid --hcomm-timeout-sec\n";
+        return 2;
+      }
+      hcomm_timeout_sec = static_cast<uint32_t>(value);
     } else if (arg.rfind("--init=", 0) == 0) {
       if (!ParseHcclInitMode(arg.substr(std::string("--init=").size()),
                              &init_mode, &parse_error)) {
@@ -1957,6 +1979,7 @@ int main(int argc, char** argv) {
             << HcommEngineName(ResolveHcommSmokeEngine(hcomm_engine))
             << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
             << " hcomm_notify_num=" << hcomm_notify_num
+            << " hcomm_timeout_sec=" << hcomm_timeout_sec
             << " hcomm_require_thread_export="
             << (hcomm_require_thread_export ? "on" : "off")
             << " hcomm_payload_smoke="
@@ -2227,6 +2250,7 @@ int main(int argc, char** argv) {
     contexts[local_index].hcomm_engine = hcomm_engine;
     contexts[local_index].hcomm_protocol = hcomm_protocol;
     contexts[local_index].hcomm_notify_num = hcomm_notify_num;
+    contexts[local_index].hcomm_timeout_sec = hcomm_timeout_sec;
     contexts[local_index].hcomm_require_thread_export =
         hcomm_require_thread_export;
     contexts[local_index].hcomm_require_payload_copy =
@@ -2281,6 +2305,7 @@ int main(int argc, char** argv) {
             << HcommEngineName(ResolveHcommSmokeEngine(hcomm_engine))
             << " hcomm_protocol=" << HcommProtocolName(hcomm_protocol)
             << " hcomm_notify_num=" << hcomm_notify_num
+            << " hcomm_timeout_sec=" << hcomm_timeout_sec
             << " hcomm_require_thread_export="
             << (hcomm_require_thread_export ? "on" : "off")
             << " hcomm_require_payload_copy="

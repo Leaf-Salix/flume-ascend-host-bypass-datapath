@@ -63,6 +63,8 @@ def parse_args() -> argparse.Namespace:
                         choices=["auto", "hccs", "roce", "pcie", "sio",
                                  "hccs-only"])
     parser.add_argument("--hcomm-notify-num", type=int, default=2)
+    parser.add_argument("--hcomm-timeout-sec", type=int, default=60,
+                        help="Timeout for in-kernel HCOMM notify/payload waits")
     parser.add_argument("--hcomm-require-thread-export", action="store_true",
                         help="Require HcclThreadExportToCommEngine for AICPU thread-export extension check")
     parser.add_argument("--hcomm-require-payload-copy", action="store_true",
@@ -77,8 +79,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--sym-win-gb must be greater than 0")
     if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
         parser.error("--hcomm-notify-num must be in [1, 64]")
+    if args.hcomm_timeout_sec <= 0 or args.hcomm_timeout_sec > 86400:
+        parser.error("--hcomm-timeout-sec must be in [1, 86400]")
     if args.timeout_sec < 0:
         parser.error("--timeout-sec must be >= 0")
+    if args.timeout_sec > 0 and args.hcomm_timeout_sec >= args.timeout_sec:
+        parser.error("--hcomm-timeout-sec must be smaller than --timeout-sec")
     if args.storage_smoke_offset < 0:
         parser.error("--storage-smoke-offset must be >= 0")
     if args.storage_smoke_bytes <= 0:
@@ -148,6 +154,7 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
         command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
         command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
         command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
+        command.append(f"--hcomm-timeout-sec={args.hcomm_timeout_sec}")
         if args.hcomm_require_thread_export:
             command.append("--hcomm-require-thread-export")
         if args.hcomm_require_payload_copy:

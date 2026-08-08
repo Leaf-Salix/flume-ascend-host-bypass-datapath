@@ -43,6 +43,8 @@ int main() {
                 "default payload thread notify mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU == 1,
                 "host/AICPU payload thread notify mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC == 60,
+                "payload default timeout changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,
                 "payload success status changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT == 1,
@@ -93,7 +95,8 @@ int main() {
   FLUME_TEST_CHECK(payload.magic == FLUME_HCOMM_PAYLOAD_COPY_MAGIC);
   FLUME_TEST_CHECK(payload.version == FLUME_HCOMM_PAYLOAD_COPY_VERSION);
   FLUME_TEST_CHECK(payload.size == sizeof(flume_hcomm_payload_copy_desc_v1));
-  FLUME_TEST_CHECK(payload.timeout_sec == 1800);
+  FLUME_TEST_CHECK(payload.timeout_sec ==
+                   FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC);
   FLUME_TEST_CHECK(payload.thread_notify_mode ==
                    FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE);
   FLUME_TEST_CHECK(payload.status_word == 0);

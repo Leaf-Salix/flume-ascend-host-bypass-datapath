@@ -432,7 +432,7 @@ def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
                 r"canary_status_word|canary_observed_token|"
                 r"stage3b3e_payload_copy|stage3b3e_direct_aclrt_payload|"
                 r"stage3b3e_payload_descriptor_handoff|stage3b3e_payload_sync|"
-                r"payload_kernel|payload_status_word|"
+                r"payload_kernel|payload_status_word|hcomm_timeout_sec|"
                 r"aclrt_custom_op_launch|HcclAicpuKernelLaunch)",
                 re.IGNORECASE,
             ),
@@ -972,6 +972,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append(f"--hcomm-channel-engine={args.hcomm_channel_engine}")
             command.append(f"--hcomm-channel-protocol={args.hcomm_channel_protocol}")
             command.append(f"--hcomm-notify-num={args.hcomm_notify_num}")
+            command.append(f"--hcomm-timeout-sec={args.hcomm_timeout_sec}")
             if args.hcomm_require_thread_export:
                 command.append("--hcomm-require-thread-export")
             if args.hcomm_require_payload_copy:
@@ -1882,6 +1883,11 @@ def parse_args() -> argparse.Namespace:
                         help="HCOMM channel protocol for --run-hcomm-channel-probe")
     parser.add_argument("--hcomm-notify-num", type=int, default=2,
                         help="HCOMM notify count for --run-hcomm-channel-probe")
+    parser.add_argument("--hcomm-timeout-sec", type=int, default=60,
+                        help=("Timeout for in-kernel HCOMM notify/payload "
+                              "waits. Keep this below --hccl-smoke-timeout-sec "
+                              "so strict smokes can report kernel status "
+                              "before the process-level timeout."))
     parser.add_argument("--hcomm-require-thread-export", action="store_true",
                         help=("Require HcclThreadExportToCommEngine in the "
                               "HCOMM channel probe as an AICPU thread-export "
@@ -2010,6 +2016,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--jobs must be greater than 0")
     if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
         parser.error("--hcomm-notify-num must be in [1, 64]")
+    if args.hcomm_timeout_sec <= 0 or args.hcomm_timeout_sec > 86400:
+        parser.error("--hcomm-timeout-sec must be in [1, 86400]")
+    if args.hccl_smoke_timeout_sec > 0:
+        rank_timeout_sec = (args.hccl_smoke_timeout_sec - 5
+                            if args.hccl_smoke_timeout_sec > 5 else
+                            args.hccl_smoke_timeout_sec)
+        if args.hcomm_timeout_sec >= rank_timeout_sec:
+            parser.error("--hcomm-timeout-sec must be smaller than the "
+                         "rank-level HCCL smoke timeout "
+                         f"({rank_timeout_sec} seconds)")
     if args.hccl_server_id == "":
         parser.error("--hccl-server-id must not be empty")
     if args.run_hccl_p2p_smoke and args.run_a3_symmetric_smoke:

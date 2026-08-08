@@ -68,12 +68,29 @@ int main() {
   hcomm_options.engine = FLUME_HCOMM_ENGINE_CPU_TS;
   hcomm_options.protocol = FLUME_HCOMM_PROTOCOL_HCCS_ONLY;
   hcomm_options.require_thread_export = 1;
+  hcomm_options.timeout_sec = 5;
   flume_io_t* hcomm_probe10 = nullptr;
   FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
                                                 nullptr, &hcomm_probe10) ==
                    FLUME_OK);
   FLUME_TEST_CHECK(flume_wait(hcomm_probe10, 0) == FLUME_OK);
   FLUME_TEST_CHECK(flume_io_release(hcomm_probe10) == FLUME_OK);
+
+  hcomm_options.timeout_sec = 0;
+  flume_io_t* bad_timeout_probe = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(clients[1], 0, &hcomm_options,
+                                                nullptr, &bad_timeout_probe) ==
+                   FLUME_OK);
+  FLUME_TEST_CHECK(flume_wait(bad_timeout_probe, 0) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_io_release(bad_timeout_probe) == FLUME_OK);
+
+  hcomm_options.timeout_sec = 86401;
+  flume_io_t* too_large_timeout_probe = nullptr;
+  FLUME_TEST_CHECK(flume_hcomm_channel_probe_ex(
+                       clients[1], 0, &hcomm_options, nullptr,
+                       &too_large_timeout_probe) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(too_large_timeout_probe == nullptr);
 
   hcomm_options.size = 1;
   flume_io_t* bad_options_probe = nullptr;

@@ -292,6 +292,7 @@ rank 1 storage HBM smoke passed: storage_hbm=hccl-p2p-staging ...
 | `--hcomm-channel-engine` | `auto` | `auto`, `aicpu`, `aicpu-ts`, `cpu`, `cpu-ts` |
 | `--hcomm-channel-protocol` | `hccs` | `auto`, `hccs`, `hccs-only`, `roce`, `pcie`, `sio` |
 | `--hcomm-notify-num` | `2` | `1..64`，设置 `HcclChannelDesc.notifyNum` |
+| `--hcomm-timeout-sec` | `60` | HCOMM kernel 内 notify / payload wait 超时；应小于 rank 级 HCCL smoke 超时 |
 | `--hcomm-require-thread-export` | off | 严格要求 thread-export / AICPU thread-export-ready 前置能力 |
 | `--hcomm-require-payload-copy` | off | 严格要求真实 HCOMM payload copy；当前 Stage 2.5 skeleton 预期 unsupported |
 
@@ -442,10 +443,17 @@ python3 tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl
 
 该模式会让 `flume-hccl-collective-smoke` 追加 `--a3-symmetric`：每个 rank 通过 `aclrtReserveMemAddress` / `aclrtMallocPhysical` / `aclrtMapMem` 构造 mapped HBM，再调用 `flume_a3_register_symmetric_memory` 包装 `HcclCommSymWinRegister`，最后在同一块对称窗口内做 AllReduce 和 AllGather。它只建议在 Atlas A3 HCCS 环境使用；如果当前 CANN/HCCL 头文件没有 ACL VMM、symmetric window 或 symmetric-window config 字段，工具会直接报告该 smoke unavailable。
 
-真实 HCCL smoke 默认 600 秒超时。排查大规模 rank 或慢初始化时可以调整：
+真实 HCCL smoke 默认 600 秒进程级超时，root-info / rank-table 多进程
+launcher 会给 rank 子进程预留 5 秒收尾窗口。HCOMM kernel 内 notify /
+payload wait 默认 60 秒超时。`--hcomm-timeout-sec` 应小于 rank 级 HCCL
+smoke 超时，这样 HCOMM primitive 或 notify 等待失败时，kernel 有机会先写回
+`payload_kernel_status` / `payload_status_word`，而不是被外层进程 timeout
+直接杀掉。排查大规模 rank 或慢初始化时可以调整：
 
 ```bash
-python3 tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke --hccl-smoke-timeout-sec 1200 --hccl-devices 0,1 ascend-probe
+python3 tools/flume_tool.py --build-dir build-a3 --run-a3-symmetric-smoke \
+  --hccl-smoke-timeout-sec 1200 --hcomm-timeout-sec 90 \
+  --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
 ## 日志

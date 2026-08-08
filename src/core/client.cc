@@ -198,6 +198,7 @@ using flume::protocol::Reader;
 using flume::protocol::WriteFrame;
 
 constexpr int kSocketTimeoutSeconds = 30;
+constexpr uint32_t kDefaultHcommTimeoutSeconds = 60;
 
 struct CommState {
   bool hccl_attached = false;
@@ -213,6 +214,7 @@ struct HcommProbeOptions {
   flume_hcomm_engine_t engine = FLUME_HCOMM_ENGINE_AUTO;
   flume_hcomm_protocol_t protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   bool require_thread_export = false;
+  uint32_t timeout_sec = kDefaultHcommTimeoutSeconds;
 };
 
 struct HcommChannelResourceInfo {
@@ -232,6 +234,7 @@ struct HcommChannelResourceInfo {
   flume_hcomm_protocol_t resolved_protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   bool thread_export_required = false;
   bool host_thread_notify_ready = false;
+  uint32_t timeout_sec = kDefaultHcommTimeoutSeconds;
   std::string channel_desc_source;
 };
 
@@ -485,6 +488,13 @@ bool NormalizeHcommProbeOptions(
             sizeof(options->require_thread_export)) {
       normalized.require_thread_export = options->require_thread_export != 0;
     }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t, timeout_sec) +
+            sizeof(options->timeout_sec)) {
+      normalized.timeout_sec =
+          options->timeout_sec == 0 ? kDefaultHcommTimeoutSeconds :
+                                      options->timeout_sec;
+    }
   }
 
   if (normalized.notify_num == 0 || normalized.notify_num > 64) {
@@ -518,6 +528,12 @@ bool NormalizeHcommProbeOptions(
         *error = "unsupported HCOMM channel probe protocol";
       }
       return false;
+  }
+  if (normalized.timeout_sec == 0 || normalized.timeout_sec > 86400) {
+    if (error != nullptr) {
+      *error = "HCOMM channel probe timeout_sec must be in [1, 86400]";
+    }
+    return false;
   }
   *out = normalized;
   return true;
@@ -1809,6 +1825,7 @@ bool ProbeHcommChannelResources(const CommState& state,
     resource_info->resolved_protocol = options.protocol;
     resource_info->thread_export_required = options.require_thread_export;
     resource_info->host_thread_notify_ready = host_thread_notify_ready;
+    resource_info->timeout_sec = options.timeout_sec;
     resource_info->channel_desc_source = desc_source;
   }
   *status = FLUME_OK;
@@ -1819,6 +1836,7 @@ bool ProbeHcommChannelResources(const CommState& state,
             " channel_num=" + std::to_string(descs.size()) +
             " thread_export=" +
             (options.require_thread_export ? "required" : "not-required") +
+            " hcomm_timeout_sec=" + std::to_string(options.timeout_sec) +
             " " + thread_notify_detail;
   return true;
 }
@@ -1918,7 +1936,7 @@ void FillFlumeNotifyOnlyDesc(flume::hcomm_payload::PayloadRole role,
   desc->rank_size = state.rank_size;
   desc->ready_notify_idx = 0;
   desc->done_notify_idx = 1;
-  desc->timeout_sec = 1800;
+  desc->timeout_sec = resource_info.timeout_sec;
   desc->aicpu_thread = resource_info.aicpu_ts_thread;
   desc->channel_handle = resource_info.channel_handle;
   desc->local_hccl_buffer =
@@ -1945,6 +1963,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
   desc->rank_size = state.rank_size;
   desc->ready_notify_idx = 0;
   desc->done_notify_idx = 1;
+  desc->timeout_sec = resource_info.timeout_sec;
   desc->bytes = bytes;
   desc->thread_notify_mode = resource_info.host_thread_notify_ready ?
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU :
@@ -2709,7 +2728,7 @@ std::string TryLaunchHcommDirectAclrtCanary(
 
   aclrtLaunchKernelAttr attr = {};
   attr.id = ACL_RT_LAUNCH_KERNEL_ATTR_TIMEOUT;
-  attr.value.timeout = 1800;
+  attr.value.timeout = kDefaultHcommTimeoutSeconds;
   aclrtLaunchKernelCfg cfg = {};
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
@@ -4539,14 +4558,16 @@ int flume_hcomm_notify_only_smoke_ex(
 #endif
 }
 
-int flume_hcomm_payload_send_async(flume_client_t* client,
-                                  flume_buffer_t* src,
-                                  size_t src_offset,
-                                  uint64_t count,
-                                  flume_data_type_t data_type,
-                                  uint32_t dest_rank,
-                                  void* acl_stream,
-                                  flume_io_t** out) {
+int flume_hcomm_payload_send_ex(
+    flume_client_t* client,
+    flume_buffer_t* src,
+    size_t src_offset,
+    uint64_t count,
+    flume_data_type_t data_type,
+    uint32_t dest_rank,
+    const flume_hcomm_channel_probe_options_t* payload_options,
+    void* acl_stream,
+    flume_io_t** out) {
   if (client == nullptr || src == nullptr || out == nullptr) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
@@ -4587,6 +4608,11 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
   HcommProbeOptions options;
+  std::string options_error;
+  if (!NormalizeHcommProbeOptions(payload_options, &options, &options_error)) {
+    *out = MakeIo(FLUME_ERR_INVALID_ARGUMENT, 0, 0, options_error);
+    return FLUME_OK;
+  }
   options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
@@ -4631,14 +4657,28 @@ int flume_hcomm_payload_send_async(flume_client_t* client,
 #endif
 }
 
-int flume_hcomm_payload_recv_async(flume_client_t* client,
-                                  flume_buffer_t* dst,
-                                  size_t dst_offset,
+int flume_hcomm_payload_send_async(flume_client_t* client,
+                                  flume_buffer_t* src,
+                                  size_t src_offset,
                                   uint64_t count,
                                   flume_data_type_t data_type,
-                                  uint32_t src_rank,
+                                  uint32_t dest_rank,
                                   void* acl_stream,
                                   flume_io_t** out) {
+  return flume_hcomm_payload_send_ex(client, src, src_offset, count, data_type,
+                                    dest_rank, nullptr, acl_stream, out);
+}
+
+int flume_hcomm_payload_recv_ex(
+    flume_client_t* client,
+    flume_buffer_t* dst,
+    size_t dst_offset,
+    uint64_t count,
+    flume_data_type_t data_type,
+    uint32_t src_rank,
+    const flume_hcomm_channel_probe_options_t* payload_options,
+    void* acl_stream,
+    flume_io_t** out) {
   if (client == nullptr || dst == nullptr || out == nullptr) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
@@ -4679,6 +4719,11 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
 
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
   HcommProbeOptions options;
+  std::string options_error;
+  if (!NormalizeHcommProbeOptions(payload_options, &options, &options_error)) {
+    *out = MakeIo(FLUME_ERR_INVALID_ARGUMENT, 0, 0, options_error);
+    return FLUME_OK;
+  }
   options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
@@ -4721,6 +4766,18 @@ int flume_hcomm_payload_recv_async(flume_client_t* client,
                     (FLUME_HAVE_HCCL_P2P ? "hccl-p2p" : "none"));
   return FLUME_OK;
 #endif
+}
+
+int flume_hcomm_payload_recv_async(flume_client_t* client,
+                                  flume_buffer_t* dst,
+                                  size_t dst_offset,
+                                  uint64_t count,
+                                  flume_data_type_t data_type,
+                                  uint32_t src_rank,
+                                  void* acl_stream,
+                                  flume_io_t** out) {
+  return flume_hcomm_payload_recv_ex(client, dst, dst_offset, count, data_type,
+                                    src_rank, nullptr, acl_stream, out);
 }
 
 int flume_prepare_storage_block_async(flume_file_t* file,
