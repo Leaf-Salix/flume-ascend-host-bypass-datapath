@@ -68,6 +68,10 @@ int main() {
                 "ordered-notify payload completion mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN == 1,
                 "channel-fence payload completion mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT == 0,
+                "payload default batch mode changed");
+  static_assert(FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED == 1,
+                "payload disabled batch mode changed");
   static_assert(FLUME_HCOMM_PAYLOAD_DEFAULT_TIMEOUT_SEC == 60,
                 "payload default timeout changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS == 0,

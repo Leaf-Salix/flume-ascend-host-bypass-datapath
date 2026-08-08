@@ -69,6 +69,9 @@ def parse_args() -> argparse.Namespace:
                         help="Require HcclThreadExportToCommEngine for AICPU thread-export extension check")
     parser.add_argument("--hcomm-require-payload-copy", action="store_true",
                         help="Fail if HCOMM payload copy is not implemented/available")
+    parser.add_argument("--hcomm-payload-disable-batch", action="store_true",
+                        help=("Diagnostic only: skip HCOMM BatchModeStart/End "
+                              "inside the direct ACL payload kernel"))
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -159,6 +162,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
             command.append("--hcomm-require-thread-export")
         if args.hcomm_require_payload_copy:
             command.append("--hcomm-require-payload-copy")
+        if args.hcomm_payload_disable_batch:
+            command.append("--hcomm-payload-disable-batch")
     return command
 
 

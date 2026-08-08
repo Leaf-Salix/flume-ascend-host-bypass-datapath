@@ -1407,6 +1407,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-require-thread-export")
             if args.hcomm_require_payload_copy:
                 command.append("--hcomm-require-payload-copy")
+            if args.hcomm_payload_disable_batch:
+                command.append("--hcomm-payload-disable-batch")
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -1555,6 +1557,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_word_count=8",
     "payload_echo=passed",
     "payload_role=",
+    "payload_batch_mode=on",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -1906,7 +1909,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_status_word=0` + "
         "`payload_kernel_hcomm_ret=0` + status schema markers + "
         "`payload_echo=passed` + rank0 `payload_role=send` + "
-        "rank1 `payload_role=recv` + `payload_thread_notify_order=...` + "
+        "rank1 `payload_role=recv` + `payload_batch_mode=on` + "
+        "`payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
         "`payload_verify=passed` + "
         "`fallback=none` |")
@@ -2117,6 +2121,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v2,payload_status_word_count=8,"
             "payload_echo=passed,payload_role=send/recv,"
+            "payload_batch_mode=on,"
             "payload_thread_notify_order=,"
             "payload_pattern=strict-v1,"
             "payload_source_checksum=,"
@@ -3610,6 +3615,15 @@ def parse_args() -> argparse.Namespace:
                         help=("Require real HCOMM payload copy in "
                               "--run-hcomm-payload-smoke; current Stage 2.5 "
                               "skeleton is expected to report unsupported"))
+    parser.add_argument("--hcomm-payload-disable-batch", action="store_true",
+                        help=("Diagnostic only: when running real HCOMM "
+                              "payload copy, ask the direct ACL payload kernel "
+                              "to skip HcommBatchModeStart/End so primitive "
+                              "failures can be isolated from batch submit "
+                              "semantics. This mode intentionally cannot "
+                              "satisfy the strict-positive success gate; the "
+                              "final path remains the default batch-enabled "
+                              "mode."))
     parser.add_argument("--hccl-devices", default="",
                         help="Comma-separated device ids for the optional HCCL smoke test")
     parser.add_argument("--hccl-init-mode",

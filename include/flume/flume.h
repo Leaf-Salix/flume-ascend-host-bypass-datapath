@@ -88,6 +88,7 @@ typedef struct {
   flume_hcomm_protocol_t protocol;
   uint32_t require_thread_export;
   uint32_t timeout_sec;
+  uint32_t disable_payload_batch_mode;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {

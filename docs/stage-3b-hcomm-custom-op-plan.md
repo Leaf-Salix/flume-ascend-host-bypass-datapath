@@ -372,6 +372,28 @@ The auto path exports the package under the current log directory and retries
 the strict gate with that isolated runtime root. It does not install into the
 system CANN/OPP tree, so it is the preferred first attempt on shared hosts.
 
+If the batch-enabled strict gate fails inside the payload kernel, use the
+diagnostic no-batch variant to isolate HCOMM primitive execution from
+`HcommBatchModeStart/End` submit semantics:
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-payload-nobatch \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  --custom-op-root <temporary-custom-op-root> \
+  --hcomm-payload-disable-batch \
+  hcomm-payload-strict-positive
+```
+
+This is deliberately not a final success path: strict-positive still requires
+`payload_batch_mode=on`. A no-batch rank log that reaches
+`stage3b3e_payload_copy=passed` means the custom-op descriptor, channel,
+notify, `HcommLocalCopyOnThread`, and `HcommReadOnThread` path are viable, and
+the remaining issue is HCOMM batch submit/ordering. A no-batch failure points
+directly at the failing primitive through `payload_failure_step=...`.
+
 Before running strict smoke against an existing package, inspect it:
 
 ```bash

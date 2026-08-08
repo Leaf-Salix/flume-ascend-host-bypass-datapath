@@ -160,6 +160,18 @@ int main() {
   reset_status();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status);
+  send_desc.reserved2[0] = FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  const int send_no_batch_calls[] = {kAcquireComm, kLocalCopy,
+                                     kNotifyRecord, kNotifyWait,
+                                     kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(send_no_batch_calls, 5));
+
+  Reset();
+  reset_status();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status);
   status_probe_words = status;
   status_probe_call = kLocalCopy;
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==

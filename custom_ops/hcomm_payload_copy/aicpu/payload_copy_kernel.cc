@@ -70,6 +70,10 @@ void StorePayloadEcho(const flume_hcomm_payload_copy_desc_v1& desc) {
   status_words[7] = desc.completion_mode;
 }
 
+bool PayloadBatchModeEnabled(const flume_hcomm_payload_copy_desc_v1& desc) {
+  return desc.reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+}
+
 bool CanRecordPayloadCompletionNotify(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   return HasPayloadDescHeader(desc) &&
@@ -226,7 +230,7 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   unsigned int result = kFlumePayloadSuccess;
   bool batch_started = false;
 
-  if (result == kFlumePayloadSuccess) {
+  if (result == kFlumePayloadSuccess && PayloadBatchModeEnabled(desc)) {
     BeginPayloadPrimitive(desc, FLUME_HCOMM_PAYLOAD_STATUS_BATCH_START_FAILED);
     ret = HcommBatchModeStart(desc.batch_tag);
     if (ret != 0) {

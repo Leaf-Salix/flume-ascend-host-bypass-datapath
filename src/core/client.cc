@@ -228,6 +228,7 @@ struct HcommProbeOptions {
   flume_hcomm_protocol_t protocol = FLUME_HCOMM_PROTOCOL_HCCS;
   bool require_thread_export = false;
   uint32_t timeout_sec = kDefaultHcommTimeoutSeconds;
+  bool disable_payload_batch_mode = false;
 };
 
 struct HcommChannelResourceInfo {
@@ -507,6 +508,13 @@ bool NormalizeHcommProbeOptions(
       normalized.timeout_sec =
           options->timeout_sec == 0 ? kDefaultHcommTimeoutSeconds :
                                       options->timeout_sec;
+    }
+    if (options->size >=
+        offsetof(flume_hcomm_channel_probe_options_t,
+                 disable_payload_batch_mode) +
+            sizeof(options->disable_payload_batch_mode)) {
+      normalized.disable_payload_batch_mode =
+          options->disable_payload_batch_mode != 0;
     }
   }
 
@@ -1967,6 +1975,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                               void* user_buffer,
                               uint64_t bytes,
                               const char* comm_name,
+                              bool disable_payload_batch_mode,
                               flume_hcomm_payload_copy_desc_v1* desc) {
   flume_hcomm_payload_copy_desc_init(desc);
   desc->role = role == flume::hcomm_payload::PayloadRole::kSend ?
@@ -2002,6 +2011,9 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
                 "Flume HCOMM payload batch tag exceeds descriptor field");
   memcpy(desc->batch_tag, kFlumeHcommPayloadBatchTag,
          sizeof(kFlumeHcommPayloadBatchTag));
+  desc->reserved2[0] = disable_payload_batch_mode ?
+      FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED :
+      FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT;
   desc->cpu_thread_on_aicpu = resource_info.cpu_thread_on_aicpu;
   if (comm_name != nullptr) {
     strncpy(desc->comm_name, comm_name, sizeof(desc->comm_name) - 1);
@@ -2498,6 +2510,8 @@ std::string PayloadPrimitiveStateDetail(const uint32_t* status_words) {
 
 std::string PayloadDescriptorDetail(
     const flume_hcomm_payload_copy_desc_v1& desc) {
+  const bool batch_disabled =
+      desc.reserved2[0] == FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
   return std::string(" payload_desc_role=") + std::to_string(desc.role) +
          " payload_desc_local_rank=" + std::to_string(desc.local_rank) +
          " payload_desc_peer_rank=" + std::to_string(desc.peer_rank) +
@@ -2516,10 +2530,17 @@ std::string PayloadDescriptorDetail(
          std::to_string(desc.status_schema_version) +
          " payload_desc_status_word_count=" +
          std::to_string(desc.status_word_count) +
+         " payload_desc_batch_mode=" + (batch_disabled ? "off" : "on") +
          " payload_desc_local_hccl_buffer_bytes=" +
          std::to_string(desc.local_hccl_buffer_bytes) +
          " payload_desc_remote_hccl_buffer_bytes=" +
          std::to_string(desc.remote_hccl_buffer_bytes);
+}
+
+std::string PayloadBatchModeDetail(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  return desc.reserved2[0] == FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED ?
+      "payload_batch_mode=off" : "payload_batch_mode=on";
 }
 
 std::string PayloadEchoWordsDetail(const uint32_t* status_words) {
@@ -2643,6 +2664,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     void* acl_stream,
     void* user_buffer,
     uint64_t bytes,
+    bool disable_payload_batch_mode,
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision,
     int* status) {
@@ -2751,7 +2773,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
 
   flume_hcomm_payload_copy_desc_v1 desc = {};
   FillFlumePayloadCopyDesc(role, state, peer_rank, resource_info, user_buffer,
-                           bytes, comm_name, &desc);
+                           bytes, comm_name, disable_payload_batch_mode, &desc);
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
   desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
   desc.status_schema_version = FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
@@ -3135,8 +3157,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed "
-           "payload_batch_mode=on payload_kernel_status=") +
+                       "stage3b3e_payload_sync=passed ") +
+           PayloadBatchModeDetail(desc) + " payload_kernel_status=" +
            PayloadKernelStatusName(kernel_status) +
            " payload_failure_step=" +
            PayloadFailureStepName(kernel_status) +
@@ -3157,8 +3179,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed "
-                     "payload_batch_mode=on payload_kernel_status=success "
+                       "stage3b3e_payload_sync=passed ") +
+                     PayloadBatchModeDetail(desc) +
+                     " payload_kernel_status=success "
                      "payload_failure_step=none "
                      "payload_status_word=0 payload_kernel_hcomm_ret=") +
            std::to_string(kernel_hcomm_ret) +
@@ -3186,8 +3209,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=passed "
                        "stage3b3e_payload_descriptor_handoff=passed "
                        "stage3b3e_direct_aclrt_payload_launch=passed "
-                       "stage3b3e_payload_sync=passed "
-                     "payload_batch_mode=on payload_kernel_status=success "
+                       "stage3b3e_payload_sync=passed ") +
+                     PayloadBatchModeDetail(desc) +
+                     " payload_kernel_status=success "
                      "payload_failure_step=none "
                      "payload_status_word=0 payload_kernel_hcomm_ret=0 "
                        "payload_echo=failed") +
@@ -3209,8 +3233,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_direct_aclrt_payload_loader=passed "
                      "stage3b3e_payload_descriptor_handoff=passed "
                      "stage3b3e_direct_aclrt_payload_launch=passed "
-                     "stage3b3e_payload_sync=passed "
-                     "payload_batch_mode=on payload_kernel_status=success "
+                     "stage3b3e_payload_sync=passed ") +
+                     PayloadBatchModeDetail(desc) +
+                     " payload_kernel_status=success "
                      "payload_failure_step=none "
                      "payload_status_word=0 "
                      "payload_kernel_hcomm_ret=") +
@@ -5264,8 +5289,9 @@ int flume_hcomm_payload_send_ex(
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, acl_stream,
-      static_cast<uint8_t*>(src->ptr) + src_offset, bytes, resource_info,
-      launcher, &launch_status);
+      static_cast<uint8_t*>(src->ptr) + src_offset, bytes,
+      options.disable_payload_batch_mode, resource_info, launcher,
+      &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
       0,
@@ -5375,8 +5401,9 @@ int flume_hcomm_payload_recv_ex(
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, acl_stream,
-      static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes, resource_info,
-      launcher, &launch_status);
+      static_cast<uint8_t*>(dst->ptr) + dst_offset, bytes,
+      options.disable_payload_batch_mode, resource_info, launcher,
+      &launch_status);
   *out = MakeIo(
       launch_status, launch_status == FLUME_OK ? bytes : usable_buffer_bytes,
       0,
