@@ -344,6 +344,8 @@ def strict_log_with_no_batch(text: str) -> str:
             "payload_recv_path=direct-output" in text):
         text = text.replace("payload_layout=read-direct-output",
                             "payload_layout=official-p2p")
+        text = text.replace("payload_resolved_engine=aicpu-ts",
+                            "payload_resolved_engine=aicpu")
     return text
 
 
@@ -1304,6 +1306,8 @@ def main() -> int:
             strict_channel_handle_direct_output)
         assert "payload_layout=official-p2p" in (
             strict_channel_handle_no_batch_direct_output)
+        assert "payload_resolved_engine=aicpu" in (
+            strict_channel_handle_no_batch_direct_output)
         assert "payload_layout=read-default" not in (
             strict_channel_handle_no_batch_direct_output)
         assert flume_tool.StrictPayloadRankEvidencePassed(
@@ -1314,6 +1318,29 @@ def main() -> int:
             strict_channel_handle_no_batch_fence)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_no_batch_direct_output_fence)[0]
+        official_engine_mismatch = (
+            strict_channel_handle_no_batch_direct_output.replace(
+                "payload_resolved_engine=aicpu",
+                "payload_resolved_engine=aicpu-ts"))
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            official_engine_mismatch)[0]
+        mismatch_lines = flume_tool.ExtractStrictPayloadRankLines(
+            official_engine_mismatch)
+        assert flume_tool.StrictPayloadResourceLayoutPassed(
+            mismatch_lines) == (False, "official-p2p-engine-mismatch")
+        official_engine_mismatch_log = write(
+            tmp / "strict-official-p2p-engine-mismatch.log",
+            official_engine_mismatch)
+        official_engine_mismatch_dir = tmp / "official-p2p-engine-mismatch"
+        official_engine_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            official_engine_mismatch_dir, smoke,
+            official_engine_mismatch_log, package)
+        mismatch_text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in mismatch_text
+        assert ("| payload resource layout match | "
+                "official-p2p-engine-mismatch |") in mismatch_text
+        assert "--hcomm-channel-engine=aicpu" in mismatch_text
         channel_log = write(tmp / "strict-channel-handle.log",
                             strict_channel_handle)
         channel_note = flume_tool.WriteHcommPayloadChannelHandleCandidate(

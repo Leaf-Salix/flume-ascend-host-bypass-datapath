@@ -2365,6 +2365,42 @@ def StrictPayloadTraceDescriptorPassed(
     return True, "passed"
 
 
+def StrictPayloadResourceLayoutPassed(
+        rank_lines: dict[int, str]) -> tuple[bool, str]:
+    rank0_line = rank_lines.get(0, "")
+    rank1_line = rank_lines.get(1, "")
+    if not rank0_line or not rank1_line:
+        return False, "missing-rank-line"
+    rank0_layout = MarkerValueFromLine(rank0_line, "payload_layout")
+    rank1_layout = MarkerValueFromLine(rank1_line, "payload_layout")
+    if rank0_layout != rank1_layout:
+        return False, "rank-layout-mismatch"
+    if rank0_layout != "official-p2p":
+        return True, "passed"
+
+    rank0_engine = MarkerValueFromLine(rank0_line, "payload_resolved_engine")
+    rank1_engine = MarkerValueFromLine(rank1_line, "payload_resolved_engine")
+    rank0_binding = MarkerValueFromLine(rank0_line, "payload_comm_binding")
+    rank1_binding = MarkerValueFromLine(rank1_line, "payload_comm_binding")
+    rank0_batch = MarkerValueFromLine(rank0_line, "payload_batch_mode")
+    rank1_batch = MarkerValueFromLine(rank1_line, "payload_batch_mode")
+    rank1_recv = MarkerValueFromLine(rank1_line, "payload_recv_path")
+    values = (
+        rank0_engine, rank1_engine, rank0_binding, rank1_binding,
+        rank0_batch, rank1_batch, rank1_recv)
+    if any(value == "missing" for value in values):
+        return False, "official-p2p-missing-resource-field"
+    if rank0_engine != "aicpu" or rank1_engine != "aicpu":
+        return False, "official-p2p-engine-mismatch"
+    if rank0_binding != "channel-handle" or rank1_binding != "channel-handle":
+        return False, "official-p2p-binding-mismatch"
+    if rank0_batch != "off" or rank1_batch != "off":
+        return False, "official-p2p-batch-mismatch"
+    if rank1_recv != "direct-output":
+        return False, "official-p2p-recv-path-mismatch"
+    return True, "passed"
+
+
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
     accepted_marker_sets = tuple(
@@ -2460,9 +2496,12 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
     trace_desc_ok, _trace_desc_reason = StrictPayloadTraceDescriptorPassed(
         rank_lines)
+    resource_layout_ok, _resource_layout_reason = (
+        StrictPayloadResourceLayoutPassed(rank_lines))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
-            checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok,
+            checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok and
+            resource_layout_ok,
             rank0_ok, rank1_ok)
 
 
@@ -5405,6 +5444,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                              "payload_recv_path")
     strict_trace_descriptor_ok, strict_trace_descriptor_reason = (
         StrictPayloadTraceDescriptorPassed(strict_rank_lines))
+    strict_resource_layout_ok, strict_resource_layout_reason = (
+        StrictPayloadResourceLayoutPassed(strict_rank_lines))
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -5608,6 +5649,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
             f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, write_notify_backend=rank0:{strict_rank0_write_notify_selected}/rank1:{strict_rank1_write_notify_selected}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel; `payload_layout` must match transfer/batch/binding/recv-path semantics; `payload_write_notify_backend` is the host-selected primitive backend before device trace is available |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
+            f"| payload resource layout match | {'passed' if strict_resource_layout_ok else strict_resource_layout_reason} | `official-p2p` requires `payload_resolved_engine=aicpu`, channel-handle binding, no-batch mode, and direct-output recv; other accepted read/write candidates keep their selected engine semantics |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
             f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_entry}/{strict_rank0_data_remote_entry}/{strict_rank0_data_transfer_exit}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_entry}/{strict_rank1_data_remote_entry}/{strict_rank1_data_transfer_exit}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
@@ -5776,6 +5818,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = (
                 "inspect in-kernel HCOMM primitive return code: "
                 f"{strict_hcomm_ret}")
+        elif not strict_resource_layout_ok:
+            next_action = (
+                "rerun official-p2p strict-positive with "
+                "--hcomm-channel-engine=aicpu, channel-handle binding, "
+                "no-batch mode, and direct-output recv")
         elif not strict_data_flow_ok:
             if strict_data_flow_reason == "recv-transfer-exit-mismatch":
                 next_action = (
