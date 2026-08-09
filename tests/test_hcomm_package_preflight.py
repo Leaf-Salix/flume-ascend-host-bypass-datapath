@@ -1237,16 +1237,22 @@ def main() -> int:
                 encoding="utf-8")
         assert "HcommReadOnThread" in primitive_headers
         assert "HcommWriteOnThread" in primitive_headers
+        assert "HcommWriteWithNotifyOnThread" in primitive_headers
+        assert "HcommWriteWithNotifyNbiOnThread" in primitive_headers
         assert "ThreadHandle" in primitive_headers
         primitive_symbols = (
             fixture / "hcomm-primitive-symbols.txt").read_text(
                 encoding="utf-8")
         assert "HcommReadOnThread: present" in primitive_symbols
         assert "HcommWriteOnThread: present" in primitive_symbols
+        assert "HcommWriteWithNotifyOnThread: present" in primitive_symbols
+        assert "HcommWriteWithNotifyNbiOnThread: present" in primitive_symbols
         call_shape = (
             fixture / "hcomm-primitive-call-shape-probe.txt").read_text(
                 encoding="utf-8")
         assert "status: PASS" in call_shape
+        assert "## optional HcommWriteWithNotifyOnThread" in call_shape
+        assert "## optional HcommWriteWithNotifyNbiOnThread" in call_shape
 
         cann_pair = flume_tool.ResolveCannRootPair(str(fake_cann))
         assert cann_pair == (fake_cann, fake_cann / "aarch64-linux")

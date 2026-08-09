@@ -62,6 +62,11 @@ HCOMM_PRIMITIVE_NAMES = [
     "HcommThreadNotifyWaitOnThread",
 ]
 
+HCOMM_OPTIONAL_PRIMITIVE_NAMES = [
+    "HcommWriteWithNotifyOnThread",
+    "HcommWriteWithNotifyNbiOnThread",
+]
+
 HCOMM_CALL_SHAPE_PROBE = r"""
 #include <cstdint>
 #if __has_include(<hccl/hcomm_primitives.h>)
@@ -112,6 +117,43 @@ int main() {
   (void)batch_start_ret;
   (void)batch_end_ret;
   (void)release_ret;
+  return 0;
+}
+"""
+
+HCOMM_OPTIONAL_CALL_SHAPE_PROBE = r"""
+#include <cstdint>
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+
+#ifndef FLUME_PROBE_NBI_WRITE_WITH_NOTIFY
+#define FLUME_PROBE_NBI_WRITE_WITH_NOTIFY 0
+#endif
+
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  void *dst = nullptr;
+  const void *src = nullptr;
+  uint64_t bytes = 64;
+  uint32_t notify_idx = 0;
+#if FLUME_PROBE_NBI_WRITE_WITH_NOTIFY
+  auto ret =
+      HcommWriteWithNotifyNbiOnThread(thread, channel, dst, src, bytes,
+                                      notify_idx);
+#else
+  auto ret =
+      HcommWriteWithNotifyOnThread(thread, channel, dst, src, bytes,
+                                   notify_idx);
+#endif
+  (void)ret;
   return 0;
 }
 """
@@ -403,7 +445,8 @@ def collect_hcomm_primitive_headers(include_roots: list[Path]) -> str:
         if type_lines:
             lines.append("### handle type lines")
             lines.extend(type_lines)
-        declarations = extract_declaration_blocks(text, HCOMM_PRIMITIVE_NAMES)
+        declarations = extract_declaration_blocks(
+            text, HCOMM_PRIMITIVE_NAMES + HCOMM_OPTIONAL_PRIMITIVE_NAMES)
         if declarations:
             lines.append("### primitive declarations")
             lines.extend(declarations)
@@ -437,39 +480,86 @@ def collect_hcomm_primitive_symbols(lib_roots: list[Path]) -> str:
             lines.append(f"  {match}")
         if len(matches) > 8:
             lines.append(f"  ... {len(matches) - 8} more matches")
+    lines.append("")
+    lines.append("# Optional HCOMM primitive symbol presence")
+    for name in HCOMM_OPTIONAL_PRIMITIVE_NAMES:
+        matches = [
+            line for line in symbols.splitlines()
+            if name in line
+        ]
+        lines.append(f"{name}: {'present' if matches else 'missing'}")
+        for match in matches[:8]:
+            lines.append(f"  {match}")
+        if len(matches) > 8:
+            lines.append(f"  ... {len(matches) - 8} more matches")
     return "\n".join(lines) + "\n"
 
 
-def collect_hcomm_primitive_compile_probe(include_roots: list[Path]) -> str:
+def compile_probe_text(include_roots: list[Path], source_text: str,
+                       probe_name: str,
+                       extra_flags: Optional[list[str]] = None) -> str:
     compiler_value = os.environ.get("CXX") or shutil.which("c++") or shutil.which("g++")
     if not compiler_value:
         return "status: SKIP\nreason: no C++ compiler found\n"
     compiler_command = shlex.split(compiler_value)
     with tempfile.TemporaryDirectory(prefix="flume-hcomm-abi-probe-") as tmp_text:
         tmp = Path(tmp_text)
-        source = tmp / "hcomm_call_shape_probe.cc"
-        source.write_text(HCOMM_CALL_SHAPE_PROBE, encoding="utf-8")
+        source = tmp / f"{probe_name}.cc"
+        source.write_text(source_text, encoding="utf-8")
         command = compiler_command + [
             "-std=c++17",
             "-fsyntax-only",
             str(source),
         ]
+        if extra_flags:
+            command.extend(extra_flags)
         for root in include_roots:
             command.extend(["-I", str(root)])
         code, output = run_capture(command, 30)
+    return "\n".join([
+        f"compiler: {compiler_value}",
+        "command: " + " ".join(command),
+        f"returncode: {code}",
+        f"status: {'PASS' if code == 0 else 'FAIL'}",
+        "",
+        output.rstrip() if output.strip() else "no compiler output",
+    ]).rstrip() + "\n"
+
+
+def collect_hcomm_primitive_compile_probe(include_roots: list[Path]) -> str:
     lines = [
         "# HCOMM primitive call-shape compile probe",
         "",
         "This probe compiles the call expressions used by Flume's direct ACL "
         "payload kernel. It does not link, load, launch, or run any NPU code.",
         "",
-        f"compiler: {compiler_value}",
-        "command: " + " ".join(command),
-        f"returncode: {code}",
-        f"status: {'PASS' if code == 0 else 'FAIL'}",
         "",
     ]
-    lines.append(output.rstrip() if output.strip() else "no compiler output")
+    lines.append(compile_probe_text(include_roots, HCOMM_CALL_SHAPE_PROBE,
+                                    "hcomm_call_shape_probe"))
+    lines.extend([
+        "",
+        "## optional HcommWriteWithNotifyOnThread",
+        "",
+        "This optional probe may fail on CANN builds that only expose the NBI "
+        "variant or do not expose fused write-with-notify.",
+        "",
+    ])
+    lines.append(compile_probe_text(
+        include_roots, HCOMM_OPTIONAL_CALL_SHAPE_PROBE,
+        "hcomm_write_with_notify_call_shape_probe"))
+    lines.extend([
+        "",
+        "## optional HcommWriteWithNotifyNbiOnThread",
+        "",
+        "This optional probe may fail on CANN builds that only expose the "
+        "blocking variant or do not expose fused write-with-notify.",
+        "",
+    ])
+    lines.append(compile_probe_text(
+        include_roots, HCOMM_OPTIONAL_CALL_SHAPE_PROBE,
+        "hcomm_write_with_notify_nbi_call_shape_probe",
+        ["-DFLUME_PROBE_NBI_WRITE_WITH_NOTIFY=1"]))
     return "\n".join(lines).rstrip() + "\n"
 
 
