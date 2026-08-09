@@ -2011,7 +2011,8 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     if recv_path == "direct-output":
         if rank1_user_exit != expected_payload:
             return False, "recv-direct-output-mismatch"
-    elif transfer_mode in ("read", "write") and recv_path == "local-buffer":
+    elif (transfer_mode in ("read", "write", "write-with-notify") and
+          recv_path == "local-buffer"):
         if rank1_local_exit != expected_payload:
             return False, "recv-local-buffer-mismatch"
         if rank1_user_exit != expected_payload:
@@ -2139,13 +2140,17 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         rank0_batch_mode in ("on", "off"))
     transfer_ok = (
         rank0_transfer_mode == rank1_transfer_mode and
-        rank0_transfer_mode in ("read", "write"))
+        rank0_transfer_mode in ("read", "write", "write-with-notify"))
     trace_transfer_ok = (
         rank0_trace_transfer_mode == rank1_trace_transfer_mode and
         rank0_trace_transfer_mode == rank0_transfer_mode)
     if rank0_transfer_mode == "write":
         rank0_trace_ok = rank0_trace_path == "send-write"
         rank1_trace_ok = rank1_trace_path == "recv-write-local-copy"
+        recv_path_ok = rank1_recv_path == "local-buffer"
+    elif rank0_transfer_mode == "write-with-notify":
+        rank0_trace_ok = rank0_trace_path == "send-write-with-notify"
+        rank1_trace_ok = rank1_trace_path == "recv-write-notify-local-copy"
         recv_path_ok = rank1_recv_path == "local-buffer"
     else:
         rank0_trace_ok = rank0_trace_path == "send-local-copy"
@@ -4286,9 +4291,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_host_data=passed` + "
         "`payload_trace=passed` + "
         "`payload_trace_ret_order=passed` + "
-        "`payload_trace_primitive_path=send-local-copy|recv-read-*` + "
+        "`payload_trace_primitive_path=send-local-copy|recv-read-*|"
+        "send-write|recv-write-local-copy|send-write-with-notify|"
+        "recv-write-notify-local-copy` + "
         "`payload_trace_bytes/batch/recv/comm/notify` matching descriptor + "
-        "`payload_trace_transfer_mode=read|write` matching descriptor mode + "
+        "`payload_trace_transfer_mode=read|write|write-with-notify` "
+        "matching descriptor mode + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on|off` + "
         "payload comm binding `comm-name|channel-handle` + "
@@ -4723,19 +4731,21 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
             "payload_trace_ret_order=passed,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
-            "|send-write|recv-write-local-copy,"
+            "|send-write|recv-write-local-copy|send-write-with-notify"
+            "|recv-write-notify-local-copy,"
             "payload_trace_bytes=,"
             "payload_trace_batch_mode=,"
             "payload_trace_recv_path=,"
             "payload_trace_comm_acquire=,"
             "payload_trace_comm_binding=,"
-            "payload_trace_transfer_mode=read|write,"
+            "payload_trace_transfer_mode=read|write|write-with-notify,"
             "payload_trace_ready_notify_idx=,"
             "payload_trace_done_notify_idx=,"
             "payload_trace_result=success,"
             "payload_trace_expected_thread_notify=,"
             "payload_desc_batch_tag=,"
-            "payload_transfer_mode=read|write,payload_recv_path=,"
+            "payload_transfer_mode=read|write|write-with-notify,"
+            "payload_recv_path=,"
             "payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_semantic_v9=present,payload_semantic_v10=present,"
@@ -5208,14 +5218,17 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_trace_schema=v2, payload_trace_word_count=80, "
         "payload_trace_order=passed, payload_trace_ret_order=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-* or "
-        "send-write|recv-write-local-copy, "
+        "send-write|recv-write-local-copy or "
+        "send-write-with-notify|recv-write-notify-local-copy, "
         "payload_trace_bytes/batch/recv/comm/notify fields matching the "
         "host descriptor, "
-        "payload_trace_transfer_mode=read|write matching descriptor mode, "
+        "payload_trace_transfer_mode=read|write|write-with-notify matching "
+        "descriptor mode, "
         "payload_trace_result=success, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "
         "or explicit payload_comm_binding=channel-handle, "
-        "payload_desc_batch_tag=default|custom, payload_transfer_mode=read|write, "
+        "payload_desc_batch_tag=default|custom, "
+        "payload_transfer_mode=read|write|write-with-notify, "
         "payload_semantic_v7=present, payload_semantic_v8=present, "
         "payload_semantic_v9=present, payload_semantic_v10=present, "
         "payload_semantic_v11=present, "
@@ -5224,12 +5237,14 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "fallback=none. If --auto-run-hcomm-payload-candidate-matrix is "
         "enabled, a failed default comm-name run may be followed by the "
         "built-in Stage 3B.3E candidate matrix: channel-handle binding, "
-        "write-path, channel-fence, no-batch, tagged-batch, direct-output, "
-        "and no-comm-acquire isolation. Only complete strict-positive "
+        "write-path, write-with-notify, channel-fence, no-batch, "
+        "tagged-batch, direct-output, and no-comm-acquire isolation. "
+        "Only complete strict-positive "
         "evidence from an accepted candidate can make the required evidence "
         "gate pass; no-comm-acquire remains diagnostic-only. The write-path "
         "matrix strips recv direct-output because it is read-path-only and "
-        "can satisfy the gate only with payload_transfer_mode=write, full "
+        "can satisfy the gate only with payload_transfer_mode=write or "
+        "write-with-notify, full "
         "trace/checksum evidence, and fallback=none.\n",
         encoding="utf-8",
     )

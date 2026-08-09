@@ -213,6 +213,27 @@ def strict_write_path_log(include_verify: bool) -> str:
     return text
 
 
+def strict_write_with_notify_path_log(include_verify: bool) -> str:
+    text = strict_log(include_verify)
+    text = text.replace("payload_transfer_mode=read",
+                        "payload_transfer_mode=write-with-notify")
+    text = text.replace("payload_trace_transfer_mode=read",
+                        "payload_trace_transfer_mode=write-with-notify")
+    text = text.replace(
+        "payload_trace_primitive_path=send-local-copy",
+        "payload_trace_primitive_path=send-write-with-notify")
+    text = text.replace(
+        "payload_trace_primitive_path=recv-read-local-copy",
+        "payload_trace_primitive_path=recv-write-notify-local-copy")
+    return text
+
+
+def strict_write_with_notify_trace_mismatch_log() -> str:
+    text = strict_write_with_notify_path_log(True)
+    return text.replace("payload_trace_primitive_path=send-write-with-notify",
+                        "payload_trace_primitive_path=send-write", 1)
+
+
 def strict_log_with_channel_handle_binding(text: str) -> str:
     return text.replace(
         "payload_comm_acquire=default payload_comm_binding=comm-name",
@@ -1005,6 +1026,22 @@ def main() -> int:
                 "channel-fence-candidate | 0 | yes | passed"
                 in write_candidate_matrix_text)
         assert "| write | recv-write-local-copy |" in write_candidate_matrix_text
+
+        strict_write_with_notify = strict_write_with_notify_path_log(True)
+        strict_write_with_notify_path = write(
+            tmp / "strict-write-with-notify.log", strict_write_with_notify)
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_with_notify)[0]
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_with_notify_trace_mismatch_log())[0]
+        write_with_notify_note = (
+            flume_tool.WriteHcommPayloadWriteWithNotifyCandidate(
+                tmp, None, strict_write_with_notify_path))
+        write_with_notify_text = write_with_notify_note.read_text(
+            encoding="utf-8")
+        assert "payload_copy_and_verify: `passed`" in write_with_notify_text
+        assert "transfer_mode: `write-with-notify`" in write_with_notify_text
+        assert "trace_path: `send-write-with-notify`" in write_with_notify_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",

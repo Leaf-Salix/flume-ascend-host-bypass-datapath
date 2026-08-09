@@ -40,7 +40,8 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
     ]
-    if mode in ("v4", "wrong_values"):
+    if mode in ("v4", "v4_no_write_with_notify", "wrong_values"):
+        include_write_with_notify = mode != "v4_no_write_with_notify"
         lines.extend([
             "typedef unsigned long long ThreadHandle;",
             "typedef unsigned long long ChannelHandle;",
@@ -51,7 +52,6 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "int HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, unsigned long long d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
             "int HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
             "int HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
-            "int HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }",
             "int HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "int HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, unsigned int c, unsigned int d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
             "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
@@ -68,7 +68,6 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "  r += HcommChannelNotifyWaitOnThread(1, 2, 1, 60);",
             "  r += HcommReadOnThread(1, 2, a, b, 8);",
             "  r += HcommWriteOnThread(1, 2, b, a, 8);",
-            "  r += HcommWriteWithNotifyOnThread(1, 2, b, a, 8, 0);",
             "  r += HcommChannelFenceOnThread(1, 2);",
             "  r += HcommThreadNotifyWaitOnThread(1, 0, 60);",
             "  r += HcommThreadNotifyRecordOnThread(1, 3, 0);",
@@ -78,6 +77,17 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "  return (unsigned int)(r & 0);",
             "}",
         ])
+        if include_write_with_notify:
+            kernel_index = lines.index(
+                "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {")
+            lines.insert(
+                kernel_index,
+                "int HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }")
+            write_index = lines.index(
+                "  r += HcommChannelFenceOnThread(1, 2);")
+            lines.insert(
+                write_index,
+                "  r += HcommWriteWithNotifyOnThread(1, 2, b, a, 8, 0);")
     else:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) "
@@ -849,6 +859,23 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
+
+        no_write_notify_json, no_write_notify_tar = write_package(
+            tmp, mode="v4_no_write_with_notify")
+        no_write_notify = run_preflight(
+            repo, no_write_notify_json, no_write_notify_tar)
+        if no_write_notify.returncode != 0:
+            print(no_write_notify.stdout)
+            print(no_write_notify.stderr, file=sys.stderr)
+            raise AssertionError(
+                "ABI v4 package without optional write-with-notify did not pass")
+        assert "payload_primitive_deps=present" in no_write_notify.stdout
+        assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in no_write_notify.stdout
+        assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in no_write_notify.stdout
+        assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in no_write_notify.stdout
+        assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=missing" in no_write_notify.stdout
+        assert "payload_optional_write_with_notify=missing" in no_write_notify.stdout
+        assert "status=PASS" in no_write_notify.stdout
 
         wrong_values_json, wrong_values_tar = write_package(
             tmp, mode="wrong_values")
