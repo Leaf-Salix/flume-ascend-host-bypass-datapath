@@ -1006,6 +1006,8 @@ def main() -> int:
                 "channel-fence-candidate | 0 | yes | passed"
                 in candidate_matrix_text)
         assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
+        assert "selected_candidate_command: `" in candidate_matrix_text
+        assert "--hcomm-payload-comm-binding=channel-handle" in candidate_matrix_text
 
         strict_write_channel_handle = strict_log_with_channel_handle_binding(
             strict_write_path_log(True))
@@ -1081,6 +1083,8 @@ def main() -> int:
                 "channel-fence-candidate | 0 | yes | passed"
                 in write_candidate_matrix_text)
         assert "| write | recv-write-local-copy |" in write_candidate_matrix_text
+        assert "selected_candidate_command: `" in write_candidate_matrix_text
+        assert "--hcomm-payload-write-path" in write_candidate_matrix_text
 
         strict_write_with_notify = strict_write_with_notify_path_log(True)
         strict_write_with_notify_path = write(
@@ -1192,6 +1196,8 @@ def main() -> int:
                 "channel-fence-candidate | 0 | yes | passed"
                 in write_notify_matrix_text)
         assert "| write-with-notify | recv-write-notify-local-copy |" in write_notify_matrix_text
+        assert "selected_candidate_command: `" in write_notify_matrix_text
+        assert "--hcomm-payload-write-with-notify" in write_notify_matrix_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",

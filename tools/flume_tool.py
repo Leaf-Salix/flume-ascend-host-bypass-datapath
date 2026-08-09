@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -938,6 +939,10 @@ class CommandSpec:
     command: list[str]
     required: bool
     env_updates: dict[str, str]
+
+
+def ShellCommand(command: Iterable[str]) -> str:
+    return shlex.join(list(command))
 
 
 class Runner:
@@ -2886,6 +2891,11 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         candidate_results: list[StepResult],
         selected_log: Optional[Path]) -> Path:
     note = run_dir / "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md"
+    selected_result = next(
+        (result for result in candidate_results
+         if selected_log == result.log_path),
+        None,
+    )
     rows = []
     for result in candidate_results:
         try:
@@ -2932,6 +2942,7 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         "",
         f"- default_strict_log: `{default_log}`",
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
         "",
         f"decision: {decision}",
@@ -3111,6 +3122,11 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         candidate_results: list[StepResult],
         selected_log: Optional[Path]) -> Path:
     note = run_dir / "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md"
+    selected_result = next(
+        (result for result in candidate_results
+         if selected_log == result.log_path),
+        None,
+    )
     rows = []
     for result in candidate_results:
         try:
@@ -3157,6 +3173,7 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         "",
         f"- default_strict_log: `{default_log}`",
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
         "",
         f"decision: {decision}",
@@ -3589,6 +3606,11 @@ def WriteHcommPayloadCandidateMatrix(
         candidate_results: list[StepResult],
         selected_log: Optional[Path]) -> Path:
     note = run_dir / "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md"
+    selected_result = next(
+        (result for result in candidate_results
+         if selected_log == result.log_path),
+        None,
+    )
     rows = []
     for result in candidate_results:
         try:
@@ -3635,6 +3657,7 @@ def WriteHcommPayloadCandidateMatrix(
         "",
         f"- default_strict_log: `{default_log}`",
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
         "",
         f"decision: {decision}",
