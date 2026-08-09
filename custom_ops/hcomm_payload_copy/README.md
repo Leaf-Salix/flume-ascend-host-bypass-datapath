@@ -357,7 +357,13 @@ explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_semantic_v7=present`, `payload_semantic_v8=present`,
-`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`,
+`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and
 `fallback=none` on both ranks.
+
+On the send rank, `payload_data_remote_entry_fingerprint=not-sampled` and
+`payload_data_transfer_exit_fingerprint=not-sampled` are intentional: the
+kernel does not read the peer HCCL Buffer through ordinary local memory loads.
+Use the recv-rank device fingerprints and the host checksum match as the data
+movement proof.

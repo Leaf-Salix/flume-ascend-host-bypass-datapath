@@ -55,6 +55,7 @@ REQUIRED_MARKERS = (
     "payload_semantic_v14=present",
     "payload_semantic_v15=present",
     "payload_semantic_v16=present",
+    "payload_semantic_v17=present",
     "payload_official_p2p_layout=present",
 )
 
@@ -73,6 +74,7 @@ RUNTIME_PACKAGE_READY_MARKERS = (
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC",
 )
 

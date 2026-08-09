@@ -163,6 +163,18 @@ void StorePayloadDataProbeSampleBytes(
   status_words[14] = static_cast<unsigned int>(sampled & 0xFFFFFFFFU);
 }
 
+void StorePayloadDataProbeNotSampled(
+    const flume_hcomm_payload_copy_desc_v1& desc,
+    unsigned int word_index) {
+  if (!HasPayloadDescHeader(desc) || desc.status_word == 0 ||
+      desc.status_word_count < FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT ||
+      word_index >= FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT) {
+    return;
+  }
+  auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
+  status_words[word_index] = FLUME_HCOMM_PAYLOAD_DATA_FINGERPRINT_NOT_SAMPLED;
+}
+
 unsigned int* PayloadTraceWords(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   if (!HasPayloadDescHeader(desc) || desc.reserved2[2] == 0) {
@@ -340,7 +352,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
       StorePayloadPrimitiveRet(desc, ret);
       return FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED;
     }
-    StorePayloadDataProbe(desc, 15U, remote_hccl_buffer);
+    StorePayloadDataProbeNotSampled(desc, 15U);
     StorePayloadDataProbe(desc, 16U, local_hccl_buffer);
     const bool write_with_notify = PayloadWriteWithNotifyEnabled(desc);
     if (PayloadWritePathEnabled(desc)) {
@@ -394,7 +406,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED;
       }
-      StorePayloadDataProbe(desc, 16U, remote_hccl_buffer);
+      StorePayloadDataProbeNotSampled(desc, 16U);
       if (PayloadCompletionMode(desc) ==
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
         BeginPayloadPrimitive(
@@ -766,7 +778,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion15() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion16() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 16U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 16U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion17() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 17U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
