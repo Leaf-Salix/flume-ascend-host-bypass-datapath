@@ -62,6 +62,7 @@ REQUIRED_MARKERS = (
     "payload_copy_api=hcomm-direct-aclrt",
     "payload_hccl_p2p_api=not-used",
     "payload_no_hccl_sendrecv=passed",
+    "payload_no_hccl_payload_collective=passed",
 )
 
 STALE_MARKERS = (

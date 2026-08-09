@@ -2277,6 +2277,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_copy_api=hcomm-direct-aclrt",
     "payload_hccl_p2p_api=not-used",
     "payload_no_hccl_sendrecv=passed",
+    "payload_no_hccl_payload_collective=passed",
     "payload_batch_mode=on",
     "payload_comm_acquire=default",
     "payload_comm_binding=comm-name",
@@ -5880,6 +5881,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_copy_api = marker_value(strict, "payload_copy_api")
     strict_hccl_p2p_api = marker_value(strict, "payload_hccl_p2p_api")
     strict_no_hccl_sendrecv = marker_value(strict, "payload_no_hccl_sendrecv")
+    strict_no_hccl_payload_collective = marker_value(
+        strict, "payload_no_hccl_payload_collective")
     strict_data_probe = marker_value(strict, "payload_data_probe")
     strict_data_sample_bytes = marker_value(
         strict, "payload_data_sample_bytes")
@@ -6204,7 +6207,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload official-p2p layout marker | {strict_official_p2p_layout} | `payload_official_p2p_layout=missing` means the package predates official-p2p/channel-handle direct-output layout evidence |",
             f"| payload copy API | {strict_copy_api} | expected `hcomm-direct-aclrt`; anything else means the strict pass is not proving the HCOMM custom-op payload path |",
             f"| HCCL P2P API in payload path | {strict_hccl_p2p_api} | expected `not-used`; this keeps HcclSend/HcclRecv fallback out of strict HCOMM payload evidence |",
-            f"| no HCCL Send/Recv evidence | {strict_no_hccl_sendrecv} | expected `passed`; missing means the evidence predates the no-HCCL-P2P payload marker |",
+            f"| no HCCL Send/Recv evidence | {strict_no_hccl_sendrecv} | expected `passed`; kept as a backward-compatible no-HCCL-P2P marker |",
+            f"| no HCCL payload/collective evidence | {strict_no_hccl_payload_collective} | expected `passed`; missing means the evidence predates the no-HCCL-payload-or-collective marker |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -6381,6 +6385,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = (
                 "rerun strict-positive with current no-HCCL-SendRecv evidence "
                 "markers; stale evidence cannot prove true HCOMM payload copy")
+        elif strict_no_hccl_payload_collective != "passed":
+            next_action = (
+                "rerun strict-positive with current no-HCCL-payload-or-"
+                "collective evidence markers; stale evidence cannot prove "
+                "the payload path avoids hidden HCCL fallback APIs")
         elif strict_fallback not in ("none", "missing"):
             next_action = "remove unexpected fallback from strict payload path"
         elif strict_desc_batch_tag in ("missing", "empty"):

@@ -114,7 +114,8 @@ def strict_log(include_verify: bool) -> str:
                        "payload_official_p2p_layout=present "
                        "payload_copy_api=hcomm-direct-aclrt "
                        "payload_hccl_p2p_api=not-used "
-                       "payload_no_hccl_sendrecv=passed")
+                       "payload_no_hccl_sendrecv=passed "
+                       "payload_no_hccl_payload_collective=passed")
     send_data_probe = (" payload_data_probe=observed "
                        "payload_data_user_entry_fingerprint=222 "
                        "payload_data_local_entry_fingerprint=111 "
@@ -1344,6 +1345,7 @@ def main() -> int:
         assert "`payload_pattern=strict-v1`" in text
         assert "| payload data flow | passed |" in text
         assert "| payload host data | passed |" in text
+        assert "| no HCCL payload/collective evidence | passed |" in text
         assert "| payload official-p2p shape match | not-applicable |" in text
         assert ("| Direct ACL custom-op launch ABI observed? | "
                 "canary=host-args, notify=host-args, payload=host-args |"
@@ -2249,6 +2251,23 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert "| no HCCL Send/Recv evidence | missing |" in text
         assert "stale evidence cannot prove true HCOMM payload copy" in text
+
+        strict_without_no_hccl_payload_collective = write(
+            tmp / "strict-without-no-hccl-payload-collective-marker.log",
+            strict_log(True).replace(
+                "payload_no_hccl_payload_collective=passed", ""))
+        no_hccl_payload_collective_dir = tmp / "no-hccl-payload-collective-marker"
+        no_hccl_payload_collective_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_hccl_payload_collective_dir, smoke,
+            strict_without_no_hccl_payload_collective, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| no HCCL payload/collective evidence | missing |" in text
+        assert "stale evidence cannot prove the payload path avoids hidden HCCL fallback APIs" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_without_no_hccl_payload_collective.read_text(
+                encoding="utf-8"))[0]
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_without_no_hccl_marker.read_text(encoding="utf-8"))[0]
 

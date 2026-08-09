@@ -370,6 +370,7 @@ explicit `payload_comm_binding=channel-handle`,
 `payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`,
 `payload_copy_api=hcomm-direct-aclrt`, `payload_hccl_p2p_api=not-used`,
 `payload_no_hccl_sendrecv=passed`,
+`payload_no_hccl_payload_collective=passed`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and
 `fallback=none` on both ranks.

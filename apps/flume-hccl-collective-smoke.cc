@@ -560,6 +560,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_copy_api=hcomm-direct-aclrt",
       "payload_hccl_p2p_api=not-used",
       "payload_no_hccl_sendrecv=passed",
+      "payload_no_hccl_payload_collective=passed",
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       skip_comm_acquire ? "payload_comm_acquire=skipped" :
                           "payload_comm_acquire=default",
