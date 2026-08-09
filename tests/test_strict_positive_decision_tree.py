@@ -234,6 +234,41 @@ def strict_write_with_notify_trace_mismatch_log() -> str:
                         "payload_trace_primitive_path=send-write", 1)
 
 
+def strict_write_with_notify_remote_write_failure_log() -> str:
+    return "\n".join([
+        "$ flume-hccl-collective-smoke --hcomm-require-payload-copy "
+        "--hcomm-payload-write-with-notify",
+        "rank 0 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=failed "
+        "stage3b3e_direct_aclrt_payload_loader=passed "
+        "stage3b3e_payload_descriptor_handoff=passed "
+        "stage3b3e_direct_aclrt_payload_launch=passed "
+        "stage3b3e_payload_sync=passed "
+        "payload_kernel_status=remote-write-failed "
+        "payload_failure_step=remote-write payload_status_word=17 "
+        "payload_kernel_hcomm_ret=62 payload_status_schema=v4 "
+        "payload_status_word_count=14 payload_echo=observed "
+        "payload_trace_first_error_event=send-remote-write-notify-done "
+        "payload_trace_first_error_ret=62 "
+        "payload_trace_first_error_index=5 "
+        "payload_trace_primitive_path=send-write-with-notify "
+        "payload_transfer_mode=write-with-notify "
+        "payload_trace_transfer_mode=write-with-notify "
+        "payload_semantic_v12=present fallback=none\"",
+        "rank 1 hcomm payload smoke unsupported: fallback=none detail=\""
+        "stage3b3e_payload_copy=failed "
+        "payload_failure_step=ready-notify-wait payload_status_word=8 "
+        "payload_kernel_hcomm_ret=110 payload_status_schema=v4 "
+        "payload_status_word_count=14 "
+        "payload_trace_first_error_event=recv-ready-wait-done "
+        "payload_trace_first_error_ret=110 "
+        "payload_trace_primitive_path=recv-write-notify-local-copy "
+        "payload_transfer_mode=write-with-notify "
+        "payload_trace_transfer_mode=write-with-notify fallback=none\"",
+        "",
+    ])
+
+
 def strict_log_with_channel_handle_binding(text: str) -> str:
     return text.replace(
         "payload_comm_acquire=default payload_comm_binding=comm-name",
@@ -1042,6 +1077,19 @@ def main() -> int:
         assert "payload_copy_and_verify: `passed`" in write_with_notify_text
         assert "transfer_mode: `write-with-notify`" in write_with_notify_text
         assert "trace_path: `send-write-with-notify`" in write_with_notify_text
+        write_with_notify_failure_path = write(
+            tmp / "strict-write-with-notify-remote-write-failure.log",
+            strict_write_with_notify_remote_write_failure_log())
+        write_with_notify_failure_note = (
+            flume_tool.WriteHcommPayloadWriteWithNotifyCandidate(
+                tmp, None, write_with_notify_failure_path))
+        write_with_notify_failure_text = (
+            write_with_notify_failure_note.read_text(encoding="utf-8"))
+        assert ("first_error_event: `send-remote-write-notify-done`"
+                in write_with_notify_failure_text)
+        assert ("HcommWriteWithNotifyOnThread fused remote write + ready "
+                "notify path" in write_with_notify_failure_text)
+        assert "--hcomm-payload-write-path" in write_with_notify_failure_text
         write_with_notify_select_dir = tmp / "write-with-notify-select"
         write_with_notify_select_dir.mkdir()
         write_with_notify_candidate_log = write(

@@ -2670,6 +2670,10 @@ def WriteHcommPayloadWritePathCandidate(
         StrictPayloadRankEvidencePassed(write_text))
     default_failure_step = MarkerValue(default_text, "payload_failure_step")
     write_failure_step = MarkerValue(write_text, "payload_failure_step")
+    write_first_error_event = MarkerValue(
+        write_text, "payload_trace_first_error_event")
+    write_first_error_ret = MarkerValue(
+        write_text, "payload_trace_first_error_ret")
     transfer_mode = MarkerValue(write_text, "payload_transfer_mode")
     trace_transfer_mode = MarkerValue(write_text, "payload_trace_transfer_mode")
     trace_path = MarkerValue(write_text, "payload_trace_primitive_path")
@@ -2686,7 +2690,8 @@ def WriteHcommPayloadWritePathCandidate(
         decision = (
             "write-path candidate reached the payload kernel but failed "
             f"inside `{write_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, write_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, write_failure_step, first_error_event=write_first_error_event)
     else:
         decision = (
             "write-path candidate did not produce complete payload evidence")
@@ -2699,6 +2704,8 @@ def WriteHcommPayloadWritePathCandidate(
         f"- write_path_log: `{write_log}`",
         f"- default_failure_step: `{default_failure_step}`",
         f"- write_failure_step: `{write_failure_step}`",
+        f"- write_first_error_event: `{write_first_error_event}`",
+        f"- write_first_error_ret: `{write_first_error_ret}`",
         f"- write_transfer_mode: `{transfer_mode}`",
         f"- write_trace_transfer_mode: `{trace_transfer_mode}`",
         f"- write_trace_path: `{trace_path}`",
@@ -2771,6 +2778,10 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
     rank_lines = ExtractStrictPayloadRankLines(candidate_text)
     passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(candidate_text)
     failure_step = MarkerValue(candidate_text, "payload_failure_step")
+    first_error_event = MarkerValue(
+        candidate_text, "payload_trace_first_error_event")
+    first_error_ret = MarkerValue(
+        candidate_text, "payload_trace_first_error_ret")
     transfer_mode = MarkerValue(candidate_text, "payload_transfer_mode")
     trace_transfer_mode = MarkerValue(candidate_text,
                                       "payload_trace_transfer_mode")
@@ -2795,7 +2806,8 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         decision = (
             "write-with-notify candidate reached the payload kernel but "
             f"failed inside `{failure_step}`")
-        next_action = StrictPayloadFailureAction(1, failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, failure_step, first_error_event=first_error_event)
     else:
         decision = (
             "write-with-notify candidate did not produce complete payload "
@@ -2808,6 +2820,8 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         f"- default_strict_log: `{default_log}`",
         f"- write_with_notify_log: `{candidate_log}`",
         f"- failure_step: `{failure_step}`",
+        f"- first_error_event: `{first_error_event}`",
+        f"- first_error_ret: `{first_error_ret}`",
         f"- transfer_mode: `{transfer_mode}`",
         f"- trace_transfer_mode: `{trace_transfer_mode}`",
         f"- trace_path: `{trace_path}`",
@@ -3946,11 +3960,25 @@ def RunHcommPayloadChannelFenceDiagnostic(
 
 
 def StrictPayloadFailureAction(rank: int, failure_step: str,
-                               primitive_state: str = "missing") -> str:
+                               primitive_state: str = "missing",
+                               first_error_event: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
     if primitive_state == "pending":
         return (prefix + "pending HCOMM primitive timeout/hang at " +
                 failure_step)
+    if failure_step == "remote-write":
+        if first_error_event in (
+                "send-remote-write-notify-enter",
+                "send-remote-write-notify-done"):
+            return (
+                prefix +
+                "HcommWriteWithNotifyOnThread fused remote write + ready "
+                "notify path, ready notify index, Channel descriptor, and "
+                "optional primitive linkage; rerun plain --hcomm-payload-"
+                "write-path to separate remote write from fused notify")
+        return (prefix +
+                "HcommWriteOnThread local HCCL Buffer to remote HCCL Buffer "
+                "path")
     actions = {
         "invalid-argument":
             "payload descriptor fields and ABI/status schema",
@@ -3974,8 +4002,6 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
             "HCOMM ready notify wait index, peer rank launch, and role pairing",
         "remote-read":
             "HcommReadOnThread remote HCCL Buffer to local HCCL Buffer path",
-        "remote-write":
-            "HcommWriteOnThread local HCCL Buffer to remote HCCL Buffer path",
         "channel-fence":
             "HcommChannelFenceOnThread completion for RoCE/channel-drain mode",
         "output-copy":
@@ -4428,7 +4454,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         }
         rank_status[rank]["action"] = StrictPayloadFailureAction(
             rank, rank_status[rank]["failure_step"],
-            rank_status[rank]["primitive_state"])
+            rank_status[rank]["primitive_state"],
+            rank_status[rank]["trace_first_error_event"])
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
