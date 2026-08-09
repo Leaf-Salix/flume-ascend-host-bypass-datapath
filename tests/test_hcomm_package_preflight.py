@@ -51,6 +51,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
     if mode in ("v4", "v4_nbi_write_with_notify",
                 "v4_no_write_with_notify", "v4_with_hccl_p2p",
                 "v4_with_hccl_collective",
+                "v4_with_hccl_alltoall",
                 "v4_with_hccl_p2p_string",
                 "v4_with_hccl_p2p_json", "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
@@ -79,6 +80,10 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         if mode == "v4_with_hccl_collective":
             lines.extend([
                 "int HcclAllReduce(void) { return 0; }",
+            ])
+        if mode == "v4_with_hccl_alltoall":
+            lines.extend([
+                "int HcclAlltoAll(void) { return 0; }",
             ])
         if mode == "v4_with_hccl_p2p_string":
             lines.extend([
@@ -1353,6 +1358,20 @@ def main() -> int:
         assert "payload_no_hccl_sendrecv_deps=failed" in collective.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in collective.stdout
+
+        alltoall_json, alltoall_tar = write_package(
+            tmp, mode="v4_with_hccl_alltoall")
+        alltoall = run_preflight(repo, alltoall_json, alltoall_tar)
+        if alltoall.returncode == 0:
+            print(alltoall.stdout)
+            print(alltoall.stderr, file=sys.stderr)
+            raise AssertionError(
+                "payload package with HCCL AlltoAll symbol passed")
+        assert "payload_primitive_deps=present" in alltoall.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclAlltoAll=present" in alltoall.stdout
+        assert "payload_no_hccl_sendrecv_deps=failed" in alltoall.stdout
+        assert ("reason=payload kernel package references forbidden HCCL "
+                "payload or collective symbols") in alltoall.stdout
 
         hccp_string_json, hccp_string_tar = write_package(
             tmp, mode="v4_with_hccl_p2p_string")
