@@ -2261,6 +2261,9 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_status_word_count=17",
     "payload_echo=passed",
     "payload_descriptor_fingerprint=passed",
+    "payload_host_descriptor_validation=passed",
+    "payload_host_validation_reason=ok",
+    "payload_host_validation_reason_code=0",
     "payload_data_probe=observed",
     "payload_data_user_entry_fingerprint=",
     "payload_data_local_entry_fingerprint=",
@@ -7043,6 +7046,9 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_kernel_hcomm_ret=0,"
             "payload_status_schema=v7,payload_status_word_count=17,"
             "payload_echo=passed,payload_descriptor_fingerprint=passed,"
+            "payload_host_descriptor_validation=passed,"
+            "payload_host_validation_reason=ok,"
+            "payload_host_validation_reason_code=0,"
             "payload_data_probe=observed,"
             "payload_data_flow=passed,"
             "payload_host_data=passed,"
