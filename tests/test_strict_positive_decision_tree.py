@@ -1105,6 +1105,28 @@ def main() -> int:
         assert official_subcommand_args.hcomm_channel_engine == "aicpu"
         assert not official_subcommand_args.hcomm_payload_write_path
         assert not official_subcommand_args.hcomm_payload_channel_fence
+        flume_tool.ConfigureStrictPositiveCandidateMatrix(
+            official_subcommand_args)
+        assert not flume_tool.HasAcceptedPayloadCandidate(
+            official_subcommand_args, ["flume-hccl-collective-smoke"])
+        assert not flume_tool.HasAcceptedPayloadCandidate(
+            official_subcommand_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-payload-write-path"])
+
+        normal_strict_args = type("Args", (), {
+            "command": "hcomm-payload-strict-positive",
+            "hcomm_payload_write_with_notify_available": False,
+        })()
+        flume_tool.ConfigureStrictPositiveCandidateMatrix(normal_strict_args)
+        assert flume_tool.HasAcceptedPayloadCandidate(
+            normal_strict_args, ["flume-hccl-collective-smoke"])
+        assert flume_tool.HasAcceptedPayloadCandidate(
+            normal_strict_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-payload-comm-binding=channel-handle",
+             "--hcomm-payload-disable-batch",
+             "--hcomm-payload-recv-direct-output"])
 
         fake_binary = write(tmp / "flume-hccl-collective-smoke", "")
         old_argv = sys.argv[:]

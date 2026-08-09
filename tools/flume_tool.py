@@ -3123,6 +3123,25 @@ def EnableHcommPayloadCandidateMatrix(args: argparse.Namespace) -> None:
     args.auto_run_hcomm_payload_no_comm_acquire_diagnostic = True
 
 
+def DisableHcommPayloadCandidateMatrix(args: argparse.Namespace) -> None:
+    args.auto_run_hcomm_payload_official_p2p_candidate = False
+    args.auto_run_hcomm_payload_channel_handle_candidate = False
+    args.auto_run_hcomm_payload_write_path_candidate = False
+    args.auto_run_hcomm_payload_write_with_notify_candidate = False
+    args.auto_run_hcomm_payload_channel_fence_diagnostic = False
+    args.auto_run_hcomm_payload_nobatch_diagnostic = False
+    args.auto_run_hcomm_payload_tagged_diagnostic = False
+    args.auto_run_hcomm_payload_direct_output_diagnostic = False
+    args.auto_run_hcomm_payload_no_comm_acquire_diagnostic = False
+
+
+def ConfigureStrictPositiveCandidateMatrix(args: argparse.Namespace) -> None:
+    if args.command == "hcomm-payload-official-p2p-positive":
+        DisableHcommPayloadCandidateMatrix(args)
+        return
+    EnableHcommPayloadCandidateMatrix(args)
+
+
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
                                 command: list[str]) -> bool:
     if (getattr(args, "auto_run_hcomm_payload_official_p2p_candidate", False) and
@@ -6850,7 +6869,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     except OSError:
         package_text = ""
     RecordPackageCapabilityArgs(args, package_text)
-    EnableHcommPayloadCandidateMatrix(args)
+    ConfigureStrictPositiveCandidateMatrix(args)
 
     strict_args = copy.copy(args)
     strict_args.build_hcomm_custom_op = True
@@ -6978,7 +6997,10 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "matrix strips recv direct-output because it is read-path-only and "
         "can satisfy the gate only with payload_transfer_mode=write or "
         "write-with-notify, full "
-        "trace/checksum evidence, and fallback=none.\n",
+        "trace/checksum evidence, and fallback=none. "
+        "The hcomm-payload-official-p2p-positive subcommand intentionally "
+        "does not run fallback candidates, so its pass/fail result is only "
+        "about the public custom P2P layout shape.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
