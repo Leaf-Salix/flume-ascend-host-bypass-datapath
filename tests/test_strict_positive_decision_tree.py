@@ -2694,6 +2694,26 @@ def main() -> int:
                 "references forbidden HCCL payload or collective symbols |") in text
         assert "must not reference HCCL payload or collective APIs" in text
 
+        forbidden_with_strict_dir = tmp / "forbidden-package-with-strict-pass"
+        forbidden_with_strict_dir.mkdir()
+        write(forbidden_with_strict_dir /
+              "00-hcomm-custom-op-package-preflight.log",
+              forbidden_hccl_p2p_package_log())
+        write(forbidden_with_strict_dir /
+              "01-hcomm-payload-strict-positive.log",
+              strict_log(True))
+        analyzed_tree, payload_passed, _, payload_strict_log, _ = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                forbidden_with_strict_dir))
+        assert payload_strict_log is not None
+        assert not payload_passed
+        assert flume_tool.DecisionTreeStrictPositivePassed(analyzed_tree)
+        assert not flume_tool.DecisionTreeStrictPositiveEvidencePassed(
+            analyzed_tree)
+        text = analyzed_tree.read_text(encoding="utf-8")
+        assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
+        assert "| Strict payload positive passed? | yes |" in text
+
         multi_payload_package = write(
             tmp / "package-multi-candidate-payload.log",
             multi_candidate_payload_package_log())

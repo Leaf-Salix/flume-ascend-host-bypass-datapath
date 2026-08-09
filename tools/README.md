@@ -193,7 +193,8 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 `HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md`。后者会从已有
 `*-hcomm-payload-*.log` / `*-hcomm-storage-*.log` 中还原候选命令并打印
 `best_candidate_command`、`best_candidate_focus_flags`，方便在真机上直接复跑
-最接近成功的路径。verify 只有在完整看到 rank0/rank1 passed、Stage 3B.3E
+最接近成功的路径。verify 只有在 package preflight 显示
+`payload-ready`，并完整看到 rank0/rank1 passed、Stage 3B.3E
 launch/sync passed、kernel status success、`payload_failure_step=none`、status
 word 0、kernel HCOMM ret 0、`payload_local_buffer_prime=passed`、`payload_local_buffer_prime_source=host-sentinel-not-payload`、`payload_status_schema=v7`、
 `payload_status_word_count=17`、`payload_echo=passed`,
