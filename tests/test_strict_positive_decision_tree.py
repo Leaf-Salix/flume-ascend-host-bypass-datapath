@@ -2681,6 +2681,50 @@ def main() -> int:
         assert "best_candidate: `hcomm-payload-write-path-candidate`" in offline_text
         assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in offline_text
 
+        progress_dir = tmp / "candidate-progress-summary"
+        progress_dir.mkdir()
+        early_candidate = write(
+            progress_dir / "01-hcomm-payload-strict-positive.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy\n"
+            "returncode: 1\n\n"
+            "stage3b3e_direct_aclrt_payload_loader=passed\n"
+            "stage3b3e_payload_descriptor_handoff=passed\n"
+            "stage3b3e_direct_aclrt_payload_launch=not-attempted\n")
+        transfer_candidate = write(
+            progress_dir / "02-hcomm-payload-channel-fence-diagnostic.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy "
+            "--hcomm-payload-channel-fence\n"
+            "returncode: 1\n\n" +
+            strict_log_with_recv_transfer_exit_mismatch())
+        progress_summary = flume_tool.WriteHcommPayloadStrictCandidateSummary(
+            progress_dir,
+            [
+                flume_tool.StepResult(
+                    "hcomm-payload-strict-positive",
+                    ["flume-hccl-collective-smoke"],
+                    1,
+                    1.0,
+                    early_candidate,
+                    True),
+                flume_tool.StepResult(
+                    "hcomm-payload-channel-fence-diagnostic",
+                    ["flume-hccl-collective-smoke",
+                     "--hcomm-payload-channel-fence"],
+                    1,
+                    1.0,
+                    transfer_candidate,
+                    False),
+            ],
+            early_candidate,
+            None)
+        assert progress_summary is not None
+        progress_text = progress_summary.read_text(encoding="utf-8")
+        assert "best_candidate: `hcomm-payload-channel-fence-diagnostic`" in progress_text
+        assert "best_candidate_focus_flags: `--hcomm-payload-channel-fence`" in progress_text
+        assert "recv-transfer-exit-mismatch" in progress_text
+        assert ("HCOMM primitive returned success but recv transfer-exit "
+                "fingerprint did not change") in progress_text
+
         fail_runner = flume_tool.Runner(tmp / "runner-fail")
         flume_tool.RecordStrictPositiveEvidenceGate(
             fail_runner, tree, False, required=True)

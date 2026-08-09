@@ -2932,6 +2932,23 @@ def _PayloadCandidateScore(text: str, returncode: int) -> int:
             "payload_data_probe=observed"):
         if marker in text:
             score += 100
+    if "payload_kernel_status=success" in text:
+        score += 150
+    if "payload_primitive_state=completed" in text:
+        score += 150
+    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
+        ExtractStrictPayloadRankLines(text))
+    if data_flow_ok:
+        score += 800
+    else:
+        score += _PayloadCandidateDataFlowProgressScore(data_flow_reason)
+    host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
+        ExtractStrictPayloadRankLines(text))
+    if host_data_ok:
+        score += 100
+    elif host_data_reason not in (
+            "missing-rank-line", "missing-host-fingerprint"):
+        score += 25
     failure_step = MarkerValue(text, "payload_failure_step")
     if failure_step not in ("missing", "none"):
         score += 50
@@ -2940,6 +2957,61 @@ def _PayloadCandidateScore(text: str, returncode: int) -> int:
     if returncode == 0:
         score += 10
     return score
+
+
+def _PayloadCandidateDataFlowProgressScore(reason: str) -> int:
+    # Rank candidates by how far real device data advanced, not just by launch.
+    progress = {
+        "missing-rank-line": 0,
+        "missing-data-fingerprint": 0,
+        "sample-size-mismatch": 25,
+        "empty-sample": 25,
+        "send-local-copy-mismatch": 100,
+        "recv-local-entry-already-matched": 150,
+        "recv-remote-entry-mismatch": 250,
+        "send-remote-entry-already-matched": 250,
+        "recv-transfer-exit-mismatch": 450,
+        "recv-local-buffer-mismatch": 550,
+        "recv-output-copy-mismatch": 650,
+        "recv-direct-output-mismatch": 650,
+        "unsupported-transfer-or-recv-path": 50,
+    }
+    return progress.get(reason, 75)
+
+
+def _PayloadCandidateDataFlowAction(reason: str) -> str:
+    if reason == "passed":
+        return "payload device data flow passed; inspect checksum or final gate"
+    if reason == "recv-transfer-exit-mismatch":
+        return (
+            "HCOMM primitive returned success but recv transfer-exit "
+            "fingerprint did not change; compare channel-fence, write-path, "
+            "direct-output, no-batch, and channel-handle candidates")
+    if reason == "recv-remote-entry-mismatch":
+        return (
+            "recv rank did not observe source data in the remote HCCL Buffer; "
+            "inspect channel descriptor, peer buffer binding, and "
+            "channel-handle/write-path candidates")
+    if reason == "recv-local-buffer-mismatch":
+        return (
+            "remote buffer has source data but recv local HCCL Buffer did not "
+            "update; compare channel-fence and direct-output candidates")
+    if reason == "recv-output-copy-mismatch":
+        return (
+            "recv local HCCL Buffer updated but output HBM did not; inspect "
+            "HcommLocalCopyOnThread output-copy semantics")
+    if reason == "recv-direct-output-mismatch":
+        return (
+            "direct-output read returned success but output HBM did not "
+            "update; inspect stream completion and direct output arguments")
+    if reason == "send-local-copy-mismatch":
+        return (
+            "send-side local copy did not move user HBM into the local HCCL "
+            "Buffer; inspect local copy primitive arguments")
+    if reason not in (
+            "missing-rank-line", "missing-data-fingerprint", "missing"):
+        return f"inspect HCOMM payload data-flow reason `{reason}`"
+    return ""
 
 
 def _PayloadCandidateNextAction(text: str) -> str:
@@ -2962,6 +3034,17 @@ def _PayloadCandidateNextAction(text: str) -> str:
         return "fix direct ACL payload launch boundary"
     if MarkerValue(text, "stage3b3e_payload_sync") != "passed":
         return "inspect stream sync, timeout, and device status words"
+    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
+        ExtractStrictPayloadRankLines(text))
+    if not data_flow_ok:
+        data_flow_action = _PayloadCandidateDataFlowAction(data_flow_reason)
+        if data_flow_action:
+            return data_flow_action
+    host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
+        ExtractStrictPayloadRankLines(text))
+    if not host_data_ok and host_data_reason not in (
+            "missing-rank-line", "missing-host-fingerprint"):
+        return f"inspect host/device payload sample mismatch `{host_data_reason}`"
     return "inspect missing rank evidence, checksum, trace, or fallback marker"
 
 
@@ -3062,6 +3145,10 @@ def WriteHcommPayloadStrictCandidateSummary(
         except OSError as exc:
             text = f"failed to read log: {exc}"
         passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+        data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
+            ExtractStrictPayloadRankLines(text))
+        host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
+            ExtractStrictPayloadRankLines(text))
         candidates.append({
             "name": result.name,
             "rc": result.returncode,
@@ -3077,6 +3164,8 @@ def WriteHcommPayloadStrictCandidateSummary(
             "batch": _CandidateMarker(text, "payload_batch_mode"),
             "recv": _CandidateMarker(text, "payload_recv_path"),
             "completion": _CandidateMarker(text, "payload_completion_mode"),
+            "data_flow": "passed" if data_flow_ok else data_flow_reason,
+            "host_data": "passed" if host_data_ok else host_data_reason,
             "failure": _CandidateMarker(text, "payload_failure_step"),
             "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
             "first_error": _CandidateMarker(
@@ -3115,8 +3204,8 @@ def WriteHcommPayloadStrictCandidateSummary(
         "checksum match, HCOMM primitive trace, and `fallback=none` can mark "
         "the payload path as passed.",
         "",
-        "| rank | candidate | rc | score | selected | evidence | rank0 | rank1 | transfer | trace_transfer | binding | batch | recv_path | completion | failure_step | hcomm_ret | first_error | first_error_ret | trace_path | fallback | log | next_action |",
-        "|---:|---|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| rank | candidate | rc | score | selected | evidence | rank0 | rank1 | transfer | trace_transfer | binding | batch | recv_path | completion | data_flow | host_data | failure_step | hcomm_ret | first_error | first_error_ret | trace_path | fallback | log | next_action |",
+        "|---:|---|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for idx, row in enumerate(ranked, start=1):
         log_name = Path(str(row["log"])).name
@@ -3125,8 +3214,9 @@ def WriteHcommPayloadStrictCandidateSummary(
             f"{row['selected']} | {row['evidence']} | {row['rank0']} | "
             f"{row['rank1']} | {row['transfer']} | "
             f"{row['trace_transfer']} | {row['binding']} | {row['batch']} | "
-            f"{row['recv']} | {row['completion']} | {row['failure']} | "
-            f"{row['hcomm_ret']} | {row['first_error']} | "
+            f"{row['recv']} | {row['completion']} | "
+            f"{row['data_flow']} | {row['host_data']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | {row['first_error']} | "
             f"{row['first_error_ret']} | {row['trace']} | "
             f"{row['fallback']} | {log_name} | {row['next']} |")
     note.write_text("\n".join(lines) + "\n", encoding="utf-8")
