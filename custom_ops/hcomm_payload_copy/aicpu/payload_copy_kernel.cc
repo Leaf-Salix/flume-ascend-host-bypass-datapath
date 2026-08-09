@@ -320,12 +320,13 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     TracePayloadEvent(desc,
                       FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE,
                       ret);
-      if (ret != 0) {
-        StorePayloadPrimitiveRet(desc, ret);
-        return FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED;
-      }
-      StorePayloadDataProbe(desc, 15U, remote_hccl_buffer);
-      const bool write_with_notify = PayloadWriteWithNotifyEnabled(desc);
+    if (ret != 0) {
+      StorePayloadPrimitiveRet(desc, ret);
+      return FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED;
+    }
+    StorePayloadDataProbe(desc, 15U, remote_hccl_buffer);
+    StorePayloadDataProbe(desc, 16U, local_hccl_buffer);
+    const bool write_with_notify = PayloadWriteWithNotifyEnabled(desc);
     if (PayloadWritePathEnabled(desc)) {
       BeginPayloadPrimitive(desc,
                             FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
@@ -377,6 +378,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED;
       }
+      StorePayloadDataProbe(desc, 16U, remote_hccl_buffer);
       if (PayloadCompletionMode(desc) ==
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
         BeginPayloadPrimitive(
@@ -438,12 +440,13 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
     TracePayloadEvent(desc,
                       FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE,
                       ret);
-      if (ret != 0) {
-        StorePayloadPrimitiveRet(desc, ret);
-        return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED;
-      }
-      StorePayloadDataProbe(desc, 15U, remote_hccl_buffer);
-      if (!PayloadWritePathEnabled(desc)) {
+    if (ret != 0) {
+      StorePayloadPrimitiveRet(desc, ret);
+      return FLUME_HCOMM_PAYLOAD_STATUS_READY_NOTIFY_WAIT_FAILED;
+    }
+    StorePayloadDataProbe(desc, 15U, remote_hccl_buffer);
+    StorePayloadDataProbe(desc, 16U, local_hccl_buffer);
+    if (!PayloadWritePathEnabled(desc)) {
       BeginPayloadPrimitive(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED);
       void* read_target =
@@ -460,6 +463,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         StorePayloadPrimitiveRet(desc, ret);
         return FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_READ_FAILED;
       }
+      StorePayloadDataProbe(desc, 16U, read_target);
       if (PayloadCompletionMode(desc) ==
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
         BeginPayloadPrimitive(
@@ -738,7 +742,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion13() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion14() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 14U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 14U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion15() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 15U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
