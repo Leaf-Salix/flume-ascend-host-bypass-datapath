@@ -166,6 +166,20 @@ void CheckTraceHeaderMatchesDesc(
   FLUME_TEST_CHECK(trace[14] == desc.done_notify_idx);
 }
 
+void CheckTraceFinishedWithStatus(const uint32_t* trace, uint32_t status) {
+  FLUME_TEST_CHECK(trace != nullptr);
+  FLUME_TEST_CHECK(trace[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
+  FLUME_TEST_CHECK(trace[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
+  FLUME_TEST_CHECK(trace[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
+  FLUME_TEST_CHECK(trace[3] == 0U);
+  FLUME_TEST_CHECK(trace[4] > 0U);
+  FLUME_TEST_CHECK(trace[15] == status);
+  const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  FLUME_TEST_CHECK(
+      trace[event_base + trace[4] - 1] ==
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
+}
+
 }  // namespace
 
 int main() {
@@ -657,13 +671,16 @@ int main() {
   acquire_comm_ret = 99;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
+  reset_trace();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
-                       status);
+                       status, trace);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV3(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
   FLUME_TEST_CHECK(status[1] == 99U);
+  CheckTraceFinishedWithStatus(
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
   const int acquire_fail_calls[] = {kAcquireComm};
   FLUME_TEST_CHECK(CallsEqual(acquire_fail_calls, 1));
 
@@ -730,13 +747,16 @@ int main() {
   local_copy_ret = 77;
   status[0] = 0xFFFFFFFFU;
   status[1] = 0xFFFFFFFFU;
+  reset_trace();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
-                       status);
+                       status, trace);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV2(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
   FLUME_TEST_CHECK(status[1] == 77U);
+  CheckTraceFinishedWithStatus(
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
 
   Reset();
   local_copy_ret = 78;

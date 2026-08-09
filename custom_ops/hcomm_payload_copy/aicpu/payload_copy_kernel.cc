@@ -209,6 +209,13 @@ void StorePayloadTraceResult(const flume_hcomm_payload_copy_desc_v1& desc,
   trace_words[15] = result;
 }
 
+unsigned int FinishPayloadTrace(const flume_hcomm_payload_copy_desc_v1& desc,
+                                unsigned int result) {
+  StorePayloadTraceResult(desc, result);
+  TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT, 0);
+  return result;
+}
+
 bool PayloadBatchModeEnabled(const flume_hcomm_payload_copy_desc_v1& desc) {
   return desc.reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
 }
@@ -453,9 +460,8 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER, -1);
   if (!ValidatePayloadDesc(desc)) {
     StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
-    StorePayloadTraceResult(desc, kFlumePayloadInvalidArgument);
     BestEffortPayloadCompletionNotify(desc);
-    return kFlumePayloadInvalidArgument;
+    return FinishPayloadTrace(desc, kFlumePayloadInvalidArgument);
   }
   StorePayloadStatus(desc, kFlumePayloadHcommError);
   StorePayloadEcho(desc);
@@ -480,10 +486,9 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       StorePayloadPrimitiveRet(desc, ret);
       StorePayloadStatus(desc,
                          FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
-      StorePayloadTraceResult(
-          desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
       BestEffortPayloadCompletionNotify(desc);
-      return FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED;
+      return FinishPayloadTrace(
+          desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
     }
   }
 
@@ -580,18 +585,15 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
       StorePayloadPrimitiveRet(desc, ret);
       StorePayloadStatus(desc,
                          FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
-      StorePayloadTraceResult(
+      return FinishPayloadTrace(
           desc, FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED);
-      return FLUME_HCOMM_PAYLOAD_STATUS_COMM_RELEASE_FAILED;
     }
   }
   if (result == kFlumePayloadSuccess) {
     StorePayloadStatus(desc, kFlumePayloadSuccess);
     StorePayloadPrimitiveRet(desc, 0);
   }
-  StorePayloadTraceResult(desc, result);
-  TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT, 0);
-  return result;
+  return FinishPayloadTrace(desc, result);
 }
 
 }  // namespace
