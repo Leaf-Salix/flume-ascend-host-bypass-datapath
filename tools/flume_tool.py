@@ -3959,6 +3959,7 @@ def WriteHcommPayloadStrictCandidateSummary(
         f"- best_candidate_command: `{best['command']}`",
         f"- best_candidate_focus_flags: `{best['focus_flags']}`",
         f"- best_candidate_next_action: `{best['next']}`",
+        *_PayloadCandidateSummaryLines(candidates, best),
         "",
         "This summary ranks already executed strict-positive candidates. It "
         "does not weaken the strict gate; only complete rank evidence, "
@@ -4350,6 +4351,74 @@ def _PayloadCandidateBestRow(
     return sorted(rows, key=lambda row: int(row["score"]), reverse=True)[0]
 
 
+def _PayloadCandidateValueSummary(rows: list[dict[str, str]],
+                                  key: str) -> str:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = row.get(key, "missing")
+        counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return "<none>"
+    return ",".join(
+        f"{value}:{count}" for value, count in sorted(
+            counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _PayloadCandidateBestVerdict(best: Optional[dict[str, str]]) -> str:
+    if best is None:
+        return "no candidates executed"
+    if best.get("evidence") == "passed":
+        return "strict-positive evidence passed"
+    if best.get("failure", "missing") not in ("missing", "none"):
+        return f"kernel failure at {best['failure']}"
+    if best.get("data_flow", "missing") not in ("passed", "missing"):
+        return f"data-flow mismatch: {best['data_flow']}"
+    if best.get("host_data", "missing") not in ("passed", "missing"):
+        return f"host/device sample mismatch: {best['host_data']}"
+    if best.get("resource_layout", "missing") not in ("passed", "missing"):
+        return f"resource-layout mismatch: {best['resource_layout']}"
+    if best.get("trace_error", "missing") not in ("missing", "none"):
+        return f"trace first error: {best['trace_error']}"
+    if best.get("fallback", "missing") not in ("none", "missing"):
+        return f"fallback still active: {best['fallback']}"
+    return "incomplete loader/descriptor/rank evidence"
+
+
+def _PayloadCandidateRecommendedFocus(best: Optional[dict[str, str]]) -> str:
+    if best is None:
+        return "<none>"
+    focus = best.get("focus_flags", "<none>")
+    if focus and focus != "<none>":
+        return focus
+    next_action = best.get("next", "")
+    if "--hcomm-payload-comm-binding=channel-handle" in next_action:
+        return "--hcomm-payload-comm-binding=channel-handle"
+    if "--hcomm-payload-write-path" in next_action:
+        return "--hcomm-payload-write-path"
+    if "--hcomm-payload-write-with-notify" in next_action:
+        return "--hcomm-payload-write-with-notify"
+    if "--hcomm-payload-disable-batch" in next_action:
+        return "--hcomm-payload-disable-batch"
+    if "--hcomm-payload-recv-direct-output" in next_action:
+        return "--hcomm-payload-recv-direct-output"
+    if "--hcomm-payload-channel-fence" in next_action:
+        return "--hcomm-payload-channel-fence"
+    return "<default-read-path>"
+
+
+def _PayloadCandidateSummaryLines(
+        rows: list[dict[str, str]],
+        best: Optional[dict[str, str]]) -> list[str]:
+    return [
+        f"- best_candidate_verdict: `{_PayloadCandidateBestVerdict(best)}`",
+        f"- recommended_focus_flags: `{_PayloadCandidateRecommendedFocus(best)}`",
+        f"- failure_summary: `{_PayloadCandidateValueSummary(rows, 'failure')}`",
+        f"- data_flow_summary: `{_PayloadCandidateValueSummary(rows, 'data_flow')}`",
+        f"- host_data_summary: `{_PayloadCandidateValueSummary(rows, 'host_data')}`",
+        f"- resource_layout_summary: `{_PayloadCandidateValueSummary(rows, 'resource_layout')}`",
+    ]
+
+
 def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         run_dir: Path,
         default_log: Optional[Path],
@@ -4390,6 +4459,7 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
         f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
         f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
+        *_PayloadCandidateSummaryLines(rows, best),
         "",
         f"decision: {decision}",
         "",
@@ -4636,6 +4706,7 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
         f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
         f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
+        *_PayloadCandidateSummaryLines(rows, best),
         "",
         f"decision: {decision}",
         "",
@@ -5150,6 +5221,7 @@ def WriteHcommPayloadCandidateMatrix(
         f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
         f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
         f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
+        *_PayloadCandidateSummaryLines(rows, best),
         "",
         f"decision: {decision}",
         "",

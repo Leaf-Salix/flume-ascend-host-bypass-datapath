@@ -1881,6 +1881,13 @@ def main() -> int:
                 in candidate_matrix_text)
         assert "best_candidate_score: `" in candidate_matrix_text
         assert "best_candidate_next_action: `" in candidate_matrix_text
+        assert "best_candidate_verdict: `strict-positive evidence passed`" in candidate_matrix_text
+        assert ("recommended_focus_flags: `--hcomm-payload-disable-batch "
+                "--hcomm-payload-recv-direct-output "
+                "--hcomm-payload-comm-binding=channel-handle`"
+                in candidate_matrix_text)
+        assert "failure_summary: `" in candidate_matrix_text
+        assert "data_flow_summary: `" in candidate_matrix_text
         assert "| engine | resource_layout |" in candidate_matrix_text
         assert ("hcomm-payload-channel-handle-nobatch-direct-output-"
                 "candidate | 0 | yes | passed"
@@ -2019,6 +2026,14 @@ def main() -> int:
                 in write_candidate_matrix_text)
         assert "best_candidate_score: `" in write_candidate_matrix_text
         assert "best_candidate_next_action: `" in write_candidate_matrix_text
+        assert "best_candidate_verdict: `strict-positive evidence passed`" in write_candidate_matrix_text
+        assert ("recommended_focus_flags: `--hcomm-payload-write-path "
+                "--hcomm-payload-channel-fence "
+                "--hcomm-payload-disable-batch "
+                "--hcomm-payload-comm-binding=channel-handle`"
+                in write_candidate_matrix_text)
+        assert "failure_summary: `" in write_candidate_matrix_text
+        assert "resource_layout_summary: `" in write_candidate_matrix_text
         assert "| engine | resource_layout |" in write_candidate_matrix_text
         assert ("hcomm-payload-write-path-nobatch-channel-fence-candidate"
                 in write_candidate_matrix_text)
@@ -2145,6 +2160,14 @@ def main() -> int:
                 in write_notify_matrix_text)
         assert "best_candidate_score: `" in write_notify_matrix_text
         assert "best_candidate_next_action: `" in write_notify_matrix_text
+        assert "best_candidate_verdict: `strict-positive evidence passed`" in write_notify_matrix_text
+        assert ("recommended_focus_flags: `--hcomm-payload-write-with-notify "
+                "--hcomm-payload-channel-fence "
+                "--hcomm-payload-disable-batch "
+                "--hcomm-payload-comm-binding=channel-handle`"
+                in write_notify_matrix_text)
+        assert "failure_summary: `" in write_notify_matrix_text
+        assert "host_data_summary: `" in write_notify_matrix_text
         assert "| engine | resource_layout |" in write_notify_matrix_text
         assert ("hcomm-payload-write-with-notify-nobatch-"
                 "channel-fence-candidate" in write_notify_matrix_text)
@@ -3627,6 +3650,9 @@ def main() -> int:
         assert ("best_candidate_command: `flume-hccl-collective-smoke "
                 "--hcomm-payload-write-path`" in summary_text)
         assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in summary_text
+        assert "best_candidate_verdict: `strict-positive evidence passed`" in summary_text
+        assert "recommended_focus_flags: `--hcomm-payload-write-path`" in summary_text
+        assert "failure_summary: `" in summary_text
         assert "selected_evidence_log: `" in summary_text
         assert "transfer | trace_transfer" in summary_text
         assert "binding | engine | resource_layout" in summary_text
@@ -3721,6 +3747,8 @@ def main() -> int:
         progress_text = progress_summary.read_text(encoding="utf-8")
         assert "best_candidate: `hcomm-payload-channel-fence-diagnostic`" in progress_text
         assert "best_candidate_focus_flags: `--hcomm-payload-channel-fence`" in progress_text
+        assert "best_candidate_verdict: `data-flow mismatch: recv-transfer-exit-mismatch`" in progress_text
+        assert "recommended_focus_flags: `--hcomm-payload-channel-fence`" in progress_text
         assert "recv-transfer-exit-mismatch" in progress_text
         assert ("HCOMM primitive returned success but recv transfer-exit "
                 "fingerprint did not change") in progress_text

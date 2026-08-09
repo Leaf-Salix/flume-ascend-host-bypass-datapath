@@ -193,7 +193,13 @@ python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestam
 `HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md`。后者会从已有
 `*-hcomm-payload-*.log` / `*-hcomm-storage-*.log` 中还原候选命令并打印
 `best_candidate_command`、`best_candidate_focus_flags`，方便在真机上直接复跑
-最接近成功的路径。verify 只有在 package preflight 显示
+最接近成功的路径。候选矩阵和离线 summary 还会输出
+`best_candidate_verdict`、`recommended_focus_flags`、`failure_summary`、
+`data_flow_summary`、`host_data_summary` 和 `resource_layout_summary`；
+这些字段用于快速判断当前是卡在 direct ACL loader/descriptor，还是已经进
+kernel 后卡在某个 HCOMM primitive、data-flow、host/device sample 或 resource
+layout。它们只是诊断汇总，不会放宽 strict-positive 门禁。verify 只有在
+package preflight 显示
 `payload-ready`，并完整看到 rank0/rank1 passed、Stage 3B.3E
 launch/sync passed、kernel status success、`payload_failure_step=none`、status
 word 0、kernel HCOMM ret 0、`payload_local_buffer_prime=passed`、`payload_local_buffer_prime_source=host-sentinel-not-payload`、`payload_status_schema=v7`、
