@@ -181,7 +181,35 @@ host 侧解析 device trace 得到，表示第一处非 0 HCOMM primitive 返回
 python3 tools/flume_tool.py hcomm-payload-verify-logs logs/flume-check-<timestamp>
 ```
 
-该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md`，并且只有在完整看到 rank0/rank1 passed、Stage 3B.3E launch/sync passed、kernel status success、`payload_failure_step=none`、status word 0、kernel HCOMM ret 0、`payload_status_schema=v4`、`payload_status_word_count=14`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`、`payload_data_flow=passed`、`payload_host_data=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v2`、`payload_trace_word_count=80`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`、`payload_transfer_mode=read|write|write-with-notify`、`payload_trace_transfer_mode=read|write|write-with-notify`、`payload_trace_result=success`、`payload_trace_first_error_event=none`、`payload_trace_first_error_ret=0`、`payload_trace_first_error_index=-1`、两 rank 一致的 `payload_comm_binding=comm-name` 或 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`、`payload_pattern=strict-v1`、rank0 source checksum、rank1 received/expected checksum 且三者一致、rank1 `payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非 0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正 HCOMM payload copy。
+该命令会重建 `ASCEND_FULL_MATRIX_DECISION_TREE.md` 和
+`HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md`。后者会从已有
+`*-hcomm-payload-*.log` / `*-hcomm-storage-*.log` 中还原候选命令并打印
+`best_candidate_command`、`best_candidate_focus_flags`，方便在真机上直接复跑
+最接近成功的路径。verify 只有在完整看到 rank0/rank1 passed、Stage 3B.3E
+launch/sync passed、kernel status success、`payload_failure_step=none`、status
+word 0、kernel HCOMM ret 0、`payload_status_schema=v4`、
+`payload_status_word_count=14`、`payload_echo=passed`,
+`payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`、
+`payload_data_flow=passed`、`payload_host_data=passed`、
+`payload_primitive_state=completed`、`payload_trace=passed`、
+`payload_trace_schema=v2`、`payload_trace_word_count=80`、
+`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、
+`payload_trace_ret_order=passed`、
+`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`、
+`payload_transfer_mode=read|write|write-with-notify`、
+`payload_trace_transfer_mode=read|write|write-with-notify`、
+`payload_trace_result=success`、`payload_trace_first_error_event=none`、
+`payload_trace_first_error_ret=0`、`payload_trace_first_error_index=-1`、两 rank
+一致的 `payload_comm_binding=comm-name` 或 `payload_comm_binding=channel-handle`、
+`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、
+`payload_semantic_v6=present`、`payload_semantic_v7=present`、
+`payload_semantic_v8=present`, `payload_semantic_v9=present`、
+`payload_semantic_v10=present`, `payload_semantic_v11=present`,
+`payload_semantic_v12=present`、`payload_pattern=strict-v1`、rank0 source
+checksum、rank1 received/expected checksum 且三者一致、rank1
+`payload_verify=passed` 和 `fallback=none` 时才返回 0。缺任意一个证据都会返回非
+0，用于防止把 package load、canary、notify-only 或 fallback 路径误判成真正
+HCOMM payload copy。
 若 strict-positive 失败，decision tree 会按 rank 输出 `rankN suggested action`，
 把 `comm-acquire`、`local-copy`、`ready-notify-wait`、`remote-read`、
 `output-copy`、`batch-end` 等 kernel failure step 映射到具体排查方向。
@@ -653,7 +681,9 @@ python3 tools/flume_tool.py hcomm-storage-verify-logs logs/flume-check-...
 ```
 
 该命令只有在 strict-positive payload 证据完整且 storage smoke 走
-`storage_hbm=hcomm-payload-staging` 时返回 0。
+`storage_hbm=hcomm-payload-staging` 时返回 0。它同样会重建
+`HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md`，用于从 storage-over-HCOMM 的候选
+日志中找出最佳复跑命令。
 
 如果要同时采集 CANN fixture：
 

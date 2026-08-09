@@ -2510,6 +2510,33 @@ def main() -> int:
         assert "write | write" in summary_text
         assert "candidate passed; rerun strict-positive focused on `payload_transfer_mode=write`" in summary_text
 
+        offline_dir = tmp / "flume-check-offline-candidates"
+        offline_default = write(
+            offline_dir / "01-hcomm-payload-strict-positive.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy\n"
+            "returncode: 1\n\n" + strict_log(False))
+        offline_write = write(
+            offline_dir / "02-hcomm-payload-write-path-candidate.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy "
+            "--hcomm-payload-write-path\n"
+            "returncode: 0\n\n" + strict_write_path_log(True))
+        write(
+            offline_dir / "03-hcomm-payload-strict-evidence.log",
+            "$ internal evidence gate\nreturncode: 0\n\n"
+            "strict_positive_evidence=passed\n")
+        offline_results = (
+            flume_tool.HcommPayloadCandidateResultsFromRunDir(offline_dir))
+        assert [result.name for result in offline_results] == [
+            "hcomm-payload-strict-positive",
+            "hcomm-payload-write-path-candidate",
+        ]
+        offline_summary = flume_tool.WriteHcommPayloadStrictCandidateSummary(
+            offline_dir, offline_results, offline_default, offline_write)
+        assert offline_summary is not None
+        offline_text = offline_summary.read_text(encoding="utf-8")
+        assert "best_candidate: `hcomm-payload-write-path-candidate`" in offline_text
+        assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in offline_text
+
         fail_runner = flume_tool.Runner(tmp / "runner-fail")
         flume_tool.RecordStrictPositiveEvidenceGate(
             fail_runner, tree, False, required=True)

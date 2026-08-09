@@ -2913,6 +2913,62 @@ def _PayloadCandidateFocusFlags(command: list[str]) -> str:
     return ShellCommand(values) if values else "<default-read-path>"
 
 
+def _StepNameFromLogPath(log_path: Path) -> str:
+    match = re.match(r"^\d+-(?P<name>.+)\.log$", log_path.name)
+    if match:
+        return match.group("name")
+    return log_path.stem
+
+
+def _CommandFromLogText(text: str) -> list[str]:
+    for line in text.splitlines():
+        if not line.startswith("$ "):
+            continue
+        command_text = line[2:].strip()
+        if not command_text:
+            break
+        try:
+            return shlex.split(command_text)
+        except ValueError:
+            return [command_text]
+    return []
+
+
+def _ReturncodeFromLogText(text: str) -> int:
+    match = re.search(r"(?m)^returncode:\s*(-?\d+)\s*$", text)
+    if match:
+        return int(match.group(1))
+    return 0 if StrictPayloadRankEvidencePassed(text)[0] else 1
+
+
+def HcommPayloadCandidateResultsFromRunDir(run_dir: Path) -> list[StepResult]:
+    results: list[StepResult] = []
+    seen: set[Path] = set()
+    for pattern in ("*-hcomm-payload-*.log", "*-hcomm-storage-*.log"):
+        for log_path in sorted(run_dir.glob(pattern)):
+            if log_path in seen:
+                continue
+            seen.add(log_path)
+            name = _StepNameFromLogPath(log_path)
+            if "package" in name or "evidence" in name:
+                continue
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            command = _CommandFromLogText(text)
+            if not command:
+                command = ["<unknown>", name]
+            results.append(StepResult(
+                name=name,
+                command=command,
+                returncode=_ReturncodeFromLogText(text),
+                seconds=0.0,
+                log_path=log_path,
+                required=True))
+    return results
+
+
 def WriteHcommPayloadStrictCandidateSummary(
         run_dir: Path,
         results: list[StepResult],
@@ -2924,6 +2980,8 @@ def WriteHcommPayloadStrictCandidateSummary(
                 not result.name.startswith("hcomm-storage-")):
             continue
         if "package" in result.name:
+            continue
+        if "evidence" in result.name:
             continue
         try:
             text = result.log_path.read_text(encoding="utf-8",
@@ -5671,10 +5729,16 @@ def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
         return 2
     tree, passed, smoke_log, strict_log, package_log = (
         AnalyzeHcommPayloadStrictPositiveLogs(run_dir))
+    candidate_summary = WriteHcommPayloadStrictCandidateSummary(
+        run_dir, HcommPayloadCandidateResultsFromRunDir(run_dir),
+        FindStepLog(run_dir, ["hcomm-payload-strict-positive"]),
+        strict_log)
     print(f"[ok] analyzed log dir -> {run_dir}")
     print(f"[ok] strict log -> {strict_log if strict_log else '<missing>'}")
     print(f"[ok] smoke log -> {smoke_log if smoke_log else '<missing>'}")
     print(f"[ok] package log -> {package_log if package_log else '<missing>'}")
+    print("[ok] candidate summary -> "
+          f"{candidate_summary if candidate_summary else '<none>'}")
     if passed:
         print("[ok] strict-positive evidence -> passed")
         return 0
@@ -5692,10 +5756,16 @@ def run_hcomm_storage_verify_logs(args: argparse.Namespace) -> int:
         return 2
     tree, passed, smoke_log, strict_log, package_log = (
         AnalyzeHcommStorageStrictPositiveLogs(run_dir))
+    candidate_summary = WriteHcommPayloadStrictCandidateSummary(
+        run_dir, HcommPayloadCandidateResultsFromRunDir(run_dir),
+        FindStepLog(run_dir, ["hcomm-storage-strict-positive"]),
+        strict_log)
     print(f"[ok] analyzed log dir -> {run_dir}")
     print(f"[ok] storage strict log -> {strict_log if strict_log else '<missing>'}")
     print(f"[ok] smoke log -> {smoke_log if smoke_log else '<missing>'}")
     print(f"[ok] package log -> {package_log if package_log else '<missing>'}")
+    print("[ok] candidate summary -> "
+          f"{candidate_summary if candidate_summary else '<none>'}")
     if passed:
         print("[ok] hcomm storage evidence -> passed")
         return 0
