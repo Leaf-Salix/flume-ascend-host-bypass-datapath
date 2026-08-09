@@ -80,6 +80,26 @@ void StorePayloadPrimitiveRet(const flume_hcomm_payload_copy_desc_v1& desc,
   }
 }
 
+unsigned int* PayloadTraceWords(
+    const flume_hcomm_payload_copy_desc_v1& desc);
+
+void StorePayloadValidationReason(
+    const flume_hcomm_payload_copy_desc_v1& desc,
+    unsigned int reason) {
+  if (desc.status_word == 0 ||
+      desc.status_word_count < 2U) {
+    return;
+  }
+  auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
+  status_words[1] = reason;
+  unsigned int* trace_words = PayloadTraceWords(desc);
+  if (trace_words != nullptr &&
+      trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
+      trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    trace_words[17] = reason;
+  }
+}
+
 void BeginPayloadPrimitive(const flume_hcomm_payload_copy_desc_v1& desc,
                            unsigned int pending_status) {
   StorePayloadStatus(desc, pending_status);
@@ -300,34 +320,91 @@ void BestEffortPayloadCompletionNotify(
       static_cast<ThreadHandle>(desc.cpu_thread_on_aicpu), 0);
 }
 
+unsigned int ValidatePayloadDescReason(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (!HasPayloadDescHeader(desc)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_HEADER;
+  }
+  if (desc.rank_size != 2) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_SIZE;
+  }
+  if (desc.role != FLUME_HCOMM_NOTIFY_ROLE_SEND &&
+      desc.role != FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_ROLE;
+  }
+  if (desc.local_rank >= desc.rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_RANK;
+  }
+  if (desc.peer_rank >= desc.rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_PEER_RANK;
+  }
+  if (desc.local_rank == desc.peer_rank) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_PAIR;
+  }
+  if (desc.ready_notify_idx == desc.done_notify_idx) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_NOTIFY_INDEX;
+  }
+  if (desc.bytes == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_BYTES;
+  }
+  if (desc.thread_notify_mode != FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE &&
+      desc.thread_notify_mode !=
+          FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_THREAD_NOTIFY_MODE;
+  }
+  if (PayloadCompletionMode(desc) !=
+          FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY &&
+      PayloadCompletionMode(desc) !=
+          FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_COMPLETION_MODE;
+  }
+  if (desc.aicpu_thread == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_AICPU_THREAD;
+  }
+  if (desc.channel_handle == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CHANNEL_HANDLE;
+  }
+  if (desc.user_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_USER_BUFFER;
+  }
+  if (desc.local_hccl_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER;
+  }
+  if (desc.remote_hccl_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER;
+  }
+  if (desc.bytes > desc.local_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER_BYTES;
+  }
+  if (desc.bytes > desc.remote_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER_BYTES;
+  }
+  if (desc.status_word == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD;
+  }
+  if (desc.status_word_count < FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD_COUNT;
+  }
+  if (desc.status_schema_version !=
+      FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_SCHEMA;
+  }
+  if (!PayloadSkipCommAcquire(desc) && !HasCommName(desc)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME;
+  }
+  if (PayloadBatchModeEnabled(desc) && !HasPayloadBatchTag(desc)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_BATCH_TAG;
+  }
+  if (desc.thread_notify_mode ==
+          FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU &&
+      desc.cpu_thread_on_aicpu == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU;
+  }
+  return FLUME_HCOMM_PAYLOAD_VALIDATE_OK;
+}
+
 bool ValidatePayloadDesc(const flume_hcomm_payload_copy_desc_v1& desc) {
-  return HasPayloadDescHeader(desc) && desc.rank_size == 2 &&
-         (desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND ||
-          desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV) &&
-         desc.local_rank < desc.rank_size &&
-         desc.peer_rank < desc.rank_size && desc.local_rank != desc.peer_rank &&
-         desc.ready_notify_idx != desc.done_notify_idx && desc.bytes != 0 &&
-         (desc.thread_notify_mode == FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE ||
-          desc.thread_notify_mode ==
-              FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) &&
-         (PayloadCompletionMode(desc) ==
-              FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY ||
-          PayloadCompletionMode(desc) ==
-              FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) &&
-         desc.aicpu_thread != 0 && desc.channel_handle != 0 &&
-         desc.user_buffer != 0 && desc.local_hccl_buffer != 0 &&
-         desc.remote_hccl_buffer != 0 &&
-         desc.bytes <= desc.local_hccl_buffer_bytes &&
-         desc.bytes <= desc.remote_hccl_buffer_bytes &&
-         desc.status_word != 0 &&
-         desc.status_word_count >= FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT &&
-         desc.status_schema_version ==
-             FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION &&
-         (PayloadSkipCommAcquire(desc) || HasCommName(desc)) &&
-         (!PayloadBatchModeEnabled(desc) || HasPayloadBatchTag(desc)) &&
-         (desc.thread_notify_mode !=
-              FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU ||
-          desc.cpu_thread_on_aicpu != 0);
+  return ValidatePayloadDescReason(desc) == FLUME_HCOMM_PAYLOAD_VALIDATE_OK;
 }
 
 unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
@@ -546,8 +623,10 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
 unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   InitPayloadTrace(desc);
   TracePayloadEvent(desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER, -1);
-  if (!ValidatePayloadDesc(desc)) {
+  const unsigned int validation_reason = ValidatePayloadDescReason(desc);
+  if (validation_reason != FLUME_HCOMM_PAYLOAD_VALIDATE_OK) {
     StorePayloadStatus(desc, kFlumePayloadInvalidArgument);
+    StorePayloadValidationReason(desc, validation_reason);
     BestEffortPayloadCompletionNotify(desc);
     return FinishPayloadTrace(desc, kFlumePayloadInvalidArgument);
   }
@@ -787,6 +866,10 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion17() {
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion18() {
   return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 18U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion19() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 19U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {

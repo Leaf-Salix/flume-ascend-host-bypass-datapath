@@ -71,6 +71,7 @@ REQUIRED_MARKERS = (
     "payload_semantic_v16=present",
     "payload_semantic_v17=present",
     "payload_semantic_v18=present",
+    "payload_semantic_v19=present",
     "payload_official_p2p_layout=present",
     "payload_copy_api=hcomm-direct-aclrt",
     "payload_hccl_p2p_api=not-used",

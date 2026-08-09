@@ -246,6 +246,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion16() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion17() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion18() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion19() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySupportsOfficialP2pLayout() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
@@ -540,6 +541,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[1] == FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME);
 
   Reset();
   reset_status();
@@ -886,6 +888,8 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(status[1] ==
+                   FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU);
   FLUME_TEST_CHECK(call_count == 0);
 
   Reset();

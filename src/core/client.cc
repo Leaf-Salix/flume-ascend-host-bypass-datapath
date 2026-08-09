@@ -2962,6 +2962,72 @@ std::string PayloadPrimitiveStateDetail(const uint32_t* status_words) {
   return " payload_primitive_state=" + state;
 }
 
+const char* PayloadValidationReasonName(uint32_t reason) {
+  switch (reason) {
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_OK:
+      return "ok";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_HEADER:
+      return "header";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_SIZE:
+      return "rank-size";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_ROLE:
+      return "role";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_RANK:
+      return "local-rank";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_PEER_RANK:
+      return "peer-rank";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_PAIR:
+      return "rank-pair";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_NOTIFY_INDEX:
+      return "notify-index";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_BYTES:
+      return "bytes";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_THREAD_NOTIFY_MODE:
+      return "thread-notify-mode";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_COMPLETION_MODE:
+      return "completion-mode";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_AICPU_THREAD:
+      return "aicpu-thread";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_CHANNEL_HANDLE:
+      return "channel-handle";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_USER_BUFFER:
+      return "user-buffer";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER:
+      return "local-hccl-buffer";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER:
+      return "remote-hccl-buffer";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER_BYTES:
+      return "local-hccl-buffer-bytes";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER_BYTES:
+      return "remote-hccl-buffer-bytes";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD:
+      return "status-word";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD_COUNT:
+      return "status-word-count";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_SCHEMA:
+      return "status-schema";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME:
+      return "comm-name";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_BATCH_TAG:
+      return "batch-tag";
+    case FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU:
+      return "cpu-thread-on-aicpu";
+    default:
+      return "unknown";
+  }
+}
+
+std::string PayloadValidationReasonDetail(const uint32_t* status_words) {
+  if (status_words == nullptr ||
+      status_words[0] != FLUME_HCOMM_PAYLOAD_STATUS_INVALID_ARGUMENT) {
+    return " payload_validation_reason=not-applicable";
+  }
+  return std::string(" payload_validation_reason=") +
+         PayloadValidationReasonName(status_words[1]) +
+         " payload_validation_reason_code=" +
+         std::to_string(status_words[1]);
+}
+
 std::string PayloadDescriptorDetail(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   const bool batch_disabled =
@@ -4586,6 +4652,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              " payload_status_read=\"" + AclErrorMessage(status_ret) +
              "\"" + PayloadStatusSchemaDetail() +
              PayloadPrimitiveStateDetail(observed_status_words) +
+             PayloadValidationReasonDetail(observed_status_words) +
              PayloadEchoWordsDetail(observed_status_words) +
              PayloadDataProbeDetail(observed_status_words) +
              PayloadTraceWordsDetail(observed_trace_words, trace_ret) +
@@ -4635,6 +4702,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            std::to_string(observed_status_words[1]) +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(observed_status_words) +
+           PayloadValidationReasonDetail(observed_status_words) +
            PayloadEchoWordsDetail(observed_status_words) +
            PayloadDataProbeDetail(observed_status_words) +
            PayloadTraceWordsDetail(observed_trace_words, trace_ret) +
@@ -4698,6 +4766,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadValidationReasonDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
            PayloadDeviceDataSideDetail(desc, kernel_status_words) +
@@ -4722,6 +4791,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadValidationReasonDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
            PayloadDeviceDataSideDetail(desc, kernel_status_words) +
@@ -4760,6 +4830,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_echo=failed" +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadValidationReasonDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
            PayloadDeviceDataSideDetail(desc, kernel_status_words) +
@@ -4796,6 +4867,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            (resource_info.host_thread_notify_ready ? "on" : "off") +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadValidationReasonDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
            PayloadDeviceDataSideDetail(desc, kernel_status_words) +
@@ -4825,6 +4897,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
          (resource_info.host_thread_notify_ready ? "on" : "off") +
          PayloadStatusSchemaDetail() +
          PayloadPrimitiveStateDetail(kernel_status_words) +
+         PayloadValidationReasonDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) +
          PayloadDataProbeDetail(kernel_status_words) +
          PayloadDeviceDataSideDetail(desc, kernel_status_words) +

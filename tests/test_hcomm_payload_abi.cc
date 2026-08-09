@@ -26,7 +26,7 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 18,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 19,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -216,6 +216,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18_FUNC,
       "FlumeHcommPayloadCopySemanticVersion18") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion19") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);

@@ -52,6 +52,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_semantic_v16": "FlumeHcommPayloadCopySemanticVersion16",
     "payload_semantic_v17": "FlumeHcommPayloadCopySemanticVersion17",
     "payload_semantic_v18": "FlumeHcommPayloadCopySemanticVersion18",
+    "payload_semantic_v19": "FlumeHcommPayloadCopySemanticVersion19",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "payload_official_p2p_layout": (
         "FlumeHcommPayloadCopySupportsOfficialP2pLayout"),
@@ -83,6 +84,7 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15 = "FlumeHcommPayloadCopySemanticVersion1
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16 = "FlumeHcommPayloadCopySemanticVersion16"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17 = "FlumeHcommPayloadCopySemanticVersion17"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18 = "FlumeHcommPayloadCopySemanticVersion18"
+HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19 = "FlumeHcommPayloadCopySemanticVersion19"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT = (
     "FlumeHcommPayloadCopySupportsOfficialP2pLayout")
@@ -108,6 +110,7 @@ HCOMM_PAYLOAD_READY_FUNCTION_LABELS = (
     "payload_semantic_v16",
     "payload_semantic_v17",
     "payload_semantic_v18",
+    "payload_semantic_v19",
     "payload_requires_comm_acquire",
     "payload_official_p2p_layout",
     "payload_status_schema",
@@ -175,7 +178,7 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
     "payload_abi_version_v3": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, 1),
     "payload_abi_version_v4": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, 1),
-    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 18),
+    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 19),
     "payload_semantic_version_v5": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, 1),
     "payload_semantic_version_v6": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6, 1),
     "payload_semantic_version_v7": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, 1),
@@ -190,6 +193,7 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_semantic_version_v16": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16, 1),
     "payload_semantic_version_v17": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17, 1),
     "payload_semantic_version_v18": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18, 1),
+    "payload_semantic_version_v19": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19, 1),
     "payload_requires_comm_acquire": (HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, 1),
     "payload_official_p2p_layout": (
         HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT, 1),
@@ -2328,6 +2332,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_semantic_v16=present",
     "payload_semantic_v17=present",
     "payload_semantic_v18=present",
+    "payload_semantic_v19=present",
     "payload_official_p2p_layout=present",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
@@ -5957,6 +5962,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic_v16 = marker_value(strict, "payload_semantic_v16")
     strict_semantic_v17 = marker_value(strict, "payload_semantic_v17")
     strict_semantic_v18 = marker_value(strict, "payload_semantic_v18")
+    strict_semantic_v19 = marker_value(strict, "payload_semantic_v19")
     strict_official_p2p_layout = marker_value(
         strict, "payload_official_p2p_layout")
     strict_copy_api = marker_value(strict, "payload_copy_api")
@@ -6111,6 +6117,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                                   "payload_status_word"),
             "hcomm_ret": marker_value_from_line(rank_line,
                                                 "payload_kernel_hcomm_ret"),
+            "validation_reason": marker_value_from_line(
+                rank_line, "payload_validation_reason"),
+            "validation_reason_code": marker_value_from_line(
+                rank_line, "payload_validation_reason_code"),
             "trace_first_error_event": marker_value_from_line(
                 rank_line, "payload_trace_first_error_event"),
             "trace_first_error_ret": marker_value_from_line(
@@ -6245,6 +6255,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 kernel failure step | {rank_status[1]['failure_step']} | rank1 `payload_failure_step` |",
             f"| rank0 kernel HCOMM ret | {rank_status[0]['hcomm_ret']} | rank0 `payload_kernel_hcomm_ret` |",
             f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
+            f"| rank0 descriptor validation reason | {rank_status[0]['validation_reason']} / {rank_status[0]['validation_reason_code']} | rank0 `payload_validation_reason`; meaningful when kernel status is `invalid-argument` |",
+            f"| rank1 descriptor validation reason | {rank_status[1]['validation_reason']} / {rank_status[1]['validation_reason_code']} | rank1 `payload_validation_reason`; meaningful when kernel status is `invalid-argument` |",
             f"| rank0 first trace error | {rank_status[0]['trace_first_error_event']} / {rank_status[0]['trace_first_error_ret']} | rank0 first non-zero HCOMM trace return, index `{rank_status[0]['trace_first_error_index']}` |",
             f"| rank1 first trace error | {rank_status[1]['trace_first_error_event']} / {rank_status[1]['trace_first_error_ret']} | rank1 first non-zero HCOMM trace return, index `{rank_status[1]['trace_first_error_index']}` |",
             f"| rank0 primitive state | {rank_status[0]['primitive_state']} | rank0 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
@@ -6295,6 +6307,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic v16 marker | {strict_semantic_v16} | `payload_semantic_v16=missing` means the package predates trace status/ret mirror evidence |",
             f"| payload semantic v17 marker | {strict_semantic_v17} | `payload_semantic_v17=missing` means the package predates remote-buffer-safe send-side data probes |",
             f"| payload semantic v18 marker | {strict_semantic_v18} | `payload_semantic_v18=missing` means the package predates descriptor primitive/operand layout evidence gates |",
+            f"| payload semantic v19 marker | {strict_semantic_v19} | `payload_semantic_v19=missing` means the package predates descriptor validation reason evidence |",
             f"| payload official-p2p layout marker | {strict_official_p2p_layout} | `payload_official_p2p_layout=missing` means the package predates official-p2p/channel-handle direct-output layout evidence |",
             f"| payload copy API | {strict_copy_api} | expected `hcomm-direct-aclrt`; anything else means the strict pass is not proving the HCOMM custom-op payload path |",
             f"| HCCL P2P API in payload path | {strict_hccl_p2p_api} | expected `not-used`; this keeps HcclSend/HcclRecv fallback out of strict HCOMM payload evidence |",
@@ -6360,6 +6373,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 next_action = (
                     "rebuild/reinstall payload custom-op package with current "
                     "Flume semantic v18 descriptor-layout evidence markers")
+            elif strict_semantic_v19 == "missing":
+                next_action = (
+                    "rebuild/reinstall payload custom-op package with current "
+                    "Flume semantic v19 descriptor validation reason markers")
             elif strict_semantic == "missing":
                 next_action = (
                     "rebuild/reinstall payload custom-op package; semantic "
@@ -6972,6 +6989,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_semantic_v16=present,"
             "payload_semantic_v17=present,"
             "payload_semantic_v18=present,"
+            "payload_semantic_v19=present,"
             "payload_official_p2p_layout=present,"
             "payload_batch_mode=on|off,"
             "payload_comm_acquire=default,"
@@ -8414,6 +8432,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_semantic_v16_marker = False
     found_payload_semantic_v17_marker = False
     found_payload_semantic_v18_marker = False
+    found_payload_semantic_v19_marker = False
     found_payload_requires_comm_acquire_marker = False
     found_payload_official_p2p_layout_marker = False
     found_payload_status_schema_marker = False
@@ -8491,6 +8510,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18,
+            HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
@@ -8592,6 +8612,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_semantic_v18_marker = (
                 found_payload_semantic_v18_marker or
                 functions_present.get("payload_semantic_v18", False))
+            found_payload_semantic_v19_marker = (
+                found_payload_semantic_v19_marker or
+                functions_present.get("payload_semantic_v19", False))
             found_payload_requires_comm_acquire_marker = (
                 found_payload_requires_comm_acquire_marker or
                 functions_present.get("payload_requires_comm_acquire", False))
@@ -8696,6 +8719,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_semantic_v18_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18,
                                         False))
+                found_payload_semantic_v19_marker = (
+                    found_payload_semantic_v19_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19,
+                                        False))
                 found_payload_requires_comm_acquire_marker = (
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
@@ -8787,6 +8814,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_semantic_version_v18."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18, False) else 'missing'}")
+                print("function_so.payload_semantic_version_v19."
+                      f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19, False) else 'missing'}")
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
@@ -8913,6 +8943,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(
                         HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT,
@@ -8960,6 +8991,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17}")
             print("required_payload_semantic_v18_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18}")
+            print("required_payload_semantic_v19_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
             print("required_payload_official_p2p_layout_symbol="
@@ -9220,6 +9253,28 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "semantic marker")
                 print("action=rebuild package with current Flume semantic "
                       "v18 descriptor-layout-evidence-capable payload kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
+                  found_payload_semantic_v14_marker and
+                  found_payload_semantic_v15_marker and
+                  found_payload_semantic_v16_marker and
+                  found_payload_semantic_v17_marker and
+                  found_payload_semantic_v18_marker and
+                  not found_payload_semantic_v19_marker):
+                print("reason=payload kernel package has a stale payload "
+                      "semantic marker")
+                print("action=rebuild package with current Flume semantic "
+                      "v19 descriptor-validation-reason-capable payload kernel")
             elif (found_internal_payload_marker and
                   found_payload_abi_version_marker and
                   found_payload_semantic_marker and
