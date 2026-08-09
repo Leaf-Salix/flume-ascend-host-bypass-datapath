@@ -1788,6 +1788,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                             args.run_hcomm_payload_smoke or
                             args.run_storage_hbm_smoke)
     hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    package_result: Optional[StepResult] = None
+    package_payload_ready = False
+    strict_tree_log: Optional[Path] = None
     if shutil.which("npu-smi"):
         runner.run("npu-smi-info-m", ["npu-smi", "info", "-m"],
                    required=False, timeout_seconds=args.step_timeout_sec)
@@ -1817,6 +1820,12 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                 next_steps = WritePayloadPackageBuildNextSteps(
                     runner.run_dir, args)
                 print(f"[ok] payload package next steps -> {next_steps}")
+            try:
+                package_text = package_result.log_path.read_text(
+                    encoding="utf-8", errors="replace")
+            except OSError:
+                package_text = ""
+            package_payload_ready = PackageTextPayloadReady(package_text)
     try:
         command_specs = build_commands(args, enable_hccl=True,
                                        run_dir=runner.run_dir)
@@ -1833,10 +1842,39 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     for spec in command_specs:
         timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
                    else args.step_timeout_sec)
-        result = runner.run(spec.name, spec.command, required=spec.required,
-                            timeout_seconds=timeout, env_updates=spec.env_updates)
-        if spec.name == "hccl-collective-smoke" and result.returncode != 0:
-            WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+        allow_accepted_candidate = (
+            spec.name == "hccl-collective-smoke" and
+            args.hcomm_require_payload_copy and
+            package_payload_ready and
+            HasAcceptedPayloadCandidate(args, spec.command))
+        result = runner.run(spec.name, spec.command,
+                            required=spec.required and
+                            not allow_accepted_candidate,
+                            timeout_seconds=timeout,
+                            env_updates=spec.env_updates)
+        if spec.name == "hccl-collective-smoke":
+            strict_tree_log = result.log_path
+            if result.returncode != 0:
+                WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+                candidate_log = RunHcommPayloadStrictFailureFollowups(
+                    runner, args, spec.command, spec.env_updates, timeout,
+                    result.log_path,
+                    package_payload_ready=(
+                        args.hcomm_require_payload_copy and
+                        package_payload_ready))
+                if candidate_log is not None:
+                    strict_tree_log = candidate_log
+    if args.hcomm_require_payload_copy and package_result is not None:
+        tree = WriteMatrixDecisionTree(
+            runner.run_dir,
+            None,
+            SelectHcommPayloadEvidenceLog(
+                runner.run_dir, strict_tree_log, require_storage=False),
+            package_result.log_path,
+        )
+        RecordStrictPositiveEvidenceGate(
+            runner, tree, DecisionTreeStrictPositivePassed(tree),
+            required=package_payload_ready)
     note = runner.run_dir / "ASCEND_PROBE_SCOPE.txt"
     note.write_text(
         "This probe validates CANN/HCCL discovery, compile/link, and the current "
@@ -1876,6 +1914,15 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "The tool also runs hcomm-custom-op-package-preflight before payload "
         "or notify-only smoke so the log distinguishes missing/incomplete "
         "custom-op packages from runtime launch or primitive failures. Add "
+        "--auto-build-hcomm-payload-package to build an isolated runtime "
+        "package from the selected CANN toolkit before strict payload smoke, "
+        "without installing into the system CANN/OPP tree. With "
+        "--auto-run-hcomm-payload-candidate-matrix, a failed default payload "
+        "copy run can automatically explore channel-handle, write-path, "
+        "write-with-notify, channel-fence, no-batch, tagged-batch, "
+        "direct-output, and no-comm-acquire isolation, but success still "
+        "requires the strict evidence gate with checksum, trace, and "
+        "fallback=none. Add "
         "--hcomm-require-thread-export for a strict AICPU thread-export "
         "prerequisite check, which is expected to report unsupported on CANN "
         "builds without hccl_res_expt.h such as CANN 8.5. Add "
@@ -2613,6 +2660,65 @@ def HasAcceptedPayloadCandidate(args: argparse.Namespace,
             not CommandUsesWritePath(command)):
         return True
     return False
+
+
+def RunHcommPayloadStrictFailureFollowups(
+        runner: Runner,
+        args: argparse.Namespace,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Path,
+        *,
+        package_payload_ready: bool) -> Optional[Path]:
+    if not package_payload_ready:
+        return None
+    selected_log: Optional[Path] = None
+    if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
+            not CommandUsesChannelHandleBinding(base_command)):
+        candidate_log = RunHcommPayloadChannelHandleFallbackCandidates(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            args)
+        if candidate_log is not None:
+            selected_log = candidate_log
+    if (getattr(args, "auto_run_hcomm_payload_write_path_candidate", False) and
+            not CommandUsesWritePath(base_command)):
+        write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            args)
+        if write_candidate_log is not None:
+            selected_log = write_candidate_log
+    if (getattr(args, "auto_run_hcomm_payload_write_with_notify_candidate", False) and
+            not CommandUsesWriteWithNotify(base_command)):
+        write_notify_candidate_log = (
+            RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                runner, base_command, env_updates, timeout_seconds,
+                default_log, args))
+        if write_notify_candidate_log is not None:
+            selected_log = write_notify_candidate_log
+    if (getattr(args, "auto_run_hcomm_payload_nobatch_diagnostic", False) and
+            not CommandUsesNoBatch(base_command)):
+        RunHcommPayloadNoBatchDiagnostic(
+            runner, base_command, env_updates, timeout_seconds, default_log)
+    if getattr(args, "auto_run_hcomm_payload_tagged_diagnostic", False):
+        RunHcommPayloadTaggedDiagnostic(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            getattr(args, "hcomm_payload_diagnostic_batch_tag",
+                    "flume-payload-v1"))
+    if (getattr(args, "auto_run_hcomm_payload_direct_output_diagnostic", False) and
+            not CommandUsesDirectOutputRecv(base_command)):
+        RunHcommPayloadDirectOutputDiagnostic(
+            runner, base_command, env_updates, timeout_seconds, default_log)
+    if (getattr(args, "auto_run_hcomm_payload_channel_fence_diagnostic", False) and
+            not CommandUsesChannelFence(base_command)):
+        RunHcommPayloadChannelFenceDiagnostic(
+            runner, base_command, env_updates, timeout_seconds)
+    if (getattr(args, "auto_run_hcomm_payload_no_comm_acquire_diagnostic", False) and
+            not getattr(args, "hcomm_payload_skip_comm_acquire", False) and
+            "--hcomm-payload-skip-comm-acquire" not in base_command):
+        RunHcommPayloadNoCommAcquireDiagnostic(
+            runner, base_command, env_updates, timeout_seconds, default_log)
+    return selected_log
 
 
 def PayloadCommandWithoutWritePath(command: list[str]) -> list[str]:
@@ -5350,62 +5456,12 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         strict_tree_log = strict_result.log_path
         if strict_result.returncode != 0:
             WriteHcclSmokeDiagnostics(runner.run_dir, strict_result.log_path)
-            if (args.auto_run_hcomm_payload_channel_handle_candidate and
-                    package_payload_ready and
-                    not CommandUsesChannelHandleBinding(strict_command)):
-                candidate_log = RunHcommPayloadChannelHandleFallbackCandidates(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path, args)
-                if candidate_log is not None:
-                    strict_tree_log = candidate_log
-            if (args.auto_run_hcomm_payload_write_path_candidate and
-                    package_payload_ready and
-                    not CommandUsesWritePath(strict_command)):
-                write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path, args)
-                if write_candidate_log is not None:
-                    strict_tree_log = write_candidate_log
-            if (args.auto_run_hcomm_payload_write_with_notify_candidate and
-                    package_payload_ready and
-                    not CommandUsesWriteWithNotify(strict_command)):
-                write_notify_candidate_log = (
-                    RunHcommPayloadWriteWithNotifyFallbackCandidates(
-                        runner, strict_command, smoke_spec.env_updates,
-                        args.hccl_smoke_timeout_sec, strict_result.log_path,
-                        args))
-                if write_notify_candidate_log is not None:
-                    strict_tree_log = write_notify_candidate_log
-            if (args.auto_run_hcomm_payload_nobatch_diagnostic and
-                    package_payload_ready and
-                    "--hcomm-payload-disable-batch" not in strict_command):
-                RunHcommPayloadNoBatchDiagnostic(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path)
-            if (args.auto_run_hcomm_payload_tagged_diagnostic and
-                    package_payload_ready):
-                RunHcommPayloadTaggedDiagnostic(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path,
-                    args.hcomm_payload_diagnostic_batch_tag)
-            if (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                    package_payload_ready and
-                    "--hcomm-payload-recv-direct-output" not in strict_command):
-                RunHcommPayloadDirectOutputDiagnostic(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path)
-            if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
-                    package_payload_ready and
-                    not CommandUsesChannelFence(strict_command)):
-                RunHcommPayloadChannelFenceDiagnostic(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec)
-            if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
-                    package_payload_ready and
-                    "--hcomm-payload-skip-comm-acquire" not in strict_command):
-                RunHcommPayloadNoCommAcquireDiagnostic(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path)
+            candidate_log = RunHcommPayloadStrictFailureFollowups(
+                runner, args, strict_command, smoke_spec.env_updates,
+                args.hccl_smoke_timeout_sec, strict_result.log_path,
+                package_payload_ready=package_payload_ready)
+            if candidate_log is not None:
+                strict_tree_log = candidate_log
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -5564,55 +5620,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
-                if (args.auto_run_hcomm_payload_channel_handle_candidate and
-                        not CommandUsesChannelHandleBinding(spec.command)):
-                    candidate_log = (
-                        RunHcommPayloadChannelHandleFallbackCandidates(
-                            runner, spec.command, spec.env_updates, timeout,
-                            result.log_path, args))
-                    if candidate_log is not None:
-                        strict_tree_log = candidate_log
-                if (args.auto_run_hcomm_payload_write_path_candidate and
-                        not CommandUsesWritePath(spec.command)):
-                    write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path, args)
-                    if write_candidate_log is not None:
-                        strict_tree_log = write_candidate_log
-                if (args.auto_run_hcomm_payload_write_with_notify_candidate and
-                        not CommandUsesWriteWithNotify(spec.command)):
-                    write_notify_candidate_log = (
-                        RunHcommPayloadWriteWithNotifyFallbackCandidates(
-                            runner, spec.command, spec.env_updates, timeout,
-                            result.log_path, args))
-                    if write_notify_candidate_log is not None:
-                        strict_tree_log = write_notify_candidate_log
-                if (args.auto_run_hcomm_payload_nobatch_diagnostic and
-                        not args.hcomm_payload_disable_batch and
-                        "--hcomm-payload-disable-batch" not in spec.command):
-                    RunHcommPayloadNoBatchDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                if args.auto_run_hcomm_payload_tagged_diagnostic:
-                    RunHcommPayloadTaggedDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path,
-                        args.hcomm_payload_diagnostic_batch_tag)
-                if (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                        "--hcomm-payload-recv-direct-output" not in spec.command):
-                    RunHcommPayloadDirectOutputDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
-                        not CommandUsesChannelFence(spec.command)):
-                    RunHcommPayloadChannelFenceDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout)
-                if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
-                        not args.hcomm_payload_skip_comm_acquire and
-                        "--hcomm-payload-skip-comm-acquire" not in spec.command):
-                    RunHcommPayloadNoCommAcquireDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
+                candidate_log = RunHcommPayloadStrictFailureFollowups(
+                    runner, args, spec.command, spec.env_updates, timeout,
+                    result.log_path, package_payload_ready=True)
+                if candidate_log is not None:
+                    strict_tree_log = candidate_log
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
@@ -5786,55 +5798,11 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
-                if (args.auto_run_hcomm_payload_channel_handle_candidate and
-                        not CommandUsesChannelHandleBinding(spec.command)):
-                    candidate_log = (
-                        RunHcommPayloadChannelHandleFallbackCandidates(
-                            runner, spec.command, spec.env_updates, timeout,
-                            result.log_path, args))
-                    if candidate_log is not None:
-                        strict_tree_log = candidate_log
-                if (args.auto_run_hcomm_payload_write_path_candidate and
-                        not CommandUsesWritePath(spec.command)):
-                    write_candidate_log = RunHcommPayloadWritePathFallbackCandidates(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path, args)
-                    if write_candidate_log is not None:
-                        strict_tree_log = write_candidate_log
-                if (args.auto_run_hcomm_payload_write_with_notify_candidate and
-                        not CommandUsesWriteWithNotify(spec.command)):
-                    write_notify_candidate_log = (
-                        RunHcommPayloadWriteWithNotifyFallbackCandidates(
-                            runner, spec.command, spec.env_updates, timeout,
-                            result.log_path, args))
-                    if write_notify_candidate_log is not None:
-                        strict_tree_log = write_notify_candidate_log
-                if (args.auto_run_hcomm_payload_nobatch_diagnostic and
-                        not args.hcomm_payload_disable_batch and
-                        "--hcomm-payload-disable-batch" not in spec.command):
-                    RunHcommPayloadNoBatchDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                if args.auto_run_hcomm_payload_tagged_diagnostic:
-                    RunHcommPayloadTaggedDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path,
-                        args.hcomm_payload_diagnostic_batch_tag)
-                if (args.auto_run_hcomm_payload_direct_output_diagnostic and
-                        "--hcomm-payload-recv-direct-output" not in spec.command):
-                    RunHcommPayloadDirectOutputDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
-                        not CommandUsesChannelFence(spec.command)):
-                    RunHcommPayloadChannelFenceDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout)
-                if (args.auto_run_hcomm_payload_no_comm_acquire_diagnostic and
-                        not args.hcomm_payload_skip_comm_acquire and
-                        "--hcomm-payload-skip-comm-acquire" not in spec.command):
-                    RunHcommPayloadNoCommAcquireDiagnostic(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
+                candidate_log = RunHcommPayloadStrictFailureFollowups(
+                    runner, args, spec.command, spec.env_updates, timeout,
+                    result.log_path, package_payload_ready=True)
+                if candidate_log is not None:
+                    strict_tree_log = candidate_log
 
     RunCannCompatCollection(runner, args, hccl_devices)
 

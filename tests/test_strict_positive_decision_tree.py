@@ -1055,6 +1055,33 @@ def main() -> int:
         assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
         assert "selected_candidate_command: `" in candidate_matrix_text
         assert "--hcomm-payload-comm-binding=channel-handle" in candidate_matrix_text
+        helper_runner = FakeCandidateRunner(tmp / "strict-followup-helper")
+        helper_selected = flume_tool.RunHcommPayloadStrictFailureFollowups(
+            helper_runner,
+            candidate_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-require-payload-copy"],
+            None,
+            10,
+            channel_log,
+            package_payload_ready=True)
+        assert helper_selected is not None
+        assert any(
+            call[0].startswith("hcomm-payload-channel-handle")
+            for call in helper_runner.calls)
+        helper_blocked_runner = FakeCandidateRunner(
+            tmp / "strict-followup-helper-blocked")
+        helper_blocked = flume_tool.RunHcommPayloadStrictFailureFollowups(
+            helper_blocked_runner,
+            candidate_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-require-payload-copy"],
+            None,
+            10,
+            channel_log,
+            package_payload_ready=False)
+        assert helper_blocked is None
+        assert helper_blocked_runner.calls == []
 
         strict_write_channel_handle = strict_log_with_channel_handle_binding(
             strict_write_path_log(True))
