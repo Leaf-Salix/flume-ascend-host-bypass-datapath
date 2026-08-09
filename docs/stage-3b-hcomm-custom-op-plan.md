@@ -372,6 +372,14 @@ python3 tools/flume_tool.py \
   hcomm-custom-op-direct-build
 ```
 
+If the installed CANN toolkit does not expose `hcomm_primitives.h` in its
+binary include tree, but a matching HCOMM source/header checkout is available,
+add `--hcomm-primitives-include-root <hcomm-include-root>`. If `libhcomm.so`
+is outside the selected CANN binary root, add
+`--hcomm-primitives-lib-root <hcomm-lib-root>`. These overrides are only used by
+the direct-build compile/link step; runtime smokes still load the exported
+JSON/tar via `--custom-op-root <temporary-custom-op-root>`.
+
 Then pass `--custom-op-root <temporary-custom-op-root>` to
 `hcomm-payload-strict-positive` or `ascend-full-matrix`.
 

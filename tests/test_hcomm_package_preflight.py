@@ -877,12 +877,17 @@ def main() -> int:
             SimpleNamespace(build_dir=str(tmp / "strict-build"),
                             jobs=3,
                             custom_op_vendor="flume",
-                            cann_package_root=str(auto_cann)),
+                            cann_package_root=str(auto_cann),
+                            hcomm_primitives_include_root=str(
+                                tmp / "hcomm-include"),
+                            hcomm_primitives_lib_root=str(tmp / "hcomm-lib")),
             SimpleNamespace(run_dir=tmp / "strict-logs"),
             tmp / "strict-logs" / "hcomm-payload-auto-runtime")
         assert "hcomm-custom-op-direct-build" == auto_command[-1]
         assert "--custom-op-build-mode=payload" in auto_command
         assert f"--cann-package-root={auto_cann}" in auto_command
+        assert f"--hcomm-primitives-include-root={tmp / 'hcomm-include'}" in auto_command
+        assert f"--hcomm-primitives-lib-root={tmp / 'hcomm-lib'}" in auto_command
         assert any(item.startswith("--custom-op-export-root=")
                    for item in auto_command)
         assert any(item.startswith("--log-root=") for item in auto_command)
@@ -919,6 +924,8 @@ def main() -> int:
                             custom_op_root="",
                             custom_op_json="",
                             custom_op_aicpu_tar="",
+                            hcomm_primitives_include_root="",
+                            hcomm_primitives_lib_root="",
                             auto_build_hcomm_payload_package=True,
                             hccl_smoke_timeout_sec=30,
                             step_timeout_sec=30),
@@ -1159,6 +1166,37 @@ def main() -> int:
             raise AssertionError(
                 "direct custom-op build with include/hcomm header did not pass")
         assert "hcomm-custom-op-direct-build-preflight" in direct_hcomm_only.stdout
+
+        fake_cann_minimal = tmp / "fake-cann-minimal"
+        (fake_cann_minimal / "aarch64-linux" / "include").mkdir(parents=True)
+        (fake_cann_minimal / "aarch64-linux" / "lib64").mkdir(parents=True)
+        fake_hcomm_external = write_fake_cann_root(
+            tmp, "fake-hcomm-external", hccl_header=False,
+            hcomm_header=True)
+        external_build = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_minimal}",
+                "--hcomm-primitives-include-root="
+                f"{fake_hcomm_external / 'aarch64-linux' / 'include'}",
+                "--hcomm-primitives-lib-root="
+                f"{fake_hcomm_external / 'aarch64-linux' / 'lib64'}",
+                f"--build-dir={tmp / 'direct-build-external-hcomm'}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if external_build.returncode != 0:
+            print(external_build.stdout)
+            print(external_build.stderr, file=sys.stderr)
+            raise AssertionError(
+                "direct custom-op build with external HCOMM root did not pass")
+        assert "hcomm-custom-op-direct-build-preflight" in external_build.stdout
 
         ok, message = flume_tool.ValidateRuntimeCustomOpJson(
             SimpleNamespace(custom_op_json=str(v4_json),

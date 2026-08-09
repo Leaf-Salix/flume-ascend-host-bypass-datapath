@@ -291,6 +291,11 @@ preflight；如果传了 `--custom-op-export-root`，还会把通过 preflight �
 导出到 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`。
 这条路径不需要 `hccl/hccl_launch.h`，也不需要 HCCL source `build.sh`，但
 payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符号。
+如果 toolkit 有 `libhcomm.so` 但没有公开 primitive 头，可以传
+`--hcomm-primitives-include-root <hcomm-include-root>`；如果 `libhcomm.so`
+不在所选 CANN binary root 的 `lib64` 下，可以传
+`--hcomm-primitives-lib-root <hcomm-lib-root>`。这两个参数只影响 direct-build
+的编译/链接搜索路径，不会修改系统 CANN/OPP 安装。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`，生成 Stage 3B.3E 所需的

@@ -373,6 +373,12 @@ def HcommPayloadAutoDirectBuildCommand(args: argparse.Namespace,
     ]
     if args.cann_package_root:
         command.append(f"--cann-package-root={args.cann_package_root}")
+    if getattr(args, "hcomm_primitives_include_root", ""):
+        command.append("--hcomm-primitives-include-root="
+                       f"{args.hcomm_primitives_include_root}")
+    if getattr(args, "hcomm_primitives_lib_root", ""):
+        command.append("--hcomm-primitives-lib-root="
+                       f"{args.hcomm_primitives_lib_root}")
     command.append("hcomm-custom-op-direct-build")
     return command
 
@@ -698,20 +704,96 @@ def _LibraryExists(lib_dir: Path, name: str) -> bool:
                for suffix in (".so", ".a", ".dylib"))
 
 
-def HcommPrimitivesHeaderCandidates(cann_binary_root: Path) -> list[Path]:
+def _ExpandedIncludeRoots(root: Path) -> list[Path]:
+    return [root, root / "include"]
+
+
+def _ExpandedLibraryRoots(root: Path) -> list[Path]:
+    return [root, root / "lib64"]
+
+
+def HcommPrimitivesHeaderCandidates(
+        cann_binary_root: Path,
+        extra_include_root: str = "") -> list[Path]:
     include = cann_binary_root / "include"
-    return [
-        include / "hccl" / "hcomm_primitives.h",
-        include / "hcomm" / "hcomm_primitives.h",
-        include / "hcomm_primitives.h",
-    ]
+    roots: list[Path] = []
+    if extra_include_root:
+        roots.extend(_ExpandedIncludeRoots(
+            Path(extra_include_root).expanduser()))
+    roots.append(include)
+    candidates: list[Path] = []
+    for root in roots:
+        candidates.extend([
+            root / "hccl" / "hcomm_primitives.h",
+            root / "hcomm" / "hcomm_primitives.h",
+            root / "hcomm_primitives.h",
+        ])
+    return candidates
 
 
-def FindHcommPrimitivesHeader(cann_binary_root: Path) -> Optional[Path]:
-    for candidate in HcommPrimitivesHeaderCandidates(cann_binary_root):
+def FindHcommPrimitivesHeader(
+        cann_binary_root: Path,
+        extra_include_root: str = "") -> Optional[Path]:
+    for candidate in HcommPrimitivesHeaderCandidates(
+            cann_binary_root, extra_include_root):
         if candidate.exists():
             return candidate
     return None
+
+
+def HcommPrimitiveLibraryDirs(cann_binary_root: Path,
+                              extra_lib_root: str = "") -> list[Path]:
+    roots: list[Path] = []
+    if extra_lib_root:
+        roots.extend(_ExpandedLibraryRoots(Path(extra_lib_root).expanduser()))
+    roots.append(cann_binary_root / "lib64")
+    seen: set[str] = set()
+    out: list[Path] = []
+    for root in roots:
+        text = str(root)
+        if text not in seen:
+            seen.add(text)
+            out.append(root)
+    return out
+
+
+def FindLibraryDir(lib_dirs: Iterable[Path], name: str) -> Optional[Path]:
+    for lib_dir in lib_dirs:
+        if _LibraryExists(lib_dir, name):
+            return lib_dir
+    return None
+
+
+def HcommPrimitiveIncludeFlags(cann_binary_root: Path,
+                               extra_include_root: str = "") -> list[str]:
+    include = cann_binary_root / "include"
+    roots: list[Path] = []
+    if extra_include_root:
+        roots.extend(_ExpandedIncludeRoots(
+            Path(extra_include_root).expanduser()))
+    roots.append(include)
+    seen: set[str] = set()
+    flags: list[str] = []
+    for root in roots:
+        for item in (root, root / "hccl", root / "hcomm"):
+            text = str(item)
+            if text not in seen:
+                seen.add(text)
+                flags.append(f"-I{text}")
+    return flags
+
+
+def HcommPrimitiveLinkDirs(cann_binary_root: Path,
+                           extra_lib_root: str = "") -> list[Path]:
+    lib_dirs = HcommPrimitiveLibraryDirs(cann_binary_root, extra_lib_root)
+    primary = FindLibraryDir(lib_dirs, "hcomm")
+    ordered: list[Path] = []
+    if primary is not None:
+        ordered.append(primary)
+    for lib_dir in lib_dirs:
+        if primary is None or lib_dir != primary:
+            ordered.append(lib_dir)
+    return ordered
 
 
 def ResolveCannRootPair(extra_root: str = "") -> Optional[tuple[Path, Path]]:
@@ -5380,8 +5462,6 @@ def _DirectBuildSharedLibraryCommand(
         output_so: Path,
 ) -> list[str]:
     cxx = os.environ.get("CXX", "c++")
-    include = cann_root / "include"
-    lib64 = cann_root / "lib64"
     sources = [
         HCOMM_CUSTOM_OP_PATH / "aicpu" / "direct_acl_canary_kernel.cc",
     ]
@@ -5402,20 +5482,23 @@ def _DirectBuildSharedLibraryCommand(
     command.extend(f"-D{item}" for item in defines)
     command.extend([
         f"-I{HCOMM_CUSTOM_OP_PATH / 'include'}",
-        f"-I{include}",
-        f"-I{include / 'hccl'}",
-        f"-I{include / 'hcomm'}",
-        "-o",
-        str(output_so),
     ])
+    command.extend(HcommPrimitiveIncludeFlags(
+        cann_root, args.hcomm_primitives_include_root))
+    command.extend(["-o", str(output_so)])
     command.extend(str(source) for source in sources)
     if args.custom_op_build_mode == "payload":
-        command.append(f"-L{lib64}")
+        link_dirs = HcommPrimitiveLinkDirs(
+            cann_root, args.hcomm_primitives_lib_root)
+        for lib_dir in link_dirs:
+            command.append(f"-L{lib_dir}")
         command.append("-lhcomm")
         for optional_lib in ("c_sec", "ascendcl"):
-            if _LibraryExists(lib64, optional_lib):
+            optional_dir = FindLibraryDir(link_dirs, optional_lib)
+            if optional_dir is not None:
                 command.append(f"-l{optional_lib}")
-        command.append(f"-Wl,-rpath,{lib64}")
+        for lib_dir in link_dirs:
+            command.append(f"-Wl,-rpath,{lib_dir}")
     return command
 
 
@@ -5441,27 +5524,37 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         print(f"[failed] command setup -> {setup_log}")
         return 1
     if args.custom_op_build_mode == "payload":
-        hcomm_header = FindHcommPrimitivesHeader(cann_root)
+        hcomm_header = FindHcommPrimitivesHeader(
+            cann_root, args.hcomm_primitives_include_root)
         if hcomm_header is None:
             setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
             checked = "\n".join(
                 f"- {item}" for item in HcommPrimitivesHeaderCandidates(
-                    cann_root))
+                    cann_root, args.hcomm_primitives_include_root))
             setup_log.write_text(
                 "missing hcomm_primitives.h for payload direct custom-op build\n"
                 f"cann_binary_root: {cann_root}\n"
+                "Pass --hcomm-primitives-include-root=<include-root> if the "
+                "installed toolkit omits the header but a matching HCOMM "
+                "source/header tree is available.\n"
                 "checked:\n"
                 f"{checked}\n",
                 encoding="utf-8",
             )
             print(f"[failed] command setup -> {setup_log}")
             return 1
-    if args.custom_op_build_mode == "payload" and not _LibraryExists(
-            cann_root / "lib64", "hcomm"):
+    hcomm_lib_dirs = HcommPrimitiveLibraryDirs(
+        cann_root, args.hcomm_primitives_lib_root)
+    if (args.custom_op_build_mode == "payload" and
+            FindLibraryDir(hcomm_lib_dirs, "hcomm") is None):
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+        checked = "\n".join(f"- {item}" for item in hcomm_lib_dirs)
         setup_log.write_text(
             "missing libhcomm for payload direct custom-op build\n"
-            f"checked: {cann_root / 'lib64'}\n",
+            "Pass --hcomm-primitives-lib-root=<lib-root> if libhcomm is "
+            "outside the selected CANN binary root.\n"
+            "checked:\n"
+            f"{checked}\n",
             encoding="utf-8",
         )
         print(f"[failed] command setup -> {setup_log}")
@@ -6687,6 +6780,19 @@ def parse_args() -> argparse.Namespace:
                               "Defaults to ASCEND_HOME_PATH or the standard "
                               "CANN layout; the command expects an "
                               "aarch64-linux include/lib64 tree."))
+    parser.add_argument("--hcomm-primitives-include-root", default="",
+                        help=("Optional include root for "
+                              "hcomm-custom-op-direct-build payload mode. "
+                              "The tool checks hcomm_primitives.h, "
+                              "hccl/hcomm_primitives.h, and "
+                              "hcomm/hcomm_primitives.h under this root before "
+                              "falling back to the selected CANN toolkit."))
+    parser.add_argument("--hcomm-primitives-lib-root", default="",
+                        help=("Optional lib root for "
+                              "hcomm-custom-op-direct-build payload mode. "
+                              "The tool checks both the path itself and "
+                              "<path>/lib64 for libhcomm before falling back "
+                              "to the selected CANN toolkit."))
     parser.add_argument("--auto-build-hcomm-payload-package",
                         action="store_true",
                         help=("For ascend-full-matrix, "
