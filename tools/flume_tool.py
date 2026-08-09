@@ -1972,16 +1972,18 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                 if candidate_log is not None:
                     strict_tree_log = candidate_log
     if args.hcomm_require_payload_copy and package_result is not None:
+        selected_evidence_log = SelectHcommPayloadEvidenceLog(
+            runner.run_dir, strict_tree_log, require_storage=False)
         tree = WriteMatrixDecisionTree(
             runner.run_dir,
             None,
-            SelectHcommPayloadEvidenceLog(
-                runner.run_dir, strict_tree_log, require_storage=False),
+            selected_evidence_log,
             package_result.log_path,
         )
         RecordStrictPositiveEvidenceGate(
             runner, tree, DecisionTreeStrictPositivePassed(tree),
-            required=package_payload_ready)
+            required=package_payload_ready,
+            evidence_log=selected_evidence_log)
     note = runner.run_dir / "ASCEND_PROBE_SCOPE.txt"
     note.write_text(
         "This probe validates CANN/HCCL discovery, compile/link, and the current "
@@ -5291,6 +5293,48 @@ def DecisionTreeHcommStoragePassed(tree_path: Path) -> bool:
         in text)
 
 
+def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]:
+    if evidence_log is None:
+        return []
+    try:
+        strict = evidence_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [f"selected_evidence_log={evidence_log.name}"]
+    rank_lines = ExtractStrictPayloadRankLines(strict)
+    if len(rank_lines) < 2:
+        return [
+            f"selected_evidence_log={evidence_log.name}",
+            f"selected_payload_rank_evidence_count={len(rank_lines)}",
+        ]
+    rank0_path = MarkerValueFromLine(
+        rank_lines[0], "payload_trace_primitive_path")
+    rank1_path = MarkerValueFromLine(
+        rank_lines[1], "payload_trace_primitive_path")
+    rank0_transfer = MarkerValueFromLine(rank_lines[0], "payload_transfer_mode")
+    rank1_transfer = MarkerValueFromLine(rank_lines[1], "payload_transfer_mode")
+    rank0_trace_transfer = MarkerValueFromLine(
+        rank_lines[0], "payload_trace_transfer_mode")
+    rank1_trace_transfer = MarkerValueFromLine(
+        rank_lines[1], "payload_trace_transfer_mode")
+    return [
+        f"selected_evidence_log={evidence_log.name}",
+        f"selected_payload_rank0_trace_path={rank0_path}",
+        f"selected_payload_rank1_trace_path={rank1_path}",
+        f"selected_payload_rank0_transfer_mode={rank0_transfer}",
+        f"selected_payload_rank1_transfer_mode={rank1_transfer}",
+        f"selected_payload_rank0_trace_transfer_mode={rank0_trace_transfer}",
+        f"selected_payload_rank1_trace_transfer_mode={rank1_trace_transfer}",
+        "selected_payload_recv_path=" +
+        MarkerValueFromLine(rank_lines[1], "payload_recv_path"),
+        "selected_payload_trace_recv_path=" +
+        MarkerValueFromLine(rank_lines[1], "payload_trace_recv_path"),
+        "selected_payload_comm_binding=" +
+        MarkerValueFromLine(rank_lines[0], "payload_comm_binding"),
+        "selected_payload_batch_mode=" +
+        MarkerValueFromLine(rank_lines[0], "payload_batch_mode"),
+    ]
+
+
 def AnalyzeHcommPayloadStrictPositiveLogs(
         run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
                                 Optional[Path]]:
@@ -5332,7 +5376,9 @@ def AnalyzeHcommStorageStrictPositiveLogs(
 
 
 def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
-                                     *, required: bool) -> StepResult:
+                                     *, required: bool,
+                                     evidence_log: Optional[Path] = None
+                                     ) -> StepResult:
     lines = [
         f"decision_tree={tree}",
         f"strict_positive_evidence={'passed' if passed else 'failed'}",
@@ -5368,6 +5414,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_checksum_match=passed",
             "fallback=none",
         ])
+        lines.extend(StrictPayloadEvidenceSummaryLines(evidence_log))
     else:
         lines.append(
             "reason=missing complete Stage 3B.3E strict-positive evidence")
@@ -5610,16 +5657,18 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
+    selected_evidence_log = SelectHcommPayloadEvidenceLog(
+        runner.run_dir, strict_tree_log, require_storage=False)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
-        SelectHcommPayloadEvidenceLog(
-            runner.run_dir, strict_tree_log, require_storage=False),
+        selected_evidence_log,
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
         runner, tree, DecisionTreeStrictPositivePassed(tree),
-        required=package_payload_ready)
+        required=package_payload_ready,
+        evidence_log=selected_evidence_log)
     note = runner.run_dir / "ASCEND_FULL_MATRIX_SCOPE.txt"
     note.write_text(
         "ascend-full-matrix builds once, runs local tests/sim, then runs a "
@@ -5780,15 +5829,17 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
+    selected_evidence_log = SelectHcommPayloadEvidenceLog(
+        runner.run_dir, strict_tree_log, require_storage=False)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        SelectHcommPayloadEvidenceLog(
-            runner.run_dir, strict_tree_log, require_storage=False),
+        selected_evidence_log,
         package_result.log_path,
     )
     RecordStrictPositiveEvidenceGate(
-        runner, tree, DecisionTreeStrictPositivePassed(tree), required=True)
+        runner, tree, DecisionTreeStrictPositivePassed(tree), required=True,
+        evidence_log=selected_evidence_log)
     note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
     note.write_text(
         "hcomm-payload-strict-positive is the focused Stage 3B.3E gate. It "
@@ -5965,17 +6016,19 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
 
     RunCannCompatCollection(runner, args, hccl_devices)
 
+    selected_evidence_log = SelectHcommPayloadEvidenceLog(
+        runner.run_dir, strict_tree_log, require_storage=True)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
-        SelectHcommPayloadEvidenceLog(
-            runner.run_dir, strict_tree_log, require_storage=True),
+        selected_evidence_log,
         package_result.log_path,
     )
     strict_passed = DecisionTreeStrictPositivePassed(tree)
     storage_passed = DecisionTreeHcommStoragePassed(tree)
     RecordStrictPositiveEvidenceGate(runner, tree, strict_passed,
-                                     required=True)
+                                     required=True,
+                                     evidence_log=selected_evidence_log)
     RecordHcommStorageEvidenceGate(runner, tree, storage_passed)
     note = runner.run_dir / "HCOMM_STORAGE_STRICT_POSITIVE_SCOPE.txt"
     note.write_text(
