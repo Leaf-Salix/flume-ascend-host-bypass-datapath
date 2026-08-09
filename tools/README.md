@@ -458,6 +458,9 @@ Comm Acquire/Release 等 primitive 依赖；只导出 Flume marker 但没有引�
 HCOMM primitive 的 marker-only 包会被拒绝。preflight 会同时打印旧兼容 marker `payload_no_hccl_sendrecv_deps`
 和广义 marker `payload_no_hccl_payload_api_deps`；后者覆盖 HCCL
 Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
+`ascend-full-matrix` 的 strict-positive evidence gate 也会把这个 package
+级 marker 写入 decision tree；缺失或失败时，即使 payload smoke 日志看似
+通过，也不会被认定为真正的 HCOMM payload copy。
 如果当前机器能加载 tar 内
 SO，preflight 还会调用这些无参 metadata 函数并要求返回值匹配当前
 ABI：payload ABI v4、semantic v19、status schema v7、status word count

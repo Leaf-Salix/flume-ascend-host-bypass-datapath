@@ -6022,6 +6022,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     package_tar = marker_value(package, "aicpu_tar")
     package_tar_so = marker_value(
         package, f"aicpu_tar_so.{HCOMM_CUSTOM_OP_KERNEL_SO}")
+    package_no_hccl_sendrecv_deps = marker_value(
+        package, "payload_no_hccl_sendrecv_deps")
+    package_no_hccl_payload_api_deps = marker_value(
+        package, "payload_no_hccl_payload_api_deps")
     strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
@@ -6324,6 +6328,17 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"vendor={package_vendor}, tar={package_tar}, so={package_tar_so} | "
         "preflight package identity without absolute paths |")
     lines.append(
+        f"| package no HCCL Send/Recv deps | "
+        f"{package_no_hccl_sendrecv_deps} | "
+        "`payload_no_hccl_sendrecv_deps`; backward-compatible package "
+        "preflight marker rejecting HcclSend/HcclRecv payload shortcuts |")
+    lines.append(
+        f"| package no HCCL payload API deps | "
+        f"{package_no_hccl_payload_api_deps} | "
+        "`payload_no_hccl_payload_api_deps`; package preflight rejects HCCL "
+        "Send/Recv, collective, and one-sided payload APIs in JSON, tar, and "
+        "SO evidence |")
+    lines.append(
         f"| HCOMM primitive ABI fixture | {hcomm_abi_status} | "
         f"{hcomm_abi_evidence} |")
     lines.append(
@@ -6398,7 +6413,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             "",
             "| Strict Payload Stage | Result | Evidence |",
             "| --- | --- | --- |",
-            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + status schema + HCOMM primitive deps + `status=PASS` |",
+            f"| package preflight | {package_status} | canary + payload + ABI v4 + semantic + comm-acquire + status schema + HCOMM primitive deps + no-HCCL-payload-API deps + `status=PASS` |",
             f"| rank0 strict evidence | {'passed' if strict_rank0_ok else 'missing'} | rank0 line has launch/sync/kernel/status/hcomm-ret/fallback markers |",
             f"| rank1 strict evidence | {'passed' if strict_rank1_ok else 'missing'} | rank1 line has launch/sync/kernel/status/hcomm-ret/verify/fallback markers |",
             f"| rank0 kernel status | {rank_status[0]['kernel']} | `payload_kernel_status` on rank0 line, status word `{rank_status[0]['status_word']}` |",
@@ -6799,7 +6814,8 @@ def DecisionTreeStrictPositiveEvidencePassed(tree_path: Path) -> bool:
         return False
     return (
         DecisionTreeStrictPositivePassed(tree_path) and
-        "| HCOMM custom-op package payload-ready? | payload-ready |" in text)
+        "| HCOMM custom-op package payload-ready? | payload-ready |" in text and
+        "| package no HCCL payload API deps | passed |" in text)
 
 
 def DecisionTreeHcommStoragePassed(tree_path: Path) -> bool:
@@ -7030,6 +7046,8 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
     if passed:
         lines.extend([
             "package_payload_ready=passed",
+            "package_no_hccl_sendrecv_deps=passed",
+            "package_no_hccl_payload_api_deps=passed",
             "rank0_strict_evidence=passed",
             "rank1_strict_evidence=passed",
             "stage3b3e_payload_copy=passed",
@@ -7069,6 +7087,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
         lines.append(
             "required_markers=rank0/1 passed,stage3b3e_payload_copy=passed,"
             "hcomm-custom-op-package-preflight payload-ready,"
+            "package payload_no_hccl_payload_api_deps=passed,"
             "stage3b3e_direct_aclrt_payload_loader=passed,"
             "stage3b3e_payload_descriptor_handoff=passed,"
             "stage3b3e_direct_aclrt_payload_launch=passed,"

@@ -1025,10 +1025,11 @@ def metadata_mismatch_package_log() -> str:
 
 def forbidden_hccl_p2p_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_semantic_v18,payload_semantic_v19,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_semantic_v18,payload_semantic_v19,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,payload_no_hccl_payload_api_deps,build_mode_internal",
         "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=present",
         "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=present",
         "payload_no_hccl_sendrecv_deps=failed",
+        "payload_no_hccl_payload_api_deps=failed",
         "status=FAIL",
         "reason=payload kernel package is missing or incomplete",
         "",
@@ -1045,6 +1046,8 @@ def multi_candidate_payload_package_log() -> str:
         "root=/tmp/current-cann",
         "vendor=flume",
         "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_semantic_v18,payload_semantic_v19,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,payload_no_hccl_payload_api_deps,build_mode_internal",
+        "payload_no_hccl_sendrecv_deps=passed",
+        "payload_no_hccl_payload_api_deps=passed",
         "status=PASS",
         "",
         "status=PASS",
@@ -1432,6 +1435,8 @@ def main() -> int:
         assert "| Strict payload positive passed? | yes |" in text
         assert ("| HCOMM custom-op package source | source=<runtime-root>, "
                 "vendor=flume, tar=present, so=present |") in text
+        assert "| package no HCCL Send/Recv deps | passed |" in text
+        assert "| package no HCCL payload API deps | passed |" in text
         assert ("| runtime package identity | source=explicit-json, "
                 "tar=present, readable=yes |") in text
         assert "`payload_kernel_hcomm_ret=0`" in text
@@ -2749,6 +2754,8 @@ def main() -> int:
             forbidden_hccl_p2p_package_log())
         assert ("| HCOMM custom-op package reason | payload kernel package "
                 "references forbidden HCCL payload or collective symbols |") in text
+        assert "| package no HCCL Send/Recv deps | failed |" in text
+        assert "| package no HCCL payload API deps | failed |" in text
         assert "must not reference HCCL payload or collective APIs" in text
 
         forbidden_with_strict_dir = tmp / "forbidden-package-with-strict-pass"
@@ -2784,6 +2791,7 @@ def main() -> int:
         assert flume_tool.PackageTextCanaryReady(
             multi_candidate_payload_package_log())
         assert "| HCOMM custom-op package payload-ready? | payload-ready |" in text
+        assert "| package no HCCL payload API deps | passed |" in text
 
         multi_canary_package = write(
             tmp / "package-multi-candidate-canary-only.log",
@@ -3507,6 +3515,8 @@ def main() -> int:
         pass_evidence_text = pass_evidence_logs[-1].read_text(
             encoding="utf-8")
         assert "strict_positive_evidence=passed" in pass_evidence_text
+        assert "package_no_hccl_sendrecv_deps=passed" in pass_evidence_text
+        assert "package_no_hccl_payload_api_deps=passed" in pass_evidence_text
         assert "payload_data_flow=passed" in pass_evidence_text
         assert "payload_host_data=passed" in pass_evidence_text
         assert "payload_trace_order=passed" in pass_evidence_text
@@ -3690,6 +3700,7 @@ def main() -> int:
         assert evidence_logs
         evidence_text = evidence_logs[-1].read_text(encoding="utf-8")
         assert "strict_positive_evidence=failed" in evidence_text
+        assert "package payload_no_hccl_payload_api_deps=passed" in evidence_text
         assert "payload_kernel_hcomm_ret=0" in evidence_text
         assert "payload_echo=passed" in evidence_text
         assert "payload_descriptor_fingerprint=passed" in evidence_text
