@@ -538,6 +538,9 @@ def main() -> int:
             assert (flume_tool.FindHcommPrimitivesHeader(
                 missing_toolkit_root) ==
                     local_hcomm_refer / "hcomm_primitives.h")
+            assert (flume_tool.HcommPrimitiveHeaderSourceLabel(
+                local_hcomm_refer / "hcomm_primitives.h",
+                missing_toolkit_root) == "local-refer")
             include_flags = flume_tool.HcommPrimitiveIncludeFlags(
                 missing_toolkit_root)
             assert f"-I{local_hcomm_refer}" in include_flags
@@ -546,6 +549,25 @@ def main() -> int:
             explicit_candidates = flume_tool.HcommPrimitivesHeaderCandidates(
                 missing_toolkit_root, str(explicit_missing))
             assert local_hcomm_refer / "hcomm_primitives.h" not in explicit_candidates
+            explicit_header_root = tmp / "explicit-hcomm-header"
+            explicit_header_root.mkdir()
+            explicit_header = explicit_header_root / "hcomm_primitives.h"
+            explicit_header.write_text("// explicit test header\n",
+                                       encoding="utf-8")
+            assert (flume_tool.FindHcommPrimitivesHeader(
+                missing_toolkit_root, str(explicit_header_root)) ==
+                    explicit_header)
+            assert (flume_tool.HcommPrimitiveHeaderSourceLabel(
+                explicit_header, missing_toolkit_root) == "override")
+            toolkit_header_root = tmp / "toolkit-with-hcomm-header"
+            (toolkit_header_root / "include").mkdir(parents=True)
+            toolkit_header = toolkit_header_root / "include" / "hcomm_primitives.h"
+            toolkit_header.write_text("// toolkit test header\n",
+                                      encoding="utf-8")
+            assert (flume_tool.FindHcommPrimitivesHeader(
+                toolkit_header_root) == toolkit_header)
+            assert (flume_tool.HcommPrimitiveHeaderSourceLabel(
+                toolkit_header, toolkit_header_root) == "toolkit")
         static_json_path = (
             repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
             KERNEL_JSON

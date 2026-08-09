@@ -885,6 +885,29 @@ def HcommPrimitiveIncludeFlags(cann_binary_root: Path,
     return flags
 
 
+def HcommPrimitiveHeaderSourceLabel(header: Optional[Path],
+                                    cann_binary_root: Path) -> str:
+    if header is None:
+        return "missing"
+    try:
+        header.resolve().relative_to((cann_binary_root / "include").resolve())
+        return "toolkit"
+    except ValueError:
+        pass
+    try:
+        header.resolve().relative_to(
+            LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT.resolve())
+        return "local-refer"
+    except ValueError:
+        return "override"
+
+
+def HcommPrimitiveIncludeRootsDetail(cann_binary_root: Path,
+                                     extra_include_root: str = "") -> str:
+    roots = HcommPrimitiveIncludeRoots(cann_binary_root, extra_include_root)
+    return ",".join(str(root) for root in roots)
+
+
 def HcommPrimitiveLinkDirs(cann_binary_root: Path,
                            extra_lib_root: str = "") -> list[Path]:
     lib_dirs = HcommPrimitiveLibraryDirs(cann_binary_root, extra_lib_root)
@@ -6282,10 +6305,17 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         )
         shutil.copy2(json_source, output_json)
         artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"
+        hcomm_header = FindHcommPrimitivesHeader(
+            cann_root, args.hcomm_primitives_include_root)
         artifact_note.write_text(
             "Flume HCOMM direct custom-op build artifacts\n"
             f"cann_binary_root: {cann_root}\n"
             f"mode: {args.custom_op_build_mode}\n"
+            f"hcomm_primitives_header: {hcomm_header if hcomm_header else '<not-found>'}\n"
+            "hcomm_primitives_header_source: "
+            f"{HcommPrimitiveHeaderSourceLabel(hcomm_header, cann_root)}\n"
+            "hcomm_primitives_include_roots: "
+            f"{HcommPrimitiveIncludeRootsDetail(cann_root, args.hcomm_primitives_include_root)}\n"
             f"json: {output_json}\n"
             f"aicpu_tar: {output_tar}\n",
             encoding="utf-8",
