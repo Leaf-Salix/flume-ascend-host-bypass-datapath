@@ -165,6 +165,12 @@ HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS = (
     "HcclBatchRead",
     "HcclBatchWrite",
 )
+HCOMM_PAYLOAD_SOURCE_GATE_ROOTS = (
+    REPO_ROOT / "custom_ops" / "hcomm_payload_copy",
+    REPO_ROOT / "src" / "hcomm_payload",
+)
+HCOMM_PAYLOAD_SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh",
+                                 ".hpp"}
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
@@ -1323,6 +1329,62 @@ class Runner:
                 f.write(f"- log: `{first.log_path}`\n")
         print(f"[ok] summary -> {summary}")
         return 1 if failures else 0
+
+
+def HcommPayloadSourceGateLines(
+        repo_root: Path = REPO_ROOT) -> tuple[bool, list[str]]:
+    pattern = re.compile(
+        r"\b(" + "|".join(
+            re.escape(name)
+            for name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS) + r")\b")
+    files: list[Path] = []
+    for root in HCOMM_PAYLOAD_SOURCE_GATE_ROOTS:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix in HCOMM_PAYLOAD_SOURCE_SUFFIXES:
+                files.append(path)
+
+    violations: list[str] = []
+    for path in sorted(files):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            match = pattern.search(line)
+            if match is None:
+                continue
+            try:
+                rel = path.relative_to(repo_root)
+            except ValueError:
+                rel = path
+            violations.append(
+                f"{rel}:{line_no}:forbidden={match.group(1)}")
+
+    lines = [
+        "hcomm_payload_source_gate=checked",
+        f"files_scanned={len(files)}",
+        "source_roots=custom_ops/hcomm_payload_copy,src/hcomm_payload",
+    ]
+    if not violations:
+        lines.insert(1, "hcomm_payload_source_no_hccl_payload_api=passed")
+        return True, lines
+
+    lines.insert(1, "hcomm_payload_source_no_hccl_payload_api=failed")
+    lines.append(
+        "reason=HCOMM payload source references forbidden HCCL payload, "
+        "collective, or one-sided APIs")
+    lines.extend(f"violation.{index}={violation}"
+                 for index, violation in enumerate(violations, start=1))
+    return False, lines
+
+
+def RecordHcommPayloadSourceGate(runner: Runner, *,
+                                 required: bool = True) -> StepResult:
+    passed, lines = HcommPayloadSourceGateLines()
+    return runner.record_static(
+        "hcomm-payload-source-gate",
+        lines,
+        returncode=0 if passed else 1,
+        required=required)
 
 
 def WriteHcclSmokeDiagnostics(run_dir: Path, source_log: Path) -> Path:
@@ -6020,6 +6082,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     no_comm_log = FindStepLog(
         run_dir, ["hcomm-payload-no-comm-acquire-diagnostic"])
     no_comm = read(no_comm_log)
+    source_gate_log = FindStepLog(run_dir, ["hcomm-payload-source-gate"])
+    source_gate = read(source_gate_log)
     combined = smoke + "\n" + strict
     npu_runtime_status, npu_runtime_evidence, npu_runtime_next_action = (
         AnalyzeNpuRuntimeDiagnostics(run_dir, combined))
@@ -6098,6 +6162,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         package, "payload_no_hccl_sendrecv_deps")
     package_no_hccl_payload_api_deps = marker_value(
         package, "payload_no_hccl_payload_api_deps")
+    source_no_hccl_payload_api = marker_value(
+        source_gate, "hcomm_payload_source_no_hccl_payload_api")
+    source_files_scanned = marker_value(source_gate, "files_scanned")
     strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
@@ -6299,6 +6366,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_official_p2p_shape_reason)
     strict_completion_verdict = (
         strict_positive_ok and package_payload_ready and
+        source_no_hccl_payload_api == "passed" and
         package_no_hccl_payload_api_deps == "passed" and
         strict_checksum_match == "yes" and strict_data_flow_ok and
         strict_host_data_ok and strict_trace_descriptor_ok and
@@ -6427,6 +6495,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "Send/Recv, collective, and one-sided payload APIs in JSON, tar, and "
         "SO evidence |")
     lines.append(
+        f"| source no HCCL payload API usage | "
+        f"{source_no_hccl_payload_api} | "
+        "`hcomm-payload-source-gate` scans current HCOMM payload source; "
+        f"files_scanned={source_files_scanned} |")
+    lines.append(
         f"| HCOMM primitive ABI fixture | {hcomm_abi_status} | "
         f"{hcomm_abi_evidence} |")
     lines.append(
@@ -6481,6 +6554,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"| HCOMM payload strict completion verdict | "
         f"{'passed' if strict_completion_verdict else 'failed'} | "
         "requires strict-positive rank evidence, payload-ready package, "
+        "`hcomm_payload_source_no_hccl_payload_api=passed`, "
         "`payload_no_hccl_payload_api_deps=passed`, "
         "`payload_copy_api=hcomm-direct-aclrt`, "
         "`payload_hccl_p2p_api=not-used`, no HCCL Send/Recv or collective "
@@ -7146,6 +7220,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
     if passed:
         lines.extend([
             "hcomm_payload_copy_strict_verdict=passed",
+            "hcomm_payload_source_no_hccl_payload_api=passed",
             "package_payload_ready=passed",
             "package_no_hccl_sendrecv_deps=passed",
             "package_no_hccl_payload_api_deps=passed",
@@ -7189,6 +7264,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
         lines.append(
             "required_markers=rank0/1 passed,stage3b3e_payload_copy=passed,"
             "HCOMM payload strict completion verdict=passed,"
+            "hcomm_payload_source_no_hccl_payload_api=passed,"
             "hcomm-custom-op-package-preflight payload-ready,"
             "package payload_no_hccl_payload_api_deps=passed,"
             "stage3b3e_direct_aclrt_payload_loader=passed,"
@@ -7394,6 +7470,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
         print(f"[failed] command setup -> {setup_log}")
         return 1
+    source_gate_result = RecordHcommPayloadSourceGate(runner, required=True)
+    if source_gate_result.returncode != 0:
+        return runner.write_summary()
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",
         HcommCustomOpPackageCommand(args, require_payload=True),
@@ -7569,6 +7648,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
         print(f"[failed] command setup -> {setup_log}")
         return 1
+    source_gate_result = RecordHcommPayloadSourceGate(runner, required=True)
+    if source_gate_result.returncode != 0:
+        return runner.write_summary()
 
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",
@@ -7806,6 +7888,9 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         setup_log.write_text(runtime_json_error + "\n", encoding="utf-8")
         print(f"[failed] command setup -> {setup_log}")
         return 1
+    source_gate_result = RecordHcommPayloadSourceGate(runner, required=True)
+    if source_gate_result.returncode != 0:
+        return runner.write_summary()
 
     package_result = runner.run(
         "hcomm-custom-op-package-preflight",

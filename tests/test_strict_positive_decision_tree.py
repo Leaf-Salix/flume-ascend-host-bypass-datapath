@@ -39,6 +39,14 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
+def write_source_gate_pass(run_dir: Path) -> Path:
+    return write(
+        run_dir / "00-hcomm-payload-source-gate.log",
+        "hcomm_payload_source_gate=checked\n"
+        "hcomm_payload_source_no_hccl_payload_api=passed\n"
+        "files_scanned=7\n")
+
+
 def _replace_trace_counts(text: str, rank0: int, rank1: int) -> str:
     marker = "payload_trace_count="
     first = text.find(marker)
@@ -1450,11 +1458,13 @@ def main() -> int:
         strict_pass = write(tmp / "strict-pass.log", strict_log(True))
         pass_dir = tmp / "pass"
         pass_dir.mkdir()
+        write_source_gate_pass(pass_dir)
         tree = flume_tool.WriteMatrixDecisionTree(
             pass_dir, smoke, strict_pass, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
         assert "| HCOMM payload strict completion verdict | passed |" in text
+        assert "| source no HCCL payload API usage | passed |" in text
         assert ("| HCOMM custom-op package source | source=<runtime-root>, "
                 "vendor=flume, tar=present, so=present |") in text
         assert "| package no HCCL Send/Recv deps | passed |" in text
@@ -1503,6 +1513,14 @@ def main() -> int:
         assert ("rank1 user-entry/local-entry/remote-entry/transfer-exit/"
                 "local-exit/user-exit=111/111/222/222/222/222") in text
         assert "start Stage 3B.4 storage rewiring" in text
+        missing_source_gate_dir = tmp / "missing-source-gate"
+        missing_source_gate_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_source_gate_dir, smoke, strict_pass, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | yes |" in text
+        assert "| source no HCCL payload API usage | missing |" in text
+        assert "| HCOMM payload strict completion verdict | failed |" in text
         strict_no_official_p2p = write(
             tmp / "strict-no-official-p2p.log",
             strict_log(True).replace(
@@ -2893,6 +2911,7 @@ def main() -> int:
 
         hcomm_storage_strict_dir = tmp / "hcomm-storage-strict-path"
         hcomm_storage_strict_dir.mkdir()
+        write_source_gate_pass(hcomm_storage_strict_dir)
         tree = flume_tool.WriteMatrixDecisionTree(
             hcomm_storage_strict_dir, hcomm_storage_smoke, strict_pass,
             package)
@@ -2903,6 +2922,7 @@ def main() -> int:
 
         hcomm_storage_log_dir = tmp / "flume-check-storage-strict"
         hcomm_storage_log_dir.mkdir()
+        write_source_gate_pass(hcomm_storage_log_dir)
         write(hcomm_storage_log_dir / "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
         write(hcomm_storage_log_dir / "01-hcomm-storage-strict-positive.log",
@@ -2957,6 +2977,7 @@ def main() -> int:
 
         channel_fallback_log_dir = tmp / "flume-check-channel-fallback"
         channel_fallback_log_dir.mkdir()
+        write_source_gate_pass(channel_fallback_log_dir)
         write(channel_fallback_log_dir / "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
         write(channel_fallback_log_dir / "01-hcomm-payload-strict-positive.log",
@@ -2976,6 +2997,7 @@ def main() -> int:
 
         channel_direct_fallback_dir = tmp / "flume-check-channel-direct-fallback"
         channel_direct_fallback_dir.mkdir()
+        write_source_gate_pass(channel_direct_fallback_dir)
         write(channel_direct_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3003,6 +3025,7 @@ def main() -> int:
 
         channel_nobatch_fallback_dir = tmp / "flume-check-channel-nobatch-fallback"
         channel_nobatch_fallback_dir.mkdir()
+        write_source_gate_pass(channel_nobatch_fallback_dir)
         write(channel_nobatch_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3031,6 +3054,7 @@ def main() -> int:
         comm_name_nobatch_diagnostic_dir = (
             tmp / "flume-check-comm-name-nobatch-diagnostic")
         comm_name_nobatch_diagnostic_dir.mkdir()
+        write_source_gate_pass(comm_name_nobatch_diagnostic_dir)
         write(comm_name_nobatch_diagnostic_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3052,6 +3076,7 @@ def main() -> int:
         comm_name_channel_fence_diagnostic_dir = (
             tmp / "flume-check-comm-name-channel-fence-diagnostic")
         comm_name_channel_fence_diagnostic_dir.mkdir()
+        write_source_gate_pass(comm_name_channel_fence_diagnostic_dir)
         write(comm_name_channel_fence_diagnostic_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3074,6 +3099,7 @@ def main() -> int:
         channel_handle_fence_fallback_dir = (
             tmp / "flume-check-channel-handle-fence-fallback")
         channel_handle_fence_fallback_dir.mkdir()
+        write_source_gate_pass(channel_handle_fence_fallback_dir)
         write(channel_handle_fence_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3103,6 +3129,7 @@ def main() -> int:
         channel_handle_direct_fence_fallback_dir = (
             tmp / "flume-check-channel-handle-direct-fence-fallback")
         channel_handle_direct_fence_fallback_dir.mkdir()
+        write_source_gate_pass(channel_handle_direct_fence_fallback_dir)
         write(channel_handle_direct_fence_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3131,6 +3158,7 @@ def main() -> int:
         channel_handle_nobatch_fence_fallback_dir = (
             tmp / "flume-check-channel-handle-nobatch-fence-fallback")
         channel_handle_nobatch_fence_fallback_dir.mkdir()
+        write_source_gate_pass(channel_handle_nobatch_fence_fallback_dir)
         write(channel_handle_nobatch_fence_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3159,6 +3187,7 @@ def main() -> int:
         channel_skip_failed_candidates_dir = (
             tmp / "flume-check-channel-skip-failed-candidates")
         channel_skip_failed_candidates_dir.mkdir()
+        write_source_gate_pass(channel_skip_failed_candidates_dir)
         write(channel_skip_failed_candidates_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3193,6 +3222,7 @@ def main() -> int:
 
         storage_channel_fallback_dir = tmp / "flume-check-storage-channel-fallback"
         storage_channel_fallback_dir.mkdir()
+        write_source_gate_pass(storage_channel_fallback_dir)
         write(storage_channel_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3215,6 +3245,7 @@ def main() -> int:
         storage_channel_nobatch_fallback_dir = (
             tmp / "flume-check-storage-channel-nobatch-fallback")
         storage_channel_nobatch_fallback_dir.mkdir()
+        write_source_gate_pass(storage_channel_nobatch_fallback_dir)
         write(storage_channel_nobatch_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3243,6 +3274,7 @@ def main() -> int:
         storage_comm_name_nobatch_diagnostic_dir = (
             tmp / "flume-check-storage-comm-name-nobatch-diagnostic")
         storage_comm_name_nobatch_diagnostic_dir.mkdir()
+        write_source_gate_pass(storage_comm_name_nobatch_diagnostic_dir)
         write(storage_comm_name_nobatch_diagnostic_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3265,6 +3297,7 @@ def main() -> int:
         storage_comm_name_channel_fence_diagnostic_dir = (
             tmp / "flume-check-storage-comm-name-channel-fence-diagnostic")
         storage_comm_name_channel_fence_diagnostic_dir.mkdir()
+        write_source_gate_pass(storage_comm_name_channel_fence_diagnostic_dir)
         write(storage_comm_name_channel_fence_diagnostic_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3288,6 +3321,7 @@ def main() -> int:
         storage_channel_handle_fence_fallback_dir = (
             tmp / "flume-check-storage-channel-handle-fence-fallback")
         storage_channel_handle_fence_fallback_dir.mkdir()
+        write_source_gate_pass(storage_channel_handle_fence_fallback_dir)
         write(storage_channel_handle_fence_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3320,6 +3354,7 @@ def main() -> int:
         storage_channel_handle_combo_fallback_dir = (
             tmp / "flume-check-storage-channel-handle-combo-fallback")
         storage_channel_handle_combo_fallback_dir.mkdir()
+        write_source_gate_pass(storage_channel_handle_combo_fallback_dir)
         write(storage_channel_handle_combo_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3350,6 +3385,7 @@ def main() -> int:
         storage_skip_failed_candidates_dir = (
             tmp / "flume-check-storage-skip-failed-candidates")
         storage_skip_failed_candidates_dir.mkdir()
+        write_source_gate_pass(storage_skip_failed_candidates_dir)
         write(storage_skip_failed_candidates_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3387,6 +3423,7 @@ def main() -> int:
         storage_channel_direct_fallback_dir = (
             tmp / "flume-check-storage-channel-direct-fallback")
         storage_channel_direct_fallback_dir.mkdir()
+        write_source_gate_pass(storage_channel_direct_fallback_dir)
         write(storage_channel_direct_fallback_dir /
               "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
@@ -3494,6 +3531,7 @@ def main() -> int:
 
         log_dir = tmp / "flume-check-synthetic-pass"
         log_dir.mkdir()
+        write_source_gate_pass(log_dir)
         write(log_dir / "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
         write(log_dir / "01-hccl-collective-smoke.log",
@@ -3516,6 +3554,7 @@ def main() -> int:
 
         official_log_dir = tmp / "flume-check-synthetic-official-pass"
         official_log_dir.mkdir()
+        write_source_gate_pass(official_log_dir)
         write(official_log_dir / "00-hcomm-custom-op-package-preflight.log",
               payload_ready_package_log())
         official_strict = write(
@@ -3570,6 +3609,7 @@ def main() -> int:
             encoding="utf-8")
         assert "strict_positive_evidence=passed" in pass_evidence_text
         assert "hcomm_payload_copy_strict_verdict=passed" in pass_evidence_text
+        assert "hcomm_payload_source_no_hccl_payload_api=passed" in pass_evidence_text
         assert "package_no_hccl_sendrecv_deps=passed" in pass_evidence_text
         assert "package_no_hccl_payload_api_deps=passed" in pass_evidence_text
         assert "payload_data_flow=passed" in pass_evidence_text

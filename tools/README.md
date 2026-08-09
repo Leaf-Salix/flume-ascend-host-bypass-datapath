@@ -469,8 +469,11 @@ Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
 如果 HCOMM payload kernel 源码直接引用 `HcclSend`、`HcclRecv`、
 collective 或 one-sided HCCL payload API，测试会失败。这样可以在打包前
 阻止把 HCCL payload 捷径混进 HCOMM custom-op 路径。
-`ascend-full-matrix` 的 strict-positive evidence gate 也会把这个 package
-级 marker 写入 decision tree；缺失或失败时，即使 payload smoke 日志看似
+`ascend-full-matrix`、`hcomm-payload-strict-positive` 和
+`hcomm-storage-strict-positive` 也会先记录
+`hcomm-payload-source-gate` 步骤，并把
+`hcomm_payload_source_no_hccl_payload_api=passed` 写入 decision tree 和
+strict-positive evidence gate；缺失或失败时，即使 payload smoke 日志看似
 通过，也不会被认定为真正的 HCOMM payload copy。
 strict-positive 日志还会输出 `payload_primitive_plan`，用于快速说明当前
 rank 的 host descriptor 计划执行哪些 HCOMM primitive。它只是计划锚点；
