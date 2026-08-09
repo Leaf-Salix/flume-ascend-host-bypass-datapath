@@ -569,6 +569,44 @@ int main() {
   }
 
   Reset();
+  std::memset(local, 0, sizeof(local));
+  std::memset(remote, 0, sizeof(remote));
+  reset_status();
+  reset_trace();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status, trace);
+  send_desc.reserved2[0] = FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  send_desc.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(status[7] == send_desc.completion_mode);
+  CheckTraceHeaderMatchesDesc(send_desc, trace);
+  FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
+  FLUME_TEST_CHECK(std::memcmp(remote, user, 16) != 0);
+  const int send_official_p2p_calls[] = {
+      kLocalCopy, kNotifyRecord, kNotifyWait};
+  FLUME_TEST_CHECK(CallsEqual(send_official_p2p_calls, 3));
+  const uint32_t send_official_p2p_events[] = {
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT,
+  };
+  FLUME_TEST_CHECK(trace[4] == sizeof(send_official_p2p_events) /
+                                   sizeof(send_official_p2p_events[0]));
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    FLUME_TEST_CHECK(trace[event_base + i] == send_official_p2p_events[i]);
+  }
+
+  Reset();
   reset_status();
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status);
@@ -657,6 +695,53 @@ int main() {
       kAcquireComm, kBatchStart, kNotifyWait, kRead, kNotifyRecord,
       kBatchEnd, kReleaseComm};
   FLUME_TEST_CHECK(CallsEqual(recv_direct_output_calls, 7));
+
+  Reset();
+  std::memset(user, 0, sizeof(user));
+  std::memset(local, 0, sizeof(local));
+  reset_status();
+  reset_trace();
+  recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
+                       status, trace);
+  recv_desc.reserved2[0] = FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  recv_desc.reserved2[1] = FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  recv_desc.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING;
+  const uint32_t recv_official_remote_entry_fingerprint =
+      PayloadDataFingerprint(remote, 16);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(status[7] == recv_desc.completion_mode);
+  FLUME_TEST_CHECK(status[15] == recv_official_remote_entry_fingerprint);
+  FLUME_TEST_CHECK(status[16] == PayloadDataFingerprint(user, 16));
+  CheckTraceHeaderMatchesDesc(recv_desc, trace);
+  FLUME_TEST_CHECK(std::memcmp(user, remote, 16) == 0);
+  FLUME_TEST_CHECK(std::memcmp(local, remote, 16) != 0);
+  FLUME_TEST_CHECK(last_read_dst == user);
+  FLUME_TEST_CHECK(last_read_src == remote);
+  FLUME_TEST_CHECK(last_local_copy_dst == nullptr);
+  FLUME_TEST_CHECK(last_local_copy_src == nullptr);
+  const int recv_official_p2p_calls[] = {
+      kNotifyWait, kRead, kNotifyRecord};
+  FLUME_TEST_CHECK(CallsEqual(recv_official_p2p_calls, 3));
+  const uint32_t recv_official_p2p_events[] = {
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT,
+  };
+  FLUME_TEST_CHECK(trace[4] == sizeof(recv_official_p2p_events) /
+                                   sizeof(recv_official_p2p_events[0]));
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    FLUME_TEST_CHECK(trace[event_base + i] == recv_official_p2p_events[i]);
+  }
 
   Reset();
   std::memset(user, 0, sizeof(user));
