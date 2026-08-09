@@ -5929,6 +5929,11 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
             f"selected_evidence_log={evidence_log.name}",
             f"selected_payload_rank_evidence_count={len(rank_lines)}",
         ]
+    command = _CommandFromLogText(strict)
+    command_detail = ShellCommand(command) if command else "<unknown>"
+    focus_flags = (_PayloadCandidateFocusFlags(command) if command else
+                   "<unknown>")
+
     def RankSummaryLines(rank: int) -> list[str]:
         line = rank_lines[rank]
         names = [
@@ -5954,6 +5959,8 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
 
     summary = [
         f"selected_evidence_log={evidence_log.name}",
+        f"selected_payload_command={command_detail}",
+        f"selected_payload_focus_flags={focus_flags}",
         "selected_payload_rank0_trace_path=" +
         MarkerValueFromLine(rank_lines[0], "payload_trace_primitive_path"),
         "selected_payload_rank1_trace_path=" +

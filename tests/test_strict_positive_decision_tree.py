@@ -2798,6 +2798,9 @@ def main() -> int:
         assert "payload_checksum_match=passed" in pass_evidence_text
         assert "fallback=none" in pass_evidence_text
         assert "selected_evidence_log=02-hcomm-payload-strict-positive.log" in pass_evidence_text
+        assert ("selected_payload_command=flume-hccl-collective-smoke "
+                "--hcomm-require-payload-copy") in pass_evidence_text
+        assert "selected_payload_focus_flags=<default-read-path>" in pass_evidence_text
         assert "selected_payload_rank0_trace_path=send-local-copy" in pass_evidence_text
         assert "selected_payload_rank1_trace_path=recv-read-local-copy" in pass_evidence_text
         assert "selected_payload_rank0_transfer_mode=read" in pass_evidence_text
