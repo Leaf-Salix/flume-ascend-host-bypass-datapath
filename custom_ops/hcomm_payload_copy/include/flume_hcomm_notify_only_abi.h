@@ -268,6 +268,119 @@ typedef struct {
   uint64_t reserved2[3];
 } flume_hcomm_payload_copy_desc_v1;
 
+static inline uint32_t flume_hcomm_payload_desc_has_string(
+    const char* data, uint32_t len) {
+  uint32_t i = 0;
+  for (; i < len; ++i) {
+    if (data[i] == '\0') {
+      return i != 0U;
+    }
+  }
+  return 0U;
+}
+
+static inline uint32_t flume_hcomm_payload_copy_desc_validate_reason(
+    const flume_hcomm_payload_copy_desc_v1* desc) {
+  if (desc == 0 ||
+      desc->magic != FLUME_HCOMM_PAYLOAD_COPY_MAGIC ||
+      desc->version != FLUME_HCOMM_PAYLOAD_COPY_VERSION ||
+      desc->size != sizeof(flume_hcomm_payload_copy_desc_v1)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_HEADER;
+  }
+  if (desc->rank_size != 2U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_SIZE;
+  }
+  if (desc->role != FLUME_HCOMM_NOTIFY_ROLE_SEND &&
+      desc->role != FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_ROLE;
+  }
+  if (desc->local_rank >= desc->rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_RANK;
+  }
+  if (desc->peer_rank >= desc->rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_PEER_RANK;
+  }
+  if (desc->local_rank == desc->peer_rank) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_PAIR;
+  }
+  if (desc->ready_notify_idx == desc->done_notify_idx) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_NOTIFY_INDEX;
+  }
+  if (desc->bytes == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_BYTES;
+  }
+  if (desc->thread_notify_mode != FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE &&
+      desc->thread_notify_mode !=
+          FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_THREAD_NOTIFY_MODE;
+  }
+  {
+    const uint32_t completion_mode =
+        desc->completion_mode & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK;
+    if (completion_mode != FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY &&
+        completion_mode != FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+      return FLUME_HCOMM_PAYLOAD_VALIDATE_COMPLETION_MODE;
+    }
+  }
+  if (desc->aicpu_thread == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_AICPU_THREAD;
+  }
+  if (desc->channel_handle == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CHANNEL_HANDLE;
+  }
+  if (desc->user_buffer == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_USER_BUFFER;
+  }
+  if (desc->local_hccl_buffer == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER;
+  }
+  if (desc->remote_hccl_buffer == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER;
+  }
+  if (desc->bytes > desc->local_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER_BYTES;
+  }
+  if (desc->bytes > desc->remote_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER_BYTES;
+  }
+  if (desc->status_word == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD;
+  }
+  if (desc->status_word_count < FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD_COUNT;
+  }
+  if (desc->status_schema_version !=
+      FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_SCHEMA;
+  }
+  {
+    const uint32_t skip_comm_acquire =
+        (desc->completion_mode &
+         (FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+          FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING)) != 0U;
+    if (!skip_comm_acquire &&
+        !flume_hcomm_payload_desc_has_string(
+            desc->comm_name, FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES)) {
+      return FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME;
+    }
+  }
+  {
+    const uint32_t batch_enabled =
+        desc->reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+    if (batch_enabled &&
+        !flume_hcomm_payload_desc_has_string(
+            desc->batch_tag, FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES)) {
+      return FLUME_HCOMM_PAYLOAD_VALIDATE_BATCH_TAG;
+    }
+  }
+  if (desc->thread_notify_mode ==
+          FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU &&
+      desc->cpu_thread_on_aicpu == 0U) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU;
+  }
+  return FLUME_HCOMM_PAYLOAD_VALIDATE_OK;
+}
+
 static inline uint64_t flume_hcomm_payload_hash_u64(uint64_t hash,
                                                     uint64_t value) {
   hash ^= value;

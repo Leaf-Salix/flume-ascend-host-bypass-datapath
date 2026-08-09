@@ -259,6 +259,66 @@ int main() {
   FLUME_TEST_CHECK(payload.status_schema_version ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
 
+  uint8_t user_buffer[64] = {};
+  uint8_t local_hccl_buffer[64] = {};
+  uint8_t remote_hccl_buffer[64] = {};
+  uint32_t status_words[FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT] = {};
+  flume_hcomm_payload_copy_desc_v1 valid_payload = {};
+  flume_hcomm_payload_copy_desc_init(&valid_payload);
+  valid_payload.role = FLUME_HCOMM_NOTIFY_ROLE_SEND;
+  valid_payload.local_rank = 0;
+  valid_payload.peer_rank = 1;
+  valid_payload.rank_size = 2;
+  valid_payload.ready_notify_idx = 0;
+  valid_payload.done_notify_idx = 1;
+  valid_payload.bytes = 16;
+  valid_payload.aicpu_thread = 0x100;
+  valid_payload.channel_handle = 0x200;
+  valid_payload.user_buffer = reinterpret_cast<uint64_t>(user_buffer);
+  valid_payload.local_hccl_buffer =
+      reinterpret_cast<uint64_t>(local_hccl_buffer);
+  valid_payload.remote_hccl_buffer =
+      reinterpret_cast<uint64_t>(remote_hccl_buffer);
+  valid_payload.local_hccl_buffer_bytes = sizeof(local_hccl_buffer);
+  valid_payload.remote_hccl_buffer_bytes = sizeof(remote_hccl_buffer);
+  valid_payload.status_word = reinterpret_cast<uint64_t>(status_words);
+  std::memcpy(valid_payload.batch_tag,
+              FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG,
+              sizeof(FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG));
+  std::memcpy(valid_payload.comm_name, "flume_unit_comm",
+              sizeof("flume_unit_comm"));
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &valid_payload) == FLUME_HCOMM_PAYLOAD_VALIDATE_OK);
+
+  flume_hcomm_payload_copy_desc_v1 invalid_payload = valid_payload;
+  invalid_payload.comm_name[0] = '\0';
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) ==
+                   FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME);
+  invalid_payload.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING;
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) == FLUME_HCOMM_PAYLOAD_VALIDATE_OK);
+
+  invalid_payload = valid_payload;
+  invalid_payload.batch_tag[0] = '\0';
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) ==
+                   FLUME_HCOMM_PAYLOAD_VALIDATE_BATCH_TAG);
+  invalid_payload.reserved2[0] = FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) == FLUME_HCOMM_PAYLOAD_VALIDATE_OK);
+
+  invalid_payload = valid_payload;
+  invalid_payload.thread_notify_mode =
+      FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU;
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) ==
+                   FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU);
+  invalid_payload.cpu_thread_on_aicpu = 0x300;
+  FLUME_TEST_CHECK(flume_hcomm_payload_copy_desc_validate_reason(
+                       &invalid_payload) == FLUME_HCOMM_PAYLOAD_VALIDATE_OK);
+
   flume_hcomm_canary_desc_v1 canary = {};
   flume_hcomm_canary_desc_init(&canary);
   FLUME_TEST_CHECK(FLUME_HCOMM_CANARY_TOKEN == 0x43414e59U);
