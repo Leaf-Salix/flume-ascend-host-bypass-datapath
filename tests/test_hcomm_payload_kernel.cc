@@ -236,6 +236,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion10() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion11() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion12() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion13() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
@@ -268,6 +269,8 @@ int main() {
   Reset();
   reset_status();
   reset_trace();
+  const uint32_t send_local_entry_fingerprint =
+      PayloadDataFingerprint(local, 16);
   auto send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                             status, trace);
   FLUME_TEST_CHECK(std::strcmp(send_desc.batch_tag,
@@ -283,9 +286,10 @@ int main() {
   FLUME_TEST_CHECK(status[6] == 0U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(status[10] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[11] == PayloadDataFingerprint(local, 16));
-  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[13] == 16U);
+  FLUME_TEST_CHECK(status[11] == send_local_entry_fingerprint);
+  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(local, 16));
+  FLUME_TEST_CHECK(status[13] == PayloadDataFingerprint(user, 16));
+  FLUME_TEST_CHECK(status[14] == 16U);
   uint64_t send_fingerprint =
       static_cast<uint64_t>(status[8]) |
       (static_cast<uint64_t>(status[9]) << 32U);
@@ -346,6 +350,8 @@ int main() {
   std::memset(remote, 0, sizeof(remote));
   reset_status();
   reset_trace();
+  const uint32_t send_write_local_entry_fingerprint =
+      PayloadDataFingerprint(local, 16);
   send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
                        status, trace);
   send_desc.completion_mode |= FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH;
@@ -355,9 +361,10 @@ int main() {
   FLUME_TEST_CHECK(status[1] == 0U);
   FLUME_TEST_CHECK(status[7] == send_desc.completion_mode);
   FLUME_TEST_CHECK(status[10] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[11] == PayloadDataFingerprint(local, 16));
-  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[13] == 16U);
+  FLUME_TEST_CHECK(status[11] == send_write_local_entry_fingerprint);
+  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(local, 16));
+  FLUME_TEST_CHECK(status[13] == PayloadDataFingerprint(user, 16));
+  FLUME_TEST_CHECK(status[14] == 16U);
   CheckTraceHeaderMatchesDesc(send_desc, trace);
   FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
   FLUME_TEST_CHECK(std::memcmp(remote, user, 16) == 0);
@@ -569,6 +576,8 @@ int main() {
   auto recv_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_RECV, user, local, remote,
                             status, trace);
   const uint32_t recv_entry_fingerprint = PayloadDataFingerprint(user, 16);
+  const uint32_t recv_local_entry_fingerprint =
+      PayloadDataFingerprint(local, 16);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
@@ -580,9 +589,10 @@ int main() {
   FLUME_TEST_CHECK(status[6] == 1U);
   FLUME_TEST_CHECK(status[7] == FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY);
   FLUME_TEST_CHECK(status[10] == recv_entry_fingerprint);
-  FLUME_TEST_CHECK(status[11] == PayloadDataFingerprint(local, 16));
-  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[13] == 16U);
+  FLUME_TEST_CHECK(status[11] == recv_local_entry_fingerprint);
+  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(local, 16));
+  FLUME_TEST_CHECK(status[13] == PayloadDataFingerprint(user, 16));
+  FLUME_TEST_CHECK(status[14] == 16U);
   uint64_t recv_fingerprint =
       static_cast<uint64_t>(status[8]) |
       (static_cast<uint64_t>(status[9]) << 32U);
@@ -637,15 +647,18 @@ int main() {
   recv_desc.completion_mode |= FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH;
   const uint32_t recv_write_entry_fingerprint =
       PayloadDataFingerprint(user, 16);
+  const uint32_t recv_write_local_entry_fingerprint =
+      PayloadDataFingerprint(local, 16);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&recv_desc) ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
   FLUME_TEST_CHECK(status[1] == 0U);
   FLUME_TEST_CHECK(status[7] == recv_desc.completion_mode);
   FLUME_TEST_CHECK(status[10] == recv_write_entry_fingerprint);
-  FLUME_TEST_CHECK(status[11] == PayloadDataFingerprint(local, 16));
-  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(user, 16));
-  FLUME_TEST_CHECK(status[13] == 16U);
+  FLUME_TEST_CHECK(status[11] == recv_write_local_entry_fingerprint);
+  FLUME_TEST_CHECK(status[12] == PayloadDataFingerprint(local, 16));
+  FLUME_TEST_CHECK(status[13] == PayloadDataFingerprint(user, 16));
+  FLUME_TEST_CHECK(status[14] == 16U);
   CheckTraceHeaderMatchesDesc(recv_desc, trace);
   FLUME_TEST_CHECK(std::memcmp(user, local, 16) == 0);
   FLUME_TEST_CHECK(last_read_dst == nullptr);

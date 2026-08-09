@@ -8,12 +8,13 @@ from pathlib import Path
 
 
 REQUIRED_MARKERS = (
-    "payload_status_schema=v4",
-    "payload_status_word_count=14",
+    "payload_status_schema=v5",
+    "payload_status_word_count=15",
     "payload_echo=passed",
     "payload_descriptor_fingerprint=passed",
     "payload_data_probe=observed",
     "payload_data_user_entry_fingerprint=",
+    "payload_data_local_entry_fingerprint=",
     "payload_data_local_exit_fingerprint=",
     "payload_data_user_exit_fingerprint=",
     "payload_data_sample_bytes=",
@@ -43,6 +44,8 @@ REQUIRED_MARKERS = (
     "payload_trace_first_error_index=-1",
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
+    "payload_semantic_v12=present",
+    "payload_semantic_v13=present",
 )
 
 STALE_MARKERS = (
@@ -54,6 +57,8 @@ RUNTIME_PACKAGE_READY_MARKERS = (
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13_FUNC",
 )
 
 

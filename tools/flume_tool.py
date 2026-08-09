@@ -47,6 +47,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_semantic_v10": "FlumeHcommPayloadCopySemanticVersion10",
     "payload_semantic_v11": "FlumeHcommPayloadCopySemanticVersion11",
     "payload_semantic_v12": "FlumeHcommPayloadCopySemanticVersion12",
+    "payload_semantic_v13": "FlumeHcommPayloadCopySemanticVersion13",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
@@ -70,6 +71,7 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9 = "FlumeHcommPayloadCopySemanticVersion9"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10 = "FlumeHcommPayloadCopySemanticVersion10"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11 = "FlumeHcommPayloadCopySemanticVersion11"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12 = "FlumeHcommPayloadCopySemanticVersion12"
+HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13 = "FlumeHcommPayloadCopySemanticVersion13"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
@@ -107,7 +109,7 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
     "payload_abi_version_v3": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, 1),
     "payload_abi_version_v4": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, 1),
-    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 12),
+    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 13),
     "payload_semantic_version_v5": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, 1),
     "payload_semantic_version_v6": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6, 1),
     "payload_semantic_version_v7": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, 1),
@@ -116,9 +118,10 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_semantic_version_v10": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10, 1),
     "payload_semantic_version_v11": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, 1),
     "payload_semantic_version_v12": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, 1),
+    "payload_semantic_version_v13": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13, 1),
     "payload_requires_comm_acquire": (HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, 1),
-    "payload_status_schema": (HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, 4),
-    "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 14),
+    "payload_status_schema": (HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, 5),
+    "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 15),
     "payload_trace_schema": (HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, 2),
     "payload_trace_word_count": (HCOMM_PAYLOAD_TRACE_WORD_COUNT, 80),
 }
@@ -568,6 +571,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_semantic_v10",
         "payload_semantic_v11",
         "payload_semantic_v12",
+        "payload_semantic_v13",
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
@@ -2061,12 +2065,13 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_failure_step=none",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
-    "payload_status_schema=v4",
-    "payload_status_word_count=14",
+    "payload_status_schema=v5",
+    "payload_status_word_count=15",
     "payload_echo=passed",
     "payload_descriptor_fingerprint=passed",
     "payload_data_probe=observed",
     "payload_data_user_entry_fingerprint=",
+    "payload_data_local_entry_fingerprint=",
     "payload_data_local_exit_fingerprint=",
     "payload_data_user_exit_fingerprint=",
     "payload_data_sample_bytes=",
@@ -2106,6 +2111,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
     "payload_semantic_v12=present",
+    "payload_semantic_v13=present",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -2158,6 +2164,8 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
         return False, "missing-rank-line"
     rank0_entry = MarkerValueFromLine(
         rank0_line, "payload_data_user_entry_fingerprint")
+    rank0_local_entry = MarkerValueFromLine(
+        rank0_line, "payload_data_local_entry_fingerprint")
     rank0_local_exit = MarkerValueFromLine(
         rank0_line, "payload_data_local_exit_fingerprint")
     rank0_user_exit = MarkerValueFromLine(
@@ -2165,14 +2173,17 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     rank0_sample = MarkerValueFromLine(rank0_line, "payload_data_sample_bytes")
     rank1_entry = MarkerValueFromLine(
         rank1_line, "payload_data_user_entry_fingerprint")
+    rank1_local_entry = MarkerValueFromLine(
+        rank1_line, "payload_data_local_entry_fingerprint")
     rank1_local_exit = MarkerValueFromLine(
         rank1_line, "payload_data_local_exit_fingerprint")
     rank1_user_exit = MarkerValueFromLine(
         rank1_line, "payload_data_user_exit_fingerprint")
     rank1_sample = MarkerValueFromLine(rank1_line, "payload_data_sample_bytes")
     values = (
-        rank0_entry, rank0_local_exit, rank0_user_exit, rank0_sample,
-        rank1_entry, rank1_local_exit, rank1_user_exit, rank1_sample)
+        rank0_entry, rank0_local_entry, rank0_local_exit, rank0_user_exit,
+        rank0_sample, rank1_entry, rank1_local_entry, rank1_local_exit,
+        rank1_user_exit, rank1_sample)
     if any(value == "missing" for value in values):
         return False, "missing-data-fingerprint"
     if rank0_sample != rank1_sample:
@@ -2184,6 +2195,8 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     transfer_mode = MarkerValueFromLine(rank0_line, "payload_transfer_mode")
     recv_path = MarkerValueFromLine(rank1_line, "payload_recv_path")
     expected_payload = rank0_local_exit
+    if rank1_local_entry == expected_payload:
+        return False, "recv-local-entry-already-matched"
     if recv_path == "direct-output":
         if rank1_user_exit != expected_payload:
             return False, "recv-direct-output-mismatch"
@@ -3282,6 +3295,7 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         candidate_text, "payload_trace_write_notify_backend")
     trace_path = MarkerValue(candidate_text, "payload_trace_primitive_path")
     semantic_v12 = MarkerValue(candidate_text, "payload_semantic_v12")
+    semantic_v13 = MarkerValue(candidate_text, "payload_semantic_v13")
 
     if passed and transfer_mode == "write-with-notify":
         decision = (
@@ -3294,6 +3308,12 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
     elif semantic_v12 == "missing":
         decision = (
             "write-with-notify candidate package is missing the v12 semantic "
+            "export")
+        next_action = (
+            "rebuild/reinstall the payload custom-op package from this commit")
+    elif semantic_v13 == "missing":
+        decision = (
+            "write-with-notify candidate package is missing the v13 semantic "
             "export")
         next_action = (
             "rebuild/reinstall the payload custom-op package from this commit")
@@ -3322,6 +3342,7 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         f"- trace_write_notify_backend: `{trace_write_notify_backend}`",
         f"- trace_path: `{trace_path}`",
         f"- semantic_v12: `{semantic_v12}`",
+        f"- semantic_v13: `{semantic_v13}`",
         f"- rank0_evidence: `{'passed' if rank0_ok else 'missing'}`",
         f"- rank1_evidence: `{'passed' if rank1_ok else 'missing'}`",
         f"- payload_copy_and_verify: `{'passed' if passed else 'not-passed'}`",
@@ -5028,17 +5049,23 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic_v9 = marker_value(strict, "payload_semantic_v9")
     strict_semantic_v10 = marker_value(strict, "payload_semantic_v10")
     strict_semantic_v11 = marker_value(strict, "payload_semantic_v11")
+    strict_semantic_v12 = marker_value(strict, "payload_semantic_v12")
+    strict_semantic_v13 = marker_value(strict, "payload_semantic_v13")
     strict_data_probe = marker_value(strict, "payload_data_probe")
     strict_data_sample_bytes = marker_value(
         strict, "payload_data_sample_bytes")
     strict_rank0_data_user_entry = marker_value_from_line(
         strict_rank_lines[0], "payload_data_user_entry_fingerprint")
+    strict_rank0_data_local_entry = marker_value_from_line(
+        strict_rank_lines[0], "payload_data_local_entry_fingerprint")
     strict_rank0_data_local_exit = marker_value_from_line(
         strict_rank_lines[0], "payload_data_local_exit_fingerprint")
     strict_rank0_data_user_exit = marker_value_from_line(
         strict_rank_lines[0], "payload_data_user_exit_fingerprint")
     strict_rank1_data_user_entry = marker_value_from_line(
         strict_rank_lines[1], "payload_data_user_entry_fingerprint")
+    strict_rank1_data_local_entry = marker_value_from_line(
+        strict_rank_lines[1], "payload_data_local_entry_fingerprint")
     strict_rank1_data_local_exit = marker_value_from_line(
         strict_rank_lines[1], "payload_data_local_exit_fingerprint")
     strict_rank1_data_user_exit = marker_value_from_line(
@@ -5285,7 +5312,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
-            f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
+            f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-entry/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_entry}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-entry/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_entry}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
             f"| payload data flow | {'passed' if strict_data_flow_ok else strict_data_flow_reason} | source fingerprint must propagate from rank0 user HBM into rank0 local HCCL Buffer and then into rank1 output HBM through the selected read/write/direct-output path |",
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success. NBI write-with-notify evidence also requires channel-fence completion. |",
@@ -5301,6 +5328,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic v9 marker | {strict_semantic_v9} | `payload_semantic_v9=missing` means the package predates descriptor fingerprint validation |",
             f"| payload semantic v10 marker | {strict_semantic_v10} | `payload_semantic_v10=missing` means the package predates the HcommWriteOnThread write-path candidate |",
             f"| payload semantic v11 marker | {strict_semantic_v11} | `payload_semantic_v11=missing` means the package predates device-side sampled data fingerprints |",
+            f"| payload semantic v12 marker | {strict_semantic_v12} | `payload_semantic_v12=missing` means the package predates the write-with-notify candidate |",
+            f"| payload semantic v13 marker | {strict_semantic_v13} | `payload_semantic_v13=missing` means the package predates local-entry data-flow fingerprints |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -5699,12 +5728,13 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "stage3b3e_payload_sync=passed,payload_kernel_status=success,"
             "payload_failure_step=none,payload_status_word=0,"
             "payload_kernel_hcomm_ret=0,"
-            "payload_status_schema=v4,payload_status_word_count=14,"
+            "payload_status_schema=v5,payload_status_word_count=15,"
             "payload_echo=passed,payload_descriptor_fingerprint=passed,"
             "payload_data_probe=observed,"
             "payload_data_flow=passed,"
             "payload_host_data=passed,"
             "payload_data_user_entry_fingerprint=,"
+            "payload_data_local_entry_fingerprint=,"
             "payload_data_local_exit_fingerprint=,"
             "payload_data_user_exit_fingerprint=,"
             "payload_data_sample_bytes=,"
@@ -5740,6 +5770,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_semantic_v9=present,payload_semantic_v10=present,"
             "payload_semantic_v11=present,payload_semantic_v12=present,"
+            "payload_semantic_v13=present,"
             "payload_batch_mode=on|off,"
             "payload_comm_acquire=default,"
             "or payload_comm_binding=channel-handle,"
@@ -7060,6 +7091,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_semantic_v10")
         required_functions.append("payload_semantic_v11")
         required_functions.append("payload_semantic_v12")
+        required_functions.append("payload_semantic_v13")
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
@@ -7085,6 +7117,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_semantic_v10_marker = False
     found_payload_semantic_v11_marker = False
     found_payload_semantic_v12_marker = False
+    found_payload_semantic_v13_marker = False
     found_payload_requires_comm_acquire_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
@@ -7141,6 +7174,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12,
+            HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
@@ -7212,6 +7246,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_semantic_v12_marker = (
                 found_payload_semantic_v12_marker or
                 functions_present.get("payload_semantic_v12", False))
+            found_payload_semantic_v13_marker = (
+                found_payload_semantic_v13_marker or
+                functions_present.get("payload_semantic_v13", False))
             found_payload_requires_comm_acquire_marker = (
                 found_payload_requires_comm_acquire_marker or
                 functions_present.get("payload_requires_comm_acquire", False))
@@ -7289,6 +7326,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_semantic_v12_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12,
                                         False))
+                found_payload_semantic_v13_marker = (
+                    found_payload_semantic_v13_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13,
+                                        False))
                 found_payload_requires_comm_acquire_marker = (
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
@@ -7357,6 +7398,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_semantic_version_v12."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, False) else 'missing'}")
+                print("function_so.payload_semantic_version_v13."
+                      f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13, False) else 'missing'}")
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
@@ -7453,6 +7497,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
@@ -7484,6 +7529,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11}")
             print("required_payload_semantic_v12_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12}")
+            print("required_payload_semantic_v13_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
             print("required_payload_status_schema_symbol="
@@ -7642,6 +7689,23 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
                   found_payload_semantic_v12_marker and
+                  not found_payload_semantic_v13_marker):
+                print("reason=payload kernel package has a stale payload "
+                      "semantic marker")
+                print("action=rebuild package with current Flume semantic "
+                      "v13 local-entry data-probe-capable payload kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
                   not found_payload_requires_comm_acquire_marker):
                 print("reason=payload kernel package is missing the payload "
                       "comm-acquire marker")
@@ -7658,6 +7722,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
                   found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
                   found_payload_requires_comm_acquire_marker and
                   (not found_payload_status_schema_marker or
                    not found_payload_status_word_count_marker)):
@@ -7676,6 +7741,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
                   found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
@@ -7696,6 +7762,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
                   found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
@@ -7718,6 +7785,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
                   found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and

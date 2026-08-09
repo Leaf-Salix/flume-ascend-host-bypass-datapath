@@ -146,7 +146,7 @@ void StorePayloadDataProbeSampleBytes(
   const uint64_t first = desc.bytes < kMaxSampleBytes ?
       desc.bytes : kMaxSampleBytes;
   const uint64_t sampled = desc.bytes > first ? first * 2U : first;
-  status_words[13] = static_cast<unsigned int>(sampled & 0xFFFFFFFFU);
+  status_words[14] = static_cast<unsigned int>(sampled & 0xFFFFFFFFU);
 }
 
 unsigned int* PayloadTraceWords(
@@ -521,6 +521,9 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   StorePayloadEcho(desc);
   StorePayloadDataProbe(desc, 10U,
                         reinterpret_cast<const void*>(desc.user_buffer));
+  StorePayloadDataProbe(desc, 11U,
+                        reinterpret_cast<const void*>(
+                            desc.local_hccl_buffer));
   StorePayloadDataProbeSampleBytes(desc);
 
   ThreadHandle thread = static_cast<ThreadHandle>(desc.aicpu_thread);
@@ -581,9 +584,9 @@ unsigned int RunPayloadCopy(const flume_hcomm_payload_copy_desc_v1& desc) {
   if (result == kFlumePayloadSuccess) {
     result = RunPayloadCopyBody(desc);
   }
-  StorePayloadDataProbe(desc, 11U,
-                        reinterpret_cast<const void*>(desc.local_hccl_buffer));
   StorePayloadDataProbe(desc, 12U,
+                        reinterpret_cast<const void*>(desc.local_hccl_buffer));
+  StorePayloadDataProbe(desc, 13U,
                         reinterpret_cast<const void*>(desc.user_buffer));
   if (result != kFlumePayloadSuccess) {
     StorePayloadStatus(desc, result);
@@ -725,7 +728,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion11() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion12() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 12U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 12U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion13() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 13U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
