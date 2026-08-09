@@ -36,6 +36,9 @@ REQUIRED_MARKERS = (
     "payload_trace_transfer_mode=",
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
+    "payload_trace_first_error_event=none",
+    "payload_trace_first_error_ret=0",
+    "payload_trace_first_error_index=-1",
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
 )

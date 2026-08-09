@@ -104,6 +104,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_ready_notify_idx=0 "
         "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
+        "payload_trace_first_error_event=none "
+        "payload_trace_first_error_ret=0 "
+        "payload_trace_first_error_index=-1 "
         "payload_trace_expected_thread_notify=off "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -141,6 +144,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_ready_notify_idx=0 "
         "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
+        "payload_trace_first_error_event=none "
+        "payload_trace_first_error_ret=0 "
+        "payload_trace_first_error_index=-1 "
         "payload_trace_expected_thread_notify=off "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -307,6 +313,16 @@ def strict_log_with_trace_transfer_mismatch() -> str:
     return strict_log(True).replace(
         "payload_trace_transfer_mode=read", "payload_trace_transfer_mode=write",
         1)
+
+
+def strict_log_with_missing_trace_first_error_markers() -> str:
+    text = strict_log(True)
+    for marker in (
+            "payload_trace_first_error_event=none ",
+            "payload_trace_first_error_ret=0 ",
+            "payload_trace_first_error_index=-1 "):
+        text = text.replace(marker, "")
+    return text
 
 
 def strict_log_with_kernel_local_copy_failure() -> str:
@@ -1372,6 +1388,21 @@ def main() -> int:
         assert "| rank1 strict evidence | missing |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_cross_line_false_positive())[0]
+
+        strict_missing_trace_first_error = write(
+            tmp / "strict-missing-trace-first-error.log",
+            strict_log_with_missing_trace_first_error_markers())
+        missing_trace_first_error_dir = tmp / "missing-trace-first-error"
+        missing_trace_first_error_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_trace_first_error_dir, smoke,
+            strict_missing_trace_first_error, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| rank0 strict evidence | missing |" in text
+        assert "| rank1 strict evidence | missing |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_missing_trace_first_error_markers())[0]
 
         strict_nonzero_hcomm = write(tmp / "strict-nonzero-hcomm.log",
                                      strict_log_with_nonzero_hcomm_ret())

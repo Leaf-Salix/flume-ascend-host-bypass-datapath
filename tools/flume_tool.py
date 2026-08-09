@@ -1920,6 +1920,9 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
     "payload_trace_result=success",
+    "payload_trace_first_error_event=none",
+    "payload_trace_first_error_ret=0",
+    "payload_trace_first_error_index=-1",
     "payload_trace_expected_thread_notify=",
     "payload_role=",
     "payload_batch_mode=on",
@@ -4639,6 +4642,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_trace_bytes/batch/recv/comm/notify` matching descriptor + "
         "`payload_trace_transfer_mode=read|write|write-with-notify` "
         "matching descriptor mode + "
+        "`payload_trace_first_error_event=none` + "
         "rank0 `payload_role=send` + "
         "rank1 `payload_role=recv` + `payload_batch_mode=on|off` + "
         "payload comm binding `comm-name|channel-handle` + "
@@ -5051,6 +5055,9 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_order=passed",
             "payload_trace_ret_order=passed",
             "payload_trace_result=success",
+            "payload_trace_first_error_event=none",
+            "payload_trace_first_error_ret=0",
+            "payload_trace_first_error_index=-1",
             "payload_verify=passed",
             "payload_checksum_match=passed",
             "fallback=none",
@@ -5096,6 +5103,9 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_ready_notify_idx=,"
             "payload_trace_done_notify_idx=,"
             "payload_trace_result=success,"
+            "payload_trace_first_error_event=none,"
+            "payload_trace_first_error_ret=0,"
+            "payload_trace_first_error_index=-1,"
             "payload_trace_expected_thread_notify=,"
             "payload_desc_batch_tag=,"
             "payload_transfer_mode=read|write|write-with-notify,"
@@ -5582,7 +5592,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "host descriptor, "
         "payload_trace_transfer_mode=read|write|write-with-notify matching "
         "descriptor mode, "
-        "payload_trace_result=success, "
+        "payload_trace_result=success, payload_trace_first_error_event=none, "
         "payload_comm_binding=comm-name with payload_comm_acquire=default, "
         "or explicit payload_comm_binding=channel-handle, "
         "payload_desc_batch_tag=default|custom, "
