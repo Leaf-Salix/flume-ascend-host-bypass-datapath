@@ -865,6 +865,25 @@ def main() -> int:
         assert matrix_args.auto_run_hcomm_payload_no_comm_acquire_diagnostic
         assert flume_tool.HasAcceptedPayloadCandidate(
             matrix_args, ["flume-hccl-collective-smoke"])
+        helper_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": False,
+            "auto_run_hcomm_payload_write_path_candidate": False,
+            "auto_run_hcomm_payload_write_with_notify_candidate": False,
+            "auto_run_hcomm_payload_channel_fence_diagnostic": False,
+            "auto_run_hcomm_payload_nobatch_diagnostic": False,
+            "auto_run_hcomm_payload_tagged_diagnostic": False,
+            "auto_run_hcomm_payload_direct_output_diagnostic": False,
+            "auto_run_hcomm_payload_no_comm_acquire_diagnostic": False,
+        })()
+        flume_tool.EnableHcommPayloadCandidateMatrix(helper_args)
+        assert helper_args.auto_run_hcomm_payload_channel_handle_candidate
+        assert helper_args.auto_run_hcomm_payload_write_path_candidate
+        assert helper_args.auto_run_hcomm_payload_write_with_notify_candidate
+        assert helper_args.auto_run_hcomm_payload_channel_fence_diagnostic
+        assert helper_args.auto_run_hcomm_payload_nobatch_diagnostic
+        assert helper_args.auto_run_hcomm_payload_tagged_diagnostic
+        assert helper_args.auto_run_hcomm_payload_direct_output_diagnostic
+        assert helper_args.auto_run_hcomm_payload_no_comm_acquire_diagnostic
         write_only_args = type("Args", (), {
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": True,
@@ -930,7 +949,7 @@ def main() -> int:
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
-                "done=1, completion=0, thread_notify=0, transfer=read, "
+                "done=1, completion=0/ordered-notify, thread_notify=0, transfer=read, "
                 "batch_tag=default, recv_path=local-buffer, local_buffer=8192, "
                 "remote_buffer=8192 |") in text
         assert "| payload batch tag | default |" in text

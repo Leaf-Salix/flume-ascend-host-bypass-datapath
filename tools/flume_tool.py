@@ -2773,6 +2773,17 @@ def WriteWithNotifyCandidatesEnabled(args: argparse.Namespace) -> bool:
     return getattr(args, "hcomm_payload_write_with_notify_available", True)
 
 
+def EnableHcommPayloadCandidateMatrix(args: argparse.Namespace) -> None:
+    args.auto_run_hcomm_payload_channel_handle_candidate = True
+    args.auto_run_hcomm_payload_write_path_candidate = True
+    args.auto_run_hcomm_payload_write_with_notify_candidate = True
+    args.auto_run_hcomm_payload_channel_fence_diagnostic = True
+    args.auto_run_hcomm_payload_nobatch_diagnostic = True
+    args.auto_run_hcomm_payload_tagged_diagnostic = True
+    args.auto_run_hcomm_payload_direct_output_diagnostic = True
+    args.auto_run_hcomm_payload_no_comm_acquire_diagnostic = True
+
+
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
                                 command: list[str]) -> bool:
     if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
@@ -4992,6 +5003,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                            "payload_desc_done_notify_idx")
     strict_desc_completion = marker_value(strict,
                                           "payload_desc_completion_mode")
+    strict_completion_mode = marker_value(strict, "payload_completion_mode")
     strict_desc_thread_notify = marker_value(
         strict, "payload_desc_thread_notify_mode")
     strict_desc_local_buffer = marker_value(
@@ -5059,6 +5071,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_rank_lines[0], "payload_trace_transfer_mode")
     strict_rank1_trace_transfer_mode = marker_value_from_line(
         strict_rank_lines[1], "payload_trace_transfer_mode")
+    strict_rank0_write_notify_backend = marker_value_from_line(
+        strict_rank_lines[0], "payload_trace_write_notify_backend")
+    strict_rank1_write_notify_backend = marker_value_from_line(
+        strict_rank_lines[1], "payload_trace_write_notify_backend")
     strict_recv_path = marker_value_from_line(strict_rank_lines[1],
                                              "payload_recv_path")
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
@@ -5261,14 +5277,14 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
-            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
+            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
             f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
             f"| payload data flow | {'passed' if strict_data_flow_ok else strict_data_flow_reason} | source fingerprint must propagate from rank0 user HBM into rank0 local HCCL Buffer and then into rank1 output HBM through the selected read/write/direct-output path |",
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
-            f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success |",
+            f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success. NBI write-with-notify evidence also requires channel-fence completion. |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",
@@ -5854,6 +5870,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         package_text = ""
     package_payload_ready = PackageTextPayloadReady(package_text)
     RecordPackageCapabilityArgs(args, package_text)
+    if package_payload_ready:
+        EnableHcommPayloadCandidateMatrix(args)
 
     matrix_args = copy.copy(args)
     matrix_args.run_hccl_smoke = False
@@ -5945,9 +5963,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "HCOMM channel resource probe, and HCOMM payload readiness. It then "
         "runs --hcomm-require-payload-copy as a required positive check when "
         "the Stage 3B.3E payload package is installed, or as an optional "
-        "expected negative while the package is not ready. When "
-        "--auto-run-hcomm-payload-candidate-matrix is enabled, a failed "
-        "default comm-name strict run triggers the built-in Stage 3B.3E "
+        "expected negative while the package is not ready. When the package "
+        "is payload-ready, a failed default comm-name strict run "
+        "automatically triggers the built-in Stage 3B.3E "
         "candidate matrix: channel-handle binding, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
         "direct-output, and no-comm-acquire isolation. Channel-handle, "
@@ -6039,6 +6057,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     except OSError:
         package_text = ""
     RecordPackageCapabilityArgs(args, package_text)
+    EnableHcommPayloadCandidateMatrix(args)
 
     strict_args = copy.copy(args)
     strict_args.build_hcomm_custom_op = True
@@ -6146,9 +6165,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_semantic_v11=present, "
         "payload_thread_notify_order=..., "
         "source/received/expected checksum match, payload_verify=passed, and "
-        "fallback=none. If --auto-run-hcomm-payload-candidate-matrix is "
-        "enabled, a failed default comm-name run may be followed by the "
-        "built-in Stage 3B.3E candidate matrix: channel-handle binding, "
+        "fallback=none. If the package is payload-ready, a failed default "
+        "comm-name run is followed by the built-in Stage 3B.3E candidate "
+        "matrix: channel-handle binding, "
         "write-path, write-with-notify, channel-fence, no-batch, "
         "tagged-batch, direct-output, and no-comm-acquire isolation. "
         "Only complete strict-positive "
@@ -6230,6 +6249,7 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     except OSError:
         package_text = ""
     RecordPackageCapabilityArgs(args, package_text)
+    EnableHcommPayloadCandidateMatrix(args)
 
     strict_args = copy.copy(args)
     strict_args.build_hcomm_custom_op = True
@@ -6315,9 +6335,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "Stage 3B.3E strict HCOMM payload copy, then runs storage HBM smoke "
         "through the HCOMM payload scheduler. Success requires the strict "
         "payload evidence to pass and rank1 storage verification to report "
-        "storage_hbm=hcomm-payload-staging. With "
-        "--auto-run-hcomm-payload-candidate-matrix, a failed default "
-        "comm-name storage run may be followed by the built-in Stage 3B.4 "
+        "storage_hbm=hcomm-payload-staging. A failed default "
+        "comm-name storage run is followed by the built-in Stage 3B.4 "
         "storage candidate matrix: channel-handle binding, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
         "direct-output, and no-comm-acquire isolation. The write-path matrix "
@@ -8135,14 +8154,7 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
     if args.auto_run_hcomm_payload_candidate_matrix:
-        args.auto_run_hcomm_payload_channel_handle_candidate = True
-        args.auto_run_hcomm_payload_write_path_candidate = True
-        args.auto_run_hcomm_payload_write_with_notify_candidate = True
-        args.auto_run_hcomm_payload_channel_fence_diagnostic = True
-        args.auto_run_hcomm_payload_nobatch_diagnostic = True
-        args.auto_run_hcomm_payload_tagged_diagnostic = True
-        args.auto_run_hcomm_payload_direct_output_diagnostic = True
-        args.auto_run_hcomm_payload_no_comm_acquire_diagnostic = True
+        EnableHcommPayloadCandidateMatrix(args)
     args.hccl_host_ifname = args.hccl_host_ifname.strip()
     args.hccl_host_ip = args.hccl_host_ip.strip()
     if args.hccl_smoke_timeout_sec < 0:
