@@ -733,6 +733,10 @@ target_link_libraries(flume-sim-collective-demo PRIVATE flume)
 target_include_directories(flume-sim-collective-demo PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 if(FLUME_ENABLE_HCCL)
+  add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
+  target_link_libraries(flume-acl-runtime-probe PRIVATE flume)
+  target_include_directories(flume-acl-runtime-probe PRIVATE ${ACL_INCLUDE_DIR})
+
   add_executable(flume-hccl-collective-smoke apps/flume-hccl-collective-smoke.cc)
   target_link_libraries(flume-hccl-collective-smoke PRIVATE flume)
   target_include_directories(flume-hccl-collective-smoke

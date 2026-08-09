@@ -1771,6 +1771,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 args.custom_op_aicpu_tar)
         hccl_devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
         manual_device_ips = ParseDeviceIpMap(args.hccl_device_ips)
+        acl_probe_devices: Optional[str] = None
         if init_mode == "rank-table":
             if args.hccl_rank_table:
                 rank_table = Path(args.hccl_rank_table)
@@ -1790,6 +1791,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 smoke_devices = ",".join(str(i) for i in range(len(hccl_devices)))
             else:
                 smoke_devices = ",".join(hccl_devices)
+            acl_probe_devices = smoke_devices
             command = [
                 sys.executable,
                 "tools/flume_hccl_multiproc.py",
@@ -1808,6 +1810,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 smoke_devices = ",".join(str(i) for i in range(len(hccl_devices)))
             else:
                 smoke_devices = ",".join(hccl_devices)
+            acl_probe_devices = smoke_devices
             if run_dir is None:
                 raise RuntimeError("root-info multi-process mode requires a log run directory")
             root_info_file = run_dir / "hccl-root-info.bin"
@@ -1827,8 +1830,10 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             env_updates["ASCEND_RT_VISIBLE_DEVICES"] = ",".join(hccl_devices)
             logical_devices = ",".join(str(i) for i in range(len(hccl_devices)))
             command.append(f"--devices={logical_devices}")
+            acl_probe_devices = logical_devices
         elif hccl_devices:
             command.append(f"--devices={','.join(hccl_devices)}")
+            acl_probe_devices = ",".join(hccl_devices)
         if args.run_a3_symmetric_smoke:
             command.append("--a3-symmetric")
             command.append(f"--sym-win-gb={args.hccl_sym_win_gb}")
@@ -1884,6 +1889,11 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             if args.hcomm_payload_batch_tag:
                 command.append(
                     f"--hcomm-payload-batch-tag={args.hcomm_payload_batch_tag}")
+        acl_probe = [str(Path(build_dir) / "flume-acl-runtime-probe")]
+        if acl_probe_devices:
+            acl_probe.append(f"--devices={acl_probe_devices}")
+        commands.append(CommandSpec("acl-runtime-probe", acl_probe, True,
+                                    env_updates))
         commands.append(CommandSpec("hccl-collective-smoke", command, True,
                                     env_updates))
     return commands
@@ -5368,7 +5378,8 @@ def AnalyzeNpuRuntimeDiagnostics(run_dir: Path,
                                   combined_smoke_text: str) -> tuple[str, str, str]:
     """Classify pre-payload NPU runtime failures without exposing host details."""
     texts = [combined_smoke_text]
-    for pattern in ("*-npu-smi-info-m.log", "*-npu-topo-check.log"):
+    for pattern in ("*-npu-smi-info-m.log", "*-npu-topo-check.log",
+                    "*-acl-runtime-probe.log"):
         for path in sorted(run_dir.glob(pattern)):
             texts.append(path.read_text(encoding="utf-8", errors="replace"))
     rank_dir = run_dir / "hccl-rank-logs"
@@ -6762,6 +6773,8 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                    else args.step_timeout_sec)
         result = runner.run(spec.name, spec.command, required=spec.required,
                             timeout_seconds=timeout, env_updates=spec.env_updates)
+        if spec.name == "acl-runtime-probe" and result.returncode != 0:
+            break
         if spec.name == "hccl-collective-smoke":
             smoke_result = result
             smoke_spec = spec
@@ -6965,6 +6978,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                             not allow_accepted_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
+        if step_name == "acl-runtime-probe" and result.returncode != 0:
+            strict_tree_log = result.log_path
+            break
         if step_name == primary_step_name:
             strict_result = result
             strict_tree_log = result.log_path
@@ -7171,6 +7187,9 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                             not allow_accepted_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
+        if step_name == "acl-runtime-probe" and result.returncode != 0:
+            strict_tree_log = result.log_path
+            break
         if step_name == "hcomm-storage-strict-positive":
             strict_result = result
             strict_tree_log = result.log_path
