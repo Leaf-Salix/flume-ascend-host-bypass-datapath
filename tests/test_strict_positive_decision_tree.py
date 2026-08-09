@@ -3036,6 +3036,8 @@ def main() -> int:
         assert "selected_payload_rank1_trace_schema=v3" in pass_evidence_text
         assert "selected_payload_rank0_trace_word_count=82" in pass_evidence_text
         assert "selected_payload_rank1_trace_word_count=82" in pass_evidence_text
+        assert "selected_payload_rank0_trace_count=16" in pass_evidence_text
+        assert "selected_payload_rank1_trace_count=18" in pass_evidence_text
         assert "selected_payload_rank0_trace_status_word=0" in pass_evidence_text
         assert "selected_payload_rank1_trace_status_word=0" in pass_evidence_text
         assert "selected_payload_rank0_trace_hcomm_ret=0" in pass_evidence_text

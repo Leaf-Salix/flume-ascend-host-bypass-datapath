@@ -6233,6 +6233,7 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
             "payload_primitive_state",
             "payload_trace_schema",
             "payload_trace_word_count",
+            "payload_trace_count",
             "payload_trace_status_word",
             "payload_trace_hcomm_ret",
             "payload_trace_result",
