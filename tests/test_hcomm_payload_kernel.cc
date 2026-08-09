@@ -189,6 +189,16 @@ void CheckTraceFinishedWithStatus(const uint32_t* trace, uint32_t status) {
       FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
 }
 
+int FindTraceEvent(const uint32_t* trace, uint32_t event) {
+  const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    if (trace[event_base + i] == event) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 }  // namespace
 
 int main() {
@@ -984,6 +994,37 @@ int main() {
   FLUME_TEST_CHECK(status[0] ==
                    FLUME_HCOMM_PAYLOAD_STATUS_DONE_NOTIFY_WAIT_FAILED);
   FLUME_TEST_CHECK(status[1] == 55U);
+
+  Reset();
+  write_with_notify_ret = 62;
+  status[0] = 0xFFFFFFFFU;
+  status[1] = 0xFFFFFFFFU;
+  reset_trace();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status, trace);
+  send_desc.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH |
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_WITH_NOTIFY;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
+  FLUME_TEST_CHECK(status[0] ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
+  FLUME_TEST_CHECK(status[1] == 62U);
+  CheckTraceFinishedWithStatus(
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
+  FLUME_TEST_CHECK(trace[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
+  FLUME_TEST_CHECK(trace[3] == 0U);
+  const int write_notify_enter = FindTraceEvent(
+      trace, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER);
+  const int write_notify_done = FindTraceEvent(
+      trace, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE);
+  FLUME_TEST_CHECK(write_notify_enter >= 0);
+  FLUME_TEST_CHECK(write_notify_done == write_notify_enter + 1);
+  FLUME_TEST_CHECK(trace[ret_base + write_notify_done] == 62U);
+  const int write_notify_failure_calls[] = {
+      kAcquireComm, kBatchStart, kLocalCopy, kWriteWithNotify, kBatchEnd,
+      kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(write_notify_failure_calls, 6));
 
   Reset();
   status[0] = 0xFFFFFFFFU;
