@@ -387,6 +387,15 @@ def strict_log_with_trace_transfer_mismatch() -> str:
         1)
 
 
+def strict_log_with_missing_layout() -> str:
+    return strict_log(True).replace("payload_layout=read-default ", "")
+
+
+def strict_log_with_layout_mismatch() -> str:
+    return strict_log_with_recv_direct_output().replace(
+        "payload_layout=read-direct-output", "payload_layout=read-default", 1)
+
+
 def strict_log_with_missing_trace_first_error_markers() -> str:
     text = strict_log(True)
     for marker in (
@@ -1202,6 +1211,28 @@ def main() -> int:
         assert "transfer=rank0:write/rank1:read" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_trace_transfer_mismatch())[0]
+        strict_missing_layout = write(
+            tmp / "strict-missing-layout.log",
+            strict_log_with_missing_layout())
+        missing_layout_dir = tmp / "missing-layout"
+        missing_layout_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            missing_layout_dir, smoke, strict_missing_layout, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_missing_layout())[0]
+        strict_layout_mismatch = write(
+            tmp / "strict-layout-mismatch.log",
+            strict_log_with_layout_mismatch())
+        layout_mismatch_dir = tmp / "layout-mismatch"
+        layout_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            layout_mismatch_dir, smoke, strict_layout_mismatch, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_layout_mismatch())[0]
         strict_channel_handle = strict_log_with_channel_handle_binding(
             strict_log(True))
         strict_channel_handle_no_batch = strict_log_with_no_batch(

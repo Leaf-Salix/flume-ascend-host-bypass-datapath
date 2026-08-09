@@ -2121,6 +2121,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_comm_binding=comm-name",
     "payload_desc_batch_tag=",
     "payload_transfer_mode=",
+    "payload_layout=",
     "payload_recv_path=",
     "payload_semantic_v6=present",
     "payload_semantic_v7=present",
@@ -2305,13 +2306,14 @@ def StrictPayloadTraceDescriptorPassed(
         payload_acquire = MarkerValueFromLine(line, "payload_comm_acquire")
         trace_acquire = MarkerValueFromLine(line, "payload_trace_comm_acquire")
         payload_transfer = MarkerValueFromLine(line, "payload_transfer_mode")
+        payload_layout = MarkerValueFromLine(line, "payload_layout")
         trace_transfer = MarkerValueFromLine(
             line, "payload_trace_transfer_mode")
         values = (
             desc_bytes, trace_bytes, desc_ready, trace_ready, desc_done,
             trace_done, payload_batch, trace_batch, payload_recv, trace_recv,
             payload_binding, trace_binding, payload_acquire, trace_acquire,
-            payload_transfer, trace_transfer)
+            payload_transfer, payload_layout, trace_transfer)
         if any(value == "missing" for value in values):
             return False, f"rank{rank}-missing-trace-descriptor-field"
         if desc_bytes != trace_bytes:
@@ -2330,6 +2332,19 @@ def StrictPayloadTraceDescriptorPassed(
             return False, f"rank{rank}-trace-comm-acquire-mismatch"
         if payload_transfer != trace_transfer:
             return False, f"rank{rank}-trace-transfer-mismatch"
+        expected_layout = "read-default"
+        if payload_transfer == "write-with-notify":
+            expected_layout = "write-with-notify"
+        elif payload_transfer == "write":
+            expected_layout = "write"
+        elif (payload_batch == "off" and
+              payload_binding == "channel-handle" and
+              payload_recv == "direct-output"):
+            expected_layout = "official-p2p"
+        elif payload_recv == "direct-output":
+            expected_layout = "read-direct-output"
+        if payload_layout != expected_layout:
+            return False, f"rank{rank}-payload-layout-mismatch"
     return True, "passed"
 
 
@@ -5892,6 +5907,8 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
         rank_lines[0], "payload_trace_transfer_mode")
     rank1_trace_transfer = MarkerValueFromLine(
         rank_lines[1], "payload_trace_transfer_mode")
+    rank0_layout = MarkerValueFromLine(rank_lines[0], "payload_layout")
+    rank1_layout = MarkerValueFromLine(rank_lines[1], "payload_layout")
     return [
         f"selected_evidence_log={evidence_log.name}",
         f"selected_payload_rank0_trace_path={rank0_path}",
@@ -5900,6 +5917,8 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
         f"selected_payload_rank1_transfer_mode={rank1_transfer}",
         f"selected_payload_rank0_trace_transfer_mode={rank0_trace_transfer}",
         f"selected_payload_rank1_trace_transfer_mode={rank1_trace_transfer}",
+        f"selected_payload_rank0_layout={rank0_layout}",
+        f"selected_payload_rank1_layout={rank1_layout}",
         "selected_payload_recv_path=" +
         MarkerValueFromLine(rank_lines[1], "payload_recv_path"),
         "selected_payload_trace_recv_path=" +
