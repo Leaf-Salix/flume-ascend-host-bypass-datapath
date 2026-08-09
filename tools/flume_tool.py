@@ -88,6 +88,33 @@ HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
 HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION = "FlumeHcommPayloadTraceSchemaVersion"
 HCOMM_PAYLOAD_TRACE_WORD_COUNT = "FlumeHcommPayloadTraceWordCount"
+HCOMM_PAYLOAD_READY_FUNCTION_LABELS = (
+    "payload_direct_aclrt",
+    "payload_abi_v4",
+    "payload_semantic",
+    "payload_semantic_v5",
+    "payload_semantic_v6",
+    "payload_semantic_v7",
+    "payload_semantic_v8",
+    "payload_semantic_v9",
+    "payload_semantic_v10",
+    "payload_semantic_v11",
+    "payload_semantic_v12",
+    "payload_semantic_v13",
+    "payload_semantic_v14",
+    "payload_semantic_v15",
+    "payload_semantic_v16",
+    "payload_semantic_v17",
+    "payload_requires_comm_acquire",
+    "payload_official_p2p_layout",
+    "payload_status_schema",
+    "payload_status_word_count",
+    "payload_trace_schema",
+    "payload_trace_word_count",
+    "payload_primitive_deps",
+    "payload_no_hccl_sendrecv_deps",
+    "build_mode_internal",
+)
 HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
     "HcommAcquireComm",
     "HcommReleaseComm",
@@ -641,31 +668,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         return False
     payload_required = {
         "canary_direct_aclrt",
-        "payload_direct_aclrt",
-        "payload_abi_v4",
-        "payload_semantic",
-        "payload_semantic_v5",
-        "payload_semantic_v6",
-        "payload_semantic_v7",
-        "payload_semantic_v8",
-        "payload_semantic_v9",
-        "payload_semantic_v10",
-        "payload_semantic_v11",
-        "payload_semantic_v12",
-        "payload_semantic_v13",
-        "payload_semantic_v14",
-        "payload_semantic_v15",
-        "payload_semantic_v16",
-        "payload_semantic_v17",
-        "payload_requires_comm_acquire",
-        "payload_official_p2p_layout",
-        "payload_status_schema",
-        "payload_status_word_count",
-        "payload_trace_schema",
-        "payload_trace_word_count",
-        "payload_primitive_deps",
-        "payload_no_hccl_sendrecv_deps",
-        "build_mode_internal",
+        *HCOMM_PAYLOAD_READY_FUNCTION_LABELS,
     }
     return any(status == "PASS" and payload_required.issubset(required_set)
                for required_set, status in PackageRequirementBlocks(
@@ -8142,31 +8145,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
 
     required_functions = ["canary_direct_aclrt"]
     if args.require_hcomm_payload_kernel:
-        required_functions.append("payload_direct_aclrt")
-        required_functions.append("payload_abi_v4")
-        required_functions.append("payload_semantic")
-        required_functions.append("payload_semantic_v5")
-        required_functions.append("payload_semantic_v6")
-        required_functions.append("payload_semantic_v7")
-        required_functions.append("payload_semantic_v8")
-        required_functions.append("payload_semantic_v9")
-        required_functions.append("payload_semantic_v10")
-        required_functions.append("payload_semantic_v11")
-        required_functions.append("payload_semantic_v12")
-        required_functions.append("payload_semantic_v13")
-        required_functions.append("payload_semantic_v14")
-        required_functions.append("payload_semantic_v15")
-        required_functions.append("payload_semantic_v16")
-        required_functions.append("payload_semantic_v17")
-        required_functions.append("payload_requires_comm_acquire")
-        required_functions.append("payload_official_p2p_layout")
-        required_functions.append("payload_status_schema")
-        required_functions.append("payload_status_word_count")
-        required_functions.append("payload_trace_schema")
-        required_functions.append("payload_trace_word_count")
-        required_functions.append("payload_primitive_deps")
-        required_functions.append("payload_no_hccl_sendrecv_deps")
-        required_functions.append("build_mode_internal")
+        required_functions.extend(HCOMM_PAYLOAD_READY_FUNCTION_LABELS)
 
     found_any_json = False
     found_required = False

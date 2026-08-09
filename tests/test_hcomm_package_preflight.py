@@ -778,6 +778,37 @@ def main() -> int:
             repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
             KERNEL_JSON
         )
+        assert flume_tool.HCOMM_PAYLOAD_READY_FUNCTION_LABELS == (
+            "payload_direct_aclrt",
+            "payload_abi_v4",
+            "payload_semantic",
+            "payload_semantic_v5",
+            "payload_semantic_v6",
+            "payload_semantic_v7",
+            "payload_semantic_v8",
+            "payload_semantic_v9",
+            "payload_semantic_v10",
+            "payload_semantic_v11",
+            "payload_semantic_v12",
+            "payload_semantic_v13",
+            "payload_semantic_v14",
+            "payload_semantic_v15",
+            "payload_semantic_v16",
+            "payload_semantic_v17",
+            "payload_requires_comm_acquire",
+            "payload_official_p2p_layout",
+            "payload_status_schema",
+            "payload_status_word_count",
+            "payload_trace_schema",
+            "payload_trace_word_count",
+            "payload_primitive_deps",
+            "payload_no_hccl_sendrecv_deps",
+            "build_mode_internal",
+        )
+        for label in flume_tool.HCOMM_PAYLOAD_READY_FUNCTION_LABELS:
+            if label.endswith("_deps"):
+                continue
+            assert label in flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS, label
         static_payload = json.loads(static_json_path.read_text(encoding="utf-8"))
         for label, function_name in flume_tool.HCOMM_CUSTOM_OP_FUNCTIONS.items():
             assert flume_tool.JsonDeclaresFunction(
