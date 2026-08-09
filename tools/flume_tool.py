@@ -82,12 +82,14 @@ HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
     "HcommLocalCopyOnThread",
     "HcommReadOnThread",
     "HcommWriteOnThread",
-    "HcommWriteWithNotifyOnThread",
     "HcommChannelNotifyRecordOnThread",
     "HcommChannelNotifyWaitOnThread",
     "HcommChannelFenceOnThread",
     "HcommThreadNotifyRecordOnThread",
     "HcommThreadNotifyWaitOnThread",
+)
+HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
+    "HcommWriteWithNotifyOnThread",
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
@@ -6173,7 +6175,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
             HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION,
             HCOMM_PAYLOAD_TRACE_WORD_COUNT,
-        ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
+        ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS) + list(
+            HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS)
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
         print(f"aicpu_tar_so_symbols={symbol_state}")
@@ -6311,6 +6314,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_semantic_v11_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11,
                                         False))
+                found_payload_semantic_v12_marker = (
+                    found_payload_semantic_v12_marker or
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12,
+                                        False))
                 found_payload_requires_comm_acquire_marker = (
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
@@ -6406,6 +6413,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                           f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
                 print("payload_primitive_deps="
                       f"{'present' if primitive_deps_present else 'missing'}")
+                for primitive_name in HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS:
+                    print("function_so.payload_optional_primitive_dep."
+                          f"{primitive_name}="
+                          f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
+                print("payload_optional_write_with_notify="
+                      f"{'present' if symbols_present.get('HcommWriteWithNotifyOnThread', False) else 'missing'}")
             if value_state == "present":
                 metadata_values_valid = all(
                     state == "match"

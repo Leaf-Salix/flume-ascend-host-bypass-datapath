@@ -301,7 +301,7 @@ to reference the HCOMM primitive symbols used by the payload path, including
 Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
 therefore not accepted as a real payload package. When the target host can load
 the tar-contained SO, preflight also calls the exported metadata functions and
-requires the current values: payload ABI v4, semantic v11, status schema v4,
+requires the current values: payload ABI v4, semantic v12, status schema v4,
 status word count 14, trace schema v2, trace word count 80, and
 comm-acquire marker 1.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
@@ -343,14 +343,14 @@ Strict-positive success must include
 `payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`, `payload_data_flow=passed`, `payload_host_data=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_schema=v2`, `payload_trace_word_count=80`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_ret_order=passed`,
-`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`,
-`payload_transfer_mode=read|write`, `payload_trace_transfer_mode=read|write`, `payload_trace_result=success`,
+`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`,
+`payload_transfer_mode=read|write|write-with-notify`, `payload_trace_transfer_mode=read|write|write-with-notify`, `payload_trace_result=success`,
 `payload_comm_binding=comm-name` plus `payload_comm_acquire=default`, or
 explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_semantic_v7=present`, `payload_semantic_v8=present`,
-`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`,
+`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`,
 `payload_thread_notify_order=...`, `payload_pattern=strict-v1`,
 source/received/expected checksum match, `payload_verify=passed`, and
 `fallback=none` on both ranks.

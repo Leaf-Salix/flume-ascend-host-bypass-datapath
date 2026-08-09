@@ -792,6 +792,7 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=missing" in marker_only.stdout
+        assert "payload_optional_write_with_notify=missing" in marker_only.stdout
         assert "reason=payload kernel package is missing HCOMM primitive dependencies" in marker_only.stdout
 
         v4_json, v4_tar = write_package(tmp, mode="v4")
@@ -843,6 +844,8 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in v4.stdout
+        assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=present" in v4.stdout
+        assert "payload_optional_write_with_notify=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
