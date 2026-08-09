@@ -2255,13 +2255,15 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       reinterpret_cast<uint64_t>(resource_info.remote_buffer);
   desc->local_hccl_buffer_bytes = resource_info.local_buffer_bytes;
   desc->remote_hccl_buffer_bytes = resource_info.remote_buffer_bytes;
-  if (!payload_batch_tag.empty()) {
-    const size_t tag_len = std::min(
-        payload_batch_tag.size(),
-        static_cast<size_t>(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES - 1U));
-    memcpy(desc->batch_tag, payload_batch_tag.data(), tag_len);
-    desc->batch_tag[tag_len] = '\0';
-  }
+  const char* batch_tag = payload_batch_tag.empty() ?
+      kDefaultHcommPayloadBatchTag : payload_batch_tag.c_str();
+  const size_t batch_tag_size = payload_batch_tag.empty() ?
+      strlen(kDefaultHcommPayloadBatchTag) : payload_batch_tag.size();
+  const size_t tag_len = std::min(
+      batch_tag_size,
+      static_cast<size_t>(FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES - 1U));
+  memcpy(desc->batch_tag, batch_tag, tag_len);
+  desc->batch_tag[tag_len] = '\0';
   desc->reserved2[0] = disable_payload_batch_mode ?
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED :
       FLUME_HCOMM_PAYLOAD_BATCH_MODE_DEFAULT;

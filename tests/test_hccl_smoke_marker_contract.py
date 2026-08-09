@@ -110,6 +110,29 @@ def main() -> int:
         print("missing host write-with-notify backend marker",
               file=sys.stderr)
         return 1
+    desc_start = client_text.find("void FillFlumePayloadCopyDesc(")
+    desc_end = client_text.find("bool IsUnsupportedHcclLaunchResult(",
+                                desc_start)
+    if desc_start == -1 or desc_end == -1:
+        print("could not find HCOMM payload descriptor fill block",
+              file=sys.stderr)
+        return 1
+    desc_block = client_text[desc_start:desc_end]
+    desc_markers = (
+        "payload_batch_tag.empty() ?",
+        "kDefaultHcommPayloadBatchTag",
+        "memcpy(desc->batch_tag",
+        "desc->batch_tag[tag_len] = '\\0'",
+    )
+    missing_desc_markers = [
+        marker for marker in desc_markers if marker not in desc_block
+    ]
+    if missing_desc_markers:
+        print("missing payload descriptor batch-tag fill marker(s):",
+              file=sys.stderr)
+        for marker in missing_desc_markers:
+            print(f"  {marker}", file=sys.stderr)
+        return 1
     start = client_text.find("bool JsonLooksPayloadReady(")
     end = client_text.find("if (json_text.empty())", start)
     if start == -1 or end == -1:
