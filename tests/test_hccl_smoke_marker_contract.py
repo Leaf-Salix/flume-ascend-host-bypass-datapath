@@ -96,6 +96,7 @@ RUNTIME_PACKAGE_READY_MARKERS = (
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC",
 )
 
@@ -176,6 +177,30 @@ def main() -> int:
         print("runtime package-ready marker(s) missing:", file=sys.stderr)
         for marker in missing_runtime:
             print(f"  {marker}", file=sys.stderr)
+        return 1
+    runtime_detail_start = client_text.find("std::string HcommPayloadRuntimeDetail(")
+    runtime_detail_end = client_text.find("#if FLUME_BUILD_HCOMM_CUSTOM_OP",
+                                          runtime_detail_start)
+    if runtime_detail_start == -1 or runtime_detail_end == -1:
+        print("could not find HcommPayloadRuntimeDetail block",
+              file=sys.stderr)
+        return 1
+    runtime_detail_block = client_text[runtime_detail_start:runtime_detail_end]
+    if "payload_semantic_v19=present" not in runtime_detail_block:
+        print("runtime strict payload detail is missing semantic v19 marker",
+              file=sys.stderr)
+        return 1
+    payload_lookup_start = client_text.find("const PayloadAclrtRequiredFunction required_functions[]")
+    payload_lookup_end = client_text.find("void* kernel_trace_dev = nullptr;",
+                                          payload_lookup_start)
+    if payload_lookup_start == -1 or payload_lookup_end == -1:
+        print("could not find payload direct ACL required function block",
+              file=sys.stderr)
+        return 1
+    payload_lookup_block = client_text[payload_lookup_start:payload_lookup_end]
+    if "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19_FUNC" not in payload_lookup_block:
+        print("payload direct ACL loader does not require semantic v19",
+              file=sys.stderr)
         return 1
     return 0
 
