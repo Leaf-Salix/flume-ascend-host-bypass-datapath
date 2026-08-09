@@ -2238,8 +2238,6 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     transfer_mode = MarkerValueFromLine(rank0_line, "payload_transfer_mode")
     recv_path = MarkerValueFromLine(rank1_line, "payload_recv_path")
     expected_payload = rank0_local_exit
-    if rank1_local_entry == expected_payload:
-        return False, "recv-local-entry-already-matched"
     if rank1_remote_entry != expected_payload:
         return False, "recv-remote-entry-mismatch"
     if (rank0_remote_entry != "not-sampled" and
@@ -2250,11 +2248,23 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
         return False, "send-transfer-exit-mismatch"
     if rank1_transfer_exit != expected_payload:
         return False, "recv-transfer-exit-mismatch"
-    if recv_path == "direct-output":
+    if transfer_mode in ("write", "write-with-notify"):
+        if recv_path != "local-buffer":
+            return False, "unsupported-transfer-or-recv-path"
+        if rank1_local_entry != expected_payload:
+            return False, "recv-local-buffer-mismatch"
+        if rank1_transfer_exit != expected_payload:
+            return False, "recv-transfer-exit-mismatch"
+        if rank1_local_exit != expected_payload:
+            return False, "recv-local-buffer-mismatch"
+        if rank1_user_exit != expected_payload:
+            return False, "recv-output-copy-mismatch"
+    elif rank1_local_entry == expected_payload:
+        return False, "recv-local-entry-already-matched"
+    elif recv_path == "direct-output":
         if rank1_user_exit != expected_payload:
             return False, "recv-direct-output-mismatch"
-    elif (transfer_mode in ("read", "write", "write-with-notify") and
-          recv_path == "local-buffer"):
+    elif transfer_mode == "read" and recv_path == "local-buffer":
         if rank1_local_exit != expected_payload:
             return False, "recv-local-buffer-mismatch"
         if rank1_user_exit != expected_payload:

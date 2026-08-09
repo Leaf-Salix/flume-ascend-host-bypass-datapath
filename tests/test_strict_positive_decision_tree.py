@@ -249,6 +249,13 @@ def strict_write_path_log(include_verify: bool) -> str:
                         "payload_trace_primitive_path=send-write")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-write-local-copy")
+    marker = "payload_data_local_entry_fingerprint=111"
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing local-entry markers")
+    text = text[:second] + text[second:].replace(
+        marker, "payload_data_local_entry_fingerprint=222", 1)
     return text
 
 
@@ -272,6 +279,13 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
     text = text.replace(
         "payload_trace_primitive_path=recv-read-local-copy",
         "payload_trace_primitive_path=recv-write-notify-local-copy")
+    marker = "payload_data_local_entry_fingerprint=111"
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing local-entry markers")
+    text = text[:second] + text[second:].replace(
+        marker, "payload_data_local_entry_fingerprint=222", 1)
     return text
 
 
@@ -1197,6 +1211,13 @@ def main() -> int:
         assert "| payload data flow | recv-local-entry-already-matched |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_recv_local_entry_already_matched())[0]
+        strict_write_entry_match = strict_write_path_log(True)
+        write_entry_match_lines = flume_tool.ExtractStrictPayloadRankLines(
+            strict_write_entry_match)
+        assert flume_tool.StrictPayloadDataFlowPassed(
+            write_entry_match_lines) == (True, "passed")
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_entry_match)[0]
         strict_remote_entry_mismatch = write(
             tmp / "strict-remote-entry-mismatch.log",
             strict_log_with_recv_remote_entry_mismatch())
