@@ -6623,6 +6623,10 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
         MarkerValueFromLine(rank_lines[0], "payload_trace_primitive_path"),
         "selected_payload_rank1_trace_path=" +
         MarkerValueFromLine(rank_lines[1], "payload_trace_primitive_path"),
+        "selected_payload_rank0_trace_operand_layout=" +
+        MarkerValueFromLine(rank_lines[0], "payload_trace_operand_layout"),
+        "selected_payload_rank1_trace_operand_layout=" +
+        MarkerValueFromLine(rank_lines[1], "payload_trace_operand_layout"),
         "selected_payload_rank0_transfer_mode=" +
         MarkerValueFromLine(rank_lines[0], "payload_transfer_mode"),
         "selected_payload_rank1_transfer_mode=" +
@@ -6796,6 +6800,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
             "|send-write|recv-write-local-copy|send-write-with-notify"
             "|recv-write-notify-local-copy,"
+            "payload_trace_operand_layout=,"
             "payload_trace_bytes=,"
             "payload_trace_batch_mode=,"
             "payload_trace_recv_path=,"

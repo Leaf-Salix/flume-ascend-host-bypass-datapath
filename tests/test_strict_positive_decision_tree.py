@@ -3350,6 +3350,8 @@ def main() -> int:
         assert "selected_payload_focus_flags=<default-read-path>" in pass_evidence_text
         assert "selected_payload_rank0_trace_path=send-local-copy" in pass_evidence_text
         assert "selected_payload_rank1_trace_path=recv-read-local-copy" in pass_evidence_text
+        assert "selected_payload_rank0_trace_operand_layout=input-hbm->local-hccl-buffer" in pass_evidence_text
+        assert "selected_payload_rank1_trace_operand_layout=remote-hccl-buffer->local-hccl-buffer->output-hbm" in pass_evidence_text
         assert "selected_payload_rank0_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_rank1_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_recv_path=local-buffer" in pass_evidence_text
@@ -3519,6 +3521,7 @@ def main() -> int:
         assert "payload_kernel_hcomm_ret=0" in evidence_text
         assert "payload_echo=passed" in evidence_text
         assert "payload_descriptor_fingerprint=passed" in evidence_text
+        assert "payload_trace_operand_layout=," in evidence_text
 
     return 0
 
