@@ -1122,6 +1122,7 @@ def main() -> int:
                 "pattern=strict-sentinel-v1, bytes=4096;") in text
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
+        assert "| payload official-p2p layout marker | present |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0/ordered-notify, thread_notify=0, transfer=read, "
                 "layout=rank0:read-default/rank1:read-default, "
@@ -1146,6 +1147,8 @@ def main() -> int:
             no_official_p2p_dir, smoke, strict_no_official_p2p, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| payload official-p2p layout marker | missing |" in text
+        assert "official-p2p-layout-capable kernel" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_no_official_p2p.read_text(encoding="utf-8"))[0]
         strict_data_mismatch = write(tmp / "strict-data-mismatch.log",
@@ -2791,6 +2794,7 @@ def main() -> int:
         assert "payload_host_data=passed" in pass_evidence_text
         assert "payload_trace_order=passed" in pass_evidence_text
         assert "payload_trace_ret_order=passed" in pass_evidence_text
+        assert "payload_official_p2p_layout=present" in pass_evidence_text
         assert "payload_checksum_match=passed" in pass_evidence_text
         assert "fallback=none" in pass_evidence_text
         assert "selected_evidence_log=02-hcomm-payload-strict-positive.log" in pass_evidence_text

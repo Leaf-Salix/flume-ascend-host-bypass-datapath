@@ -5289,6 +5289,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic_v13 = marker_value(strict, "payload_semantic_v13")
     strict_semantic_v14 = marker_value(strict, "payload_semantic_v14")
     strict_semantic_v15 = marker_value(strict, "payload_semantic_v15")
+    strict_official_p2p_layout = marker_value(
+        strict, "payload_official_p2p_layout")
     strict_data_probe = marker_value(strict, "payload_data_probe")
     strict_data_sample_bytes = marker_value(
         strict, "payload_data_sample_bytes")
@@ -5586,6 +5588,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic v13 marker | {strict_semantic_v13} | `payload_semantic_v13=missing` means the package predates local-entry data-flow fingerprints |",
             f"| payload semantic v14 marker | {strict_semantic_v14} | `payload_semantic_v14=missing` means the package predates remote-entry data-flow fingerprints |",
             f"| payload semantic v15 marker | {strict_semantic_v15} | `payload_semantic_v15=missing` means the package predates transfer-exit data-flow fingerprints |",
+            f"| payload official-p2p layout marker | {strict_official_p2p_layout} | `payload_official_p2p_layout=missing` means the package predates official-p2p/channel-handle direct-output layout evidence |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
@@ -5629,6 +5632,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 next_action = (
                     "rebuild/reinstall payload custom-op package with current "
                     "Flume semantic v8 ordered-trace-capable kernel")
+            elif strict_official_p2p_layout == "missing":
+                next_action = (
+                    "rebuild/reinstall payload custom-op package with current "
+                    "Flume official-p2p-layout-capable kernel")
             elif strict_semantic == "missing":
                 next_action = (
                     "rebuild/reinstall payload custom-op package; semantic "
@@ -5765,6 +5772,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = (
                 "inspect HCOMM payload batch tag descriptor fill; expected "
                 "the stable default tag or an explicit custom tag")
+        elif strict_official_p2p_layout == "missing":
+            next_action = (
+                "rebuild/reinstall payload custom-op package with current "
+                "Flume official-p2p-layout-capable kernel")
         elif hcomm_abi_status in (
                 "not-collected", "missing", "call-shape-fail",
                 "call-shape-unknown"):
@@ -6013,6 +6024,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_first_error_event=none",
             "payload_trace_first_error_ret=0",
             "payload_trace_first_error_index=-1",
+            "payload_official_p2p_layout=present",
             "payload_verify=passed",
             "payload_checksum_match=passed",
             "fallback=none",
