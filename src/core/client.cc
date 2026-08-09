@@ -4369,7 +4369,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            payload_launch_api + " " +
                      PayloadBatchModeDetail(desc) +
                      " payload_kernel_status=success "
-                     "payload_failure_step=none "
+                     "payload_failure_step=primitive-return "
                      "payload_status_word=0 payload_kernel_hcomm_ret=") +
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +

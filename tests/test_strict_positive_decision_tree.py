@@ -1382,6 +1382,8 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
         assert "| kernel HCOMM ret | 42 |" in text
+        assert ("| rank0 suggested action | inspect rank 0 in-kernel HCOMM "
+                "primitive return code: 42 |") in text
         assert "inspect rank 0 in-kernel HCOMM primitive return code: 42" in text
 
         strict_local_copy_fail = write(

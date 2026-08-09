@@ -220,6 +220,9 @@ primitive 调用。该字段会细分为 `local-copy-failed`、
 `remote-read-failed`、`done-notify-record-failed`、`batch-start-failed`、
 `batch-end-failed` 或 `thread-notify-*-failed` 等阶段；失败时还会打印
 `payload_kernel_hcomm_ret=<ret>`，表示对应 HCOMM primitive 的原始返回码。
+如果 kernel status word 为 success 但 `payload_kernel_hcomm_ret` 非 0，
+`payload_failure_step=primitive-return` 会把问题归到 kernel 内 primitive
+返回码，而不是误标为 payload copy 完成。
 若同时看到 `payload_primitive_state=pending` 和
 `payload_kernel_hcomm_ret=4294967295`，表示 kernel 已进入
 `payload_failure_step` 对应的 HCOMM primitive，但 status read 时该

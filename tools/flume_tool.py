@@ -4060,11 +4060,16 @@ def RunHcommPayloadChannelFenceDiagnostic(
 
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing",
-                               first_error_event: str = "missing") -> str:
+                               first_error_event: str = "missing",
+                               hcomm_ret: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
     if primitive_state == "pending":
         return (prefix + "pending HCOMM primitive timeout/hang at " +
                 failure_step)
+    if failure_step in ("none", "primitive-return", "missing") and \
+            hcomm_ret not in ("0", "missing"):
+        return (prefix + "in-kernel HCOMM primitive return code: " +
+                hcomm_ret)
     if failure_step == "remote-write":
         if first_error_event in (
                 "send-remote-write-notify-enter",
@@ -4111,6 +4116,8 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
             "HCOMM done notify wait index and recv rank completion",
         "comm-release":
             "HcommReleaseComm cleanup after payload primitives complete",
+        "primitive-return":
+            "in-kernel HCOMM primitive return code",
     }
     if failure_step in actions:
         return prefix + actions[failure_step]
@@ -4554,7 +4561,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         rank_status[rank]["action"] = StrictPayloadFailureAction(
             rank, rank_status[rank]["failure_step"],
             rank_status[rank]["primitive_state"],
-            rank_status[rank]["trace_first_error_event"])
+            rank_status[rank]["trace_first_error_event"],
+            rank_status[rank]["hcomm_ret"])
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")
