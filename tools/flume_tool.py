@@ -3003,6 +3003,45 @@ def RunHcommPayloadWriteWithNotifyFallbackCandidates(
         args.auto_run_hcomm_payload_nobatch_diagnostic and
         not CommandUsesNoBatch(base_command))
 
+    if can_try_channel_fence:
+        fence_result = RunHcommPayloadWriteWithNotifyCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            channel_fence=True,
+            step_name=("hcomm-payload-write-with-notify-"
+                       "channel-fence-candidate"))
+        passed_log = remember(fence_result)
+        if passed_log is not None:
+            WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+    if can_try_no_batch:
+        no_batch_result = RunHcommPayloadWriteWithNotifyCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            no_batch=True,
+            step_name=("hcomm-payload-write-with-notify-"
+                       "nobatch-candidate"))
+        passed_log = remember(no_batch_result)
+        if passed_log is not None:
+            WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+        if can_try_channel_fence:
+            no_batch_fence_result = RunHcommPayloadWriteWithNotifyCandidate(
+                runner, base_command, env_updates, timeout_seconds,
+                default_log,
+                no_batch=True,
+                channel_fence=True,
+                step_name=("hcomm-payload-write-with-notify-"
+                           "nobatch-channel-fence-candidate"))
+            passed_log = remember(no_batch_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
+
     if can_try_channel_handle:
         channel_result = RunHcommPayloadWriteWithNotifyCandidate(
             runner, base_command, env_updates, timeout_seconds, default_log,
@@ -3187,6 +3226,43 @@ def RunHcommPayloadWritePathFallbackCandidates(
     can_try_no_batch = (
         args.auto_run_hcomm_payload_nobatch_diagnostic and
         not CommandUsesNoBatch(base_command))
+
+    if can_try_channel_fence:
+        fence_result = RunHcommPayloadWritePathCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            channel_fence=True,
+            step_name="hcomm-payload-write-path-channel-fence-candidate")
+        passed_log = remember(fence_result)
+        if passed_log is not None:
+            WriteHcommPayloadWritePathCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+    if can_try_no_batch:
+        no_batch_result = RunHcommPayloadWritePathCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            no_batch=True,
+            step_name="hcomm-payload-write-path-nobatch-candidate")
+        passed_log = remember(no_batch_result)
+        if passed_log is not None:
+            WriteHcommPayloadWritePathCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+        if can_try_channel_fence:
+            no_batch_fence_result = RunHcommPayloadWritePathCandidate(
+                runner, base_command, env_updates, timeout_seconds,
+                default_log,
+                no_batch=True,
+                channel_fence=True,
+                step_name=("hcomm-payload-write-path-nobatch-"
+                           "channel-fence-candidate"))
+            passed_log = remember(no_batch_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadWritePathCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
 
     if can_try_channel_handle:
         channel_result = RunHcommPayloadWritePathCandidate(
@@ -4790,11 +4866,17 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-channel-fence-diagnostic",
     "hcomm-payload-tagged-diagnostic",
     "hcomm-payload-write-path-candidate",
+    "hcomm-payload-write-path-channel-fence-candidate",
+    "hcomm-payload-write-path-nobatch-candidate",
+    "hcomm-payload-write-path-nobatch-channel-fence-candidate",
     "hcomm-payload-write-path-channel-handle-candidate",
     "hcomm-payload-write-path-channel-handle-channel-fence-candidate",
     "hcomm-payload-write-path-channel-handle-nobatch-candidate",
     "hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate",
     "hcomm-payload-write-with-notify-candidate",
+    "hcomm-payload-write-with-notify-channel-fence-candidate",
+    "hcomm-payload-write-with-notify-nobatch-candidate",
+    "hcomm-payload-write-with-notify-nobatch-channel-fence-candidate",
     "hcomm-payload-write-with-notify-channel-handle-candidate",
     "hcomm-payload-write-with-notify-channel-handle-channel-fence-candidate",
     "hcomm-payload-write-with-notify-channel-handle-nobatch-candidate",

@@ -1056,7 +1056,9 @@ def main() -> int:
         assert write_candidate_matrix.exists()
         write_candidate_matrix_text = write_candidate_matrix.read_text(
             encoding="utf-8")
-        assert "candidates_run: `5`" in write_candidate_matrix_text
+        assert "candidates_run: `8`" in write_candidate_matrix_text
+        assert ("hcomm-payload-write-path-nobatch-channel-fence-candidate"
+                in write_candidate_matrix_text)
         assert ("hcomm-payload-write-path-channel-handle-nobatch-"
                 "channel-fence-candidate | 0 | yes | passed"
                 in write_candidate_matrix_text)
@@ -1165,7 +1167,9 @@ def main() -> int:
         assert write_notify_matrix.exists()
         write_notify_matrix_text = write_notify_matrix.read_text(
             encoding="utf-8")
-        assert "candidates_run: `5`" in write_notify_matrix_text
+        assert "candidates_run: `8`" in write_notify_matrix_text
+        assert ("hcomm-payload-write-with-notify-nobatch-"
+                "channel-fence-candidate" in write_notify_matrix_text)
         assert ("hcomm-payload-write-with-notify-channel-handle-nobatch-"
                 "channel-fence-candidate | 0 | yes | passed"
                 in write_notify_matrix_text)
