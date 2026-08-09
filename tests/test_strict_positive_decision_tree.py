@@ -1082,6 +1082,36 @@ def main() -> int:
             package_payload_ready=False)
         assert helper_blocked is None
         assert helper_blocked_runner.calls == []
+        helper_write_runner = FakeCandidateRunner(
+            tmp / "strict-followup-helper-write")
+        flume_tool.RunHcommPayloadStrictFailureFollowups(
+            helper_write_runner,
+            candidate_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-require-payload-copy",
+             "--hcomm-payload-write-path"],
+            None,
+            10,
+            channel_log,
+            package_payload_ready=True)
+        assert all(
+            "--hcomm-payload-recv-direct-output" not in call[1]
+            for call in helper_write_runner.calls)
+        helper_write_notify_runner = FakeCandidateRunner(
+            tmp / "strict-followup-helper-write-notify")
+        flume_tool.RunHcommPayloadStrictFailureFollowups(
+            helper_write_notify_runner,
+            candidate_args,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-require-payload-copy",
+             "--hcomm-payload-write-with-notify"],
+            None,
+            10,
+            channel_log,
+            package_payload_ready=True)
+        assert all(
+            "--hcomm-payload-recv-direct-output" not in call[1]
+            for call in helper_write_notify_runner.calls)
 
         strict_write_channel_handle = strict_log_with_channel_handle_binding(
             strict_write_path_log(True))

@@ -2657,7 +2657,8 @@ def HasAcceptedPayloadCandidate(args: argparse.Namespace,
         return True
     if (getattr(args, "auto_run_hcomm_payload_direct_output_diagnostic", False) and
             not CommandUsesDirectOutputRecv(command) and
-            not CommandUsesWritePath(command)):
+            not CommandUsesWritePath(command) and
+            not CommandUsesWriteWithNotify(command)):
         return True
     return False
 
@@ -2706,7 +2707,9 @@ def RunHcommPayloadStrictFailureFollowups(
             getattr(args, "hcomm_payload_diagnostic_batch_tag",
                     "flume-payload-v1"))
     if (getattr(args, "auto_run_hcomm_payload_direct_output_diagnostic", False) and
-            not CommandUsesDirectOutputRecv(base_command)):
+            not CommandUsesDirectOutputRecv(base_command) and
+            not CommandUsesWritePath(base_command) and
+            not CommandUsesWriteWithNotify(base_command)):
         RunHcommPayloadDirectOutputDiagnostic(
             runner, base_command, env_updates, timeout_seconds, default_log)
     if (getattr(args, "auto_run_hcomm_payload_channel_fence_diagnostic", False) and
@@ -3833,7 +3836,9 @@ def RunHcommPayloadChannelHandleFallbackCandidates(
         not CommandUsesChannelFence(base_command))
     can_try_direct_output = (
         args.auto_run_hcomm_payload_direct_output_diagnostic and
-        not CommandUsesDirectOutputRecv(base_command))
+        not CommandUsesDirectOutputRecv(base_command) and
+        not CommandUsesWritePath(base_command) and
+        not CommandUsesWriteWithNotify(base_command))
     can_try_no_batch = (
         args.auto_run_hcomm_payload_nobatch_diagnostic and
         not CommandUsesNoBatch(base_command))
