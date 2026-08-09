@@ -455,7 +455,10 @@ strict payload smoke。该检查还会确认 AICPU tar
 payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
 `HcommReadOnThread`、`HcommWriteOnThread`、HCOMM Channel Notify、Batch、
 Comm Acquire/Release 等 primitive 依赖；只导出 Flume marker 但没有引用
-HCOMM primitive 的 marker-only 包会被拒绝。如果当前机器能加载 tar 内
+HCOMM primitive 的 marker-only 包会被拒绝。preflight 会同时打印旧兼容 marker `payload_no_hccl_sendrecv_deps`
+和广义 marker `payload_no_hccl_payload_api_deps`；后者覆盖 HCCL
+Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
+如果当前机器能加载 tar 内
 SO，preflight 还会调用这些无参 metadata 函数并要求返回值匹配当前
 ABI：payload ABI v4、semantic v19、status schema v7、status word count
 17、trace schema v3、trace word count 82、comm-acquire marker 1，以及

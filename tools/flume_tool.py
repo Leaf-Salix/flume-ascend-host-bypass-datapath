@@ -119,6 +119,7 @@ HCOMM_PAYLOAD_READY_FUNCTION_LABELS = (
     "payload_trace_word_count",
     "payload_primitive_deps",
     "payload_no_hccl_sendrecv_deps",
+    "payload_no_hccl_payload_api_deps",
     "build_mode_internal",
 )
 HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
@@ -696,6 +697,9 @@ def PackageTextPayloadReady(package_text: str) -> bool:
     if re.search(r"^payload_no_hccl_sendrecv_deps=failed$",
                  package_text, re.MULTILINE):
         return False
+    if re.search(r"^payload_no_hccl_payload_api_deps=failed$",
+                 package_text, re.MULTILINE):
+        return False
     payload_required = {
         "canary_direct_aclrt",
         *HCOMM_PAYLOAD_READY_FUNCTION_LABELS,
@@ -757,6 +761,10 @@ def PackageTextReason(package_text: str) -> str:
                 package_text, re.MULTILINE):
             return "custom-op AICPU tar symbols unavailable"
         if re.search(r"^payload_no_hccl_sendrecv_deps=failed$",
+                     package_text, re.MULTILINE):
+            return ("payload kernel package references forbidden HCCL "
+                    "payload or collective symbols")
+        if re.search(r"^payload_no_hccl_payload_api_deps=failed$",
                      package_text, re.MULTILINE):
             return ("payload kernel package references forbidden HCCL "
                     "payload or collective symbols")
@@ -9019,6 +9027,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                           f"{'present' if symbols_present.get(forbidden_name, False) else 'absent'}")
                 print("payload_no_hccl_sendrecv_deps="
                       f"{'passed' if forbidden_hccl_p2p_absent else 'failed'}")
+                print("payload_no_hccl_payload_api_deps="
+                      f"{'passed' if forbidden_hccl_p2p_absent else 'failed'}")
             if value_state == "present":
                 metadata_values_valid = all(
                     state == "match"
@@ -9053,14 +9063,16 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             if args.require_hcomm_payload_kernel:
                 print("payload_primitive_deps=missing")
                 print("payload_no_hccl_sendrecv_deps=failed")
+                print("payload_no_hccl_payload_api_deps=failed")
 
         required_ok = (
             tar_state == "present" and tar_so_state == "present" and
             all(functions_present.get(label, False)
                 for label in required_functions
-                if label not in (
-                    "payload_primitive_deps",
-                    "payload_no_hccl_sendrecv_deps")))
+                    if label not in (
+                        "payload_primitive_deps",
+                        "payload_no_hccl_sendrecv_deps",
+                        "payload_no_hccl_payload_api_deps")))
         if symbol_state in ("unreadable", "not-checked"):
             required_ok = False
         elif symbol_state == "present":
@@ -9069,7 +9081,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 for label in required_functions
                 if label not in (
                     "payload_primitive_deps",
-                    "payload_no_hccl_sendrecv_deps"))
+                    "payload_no_hccl_sendrecv_deps",
+                    "payload_no_hccl_payload_api_deps"))
             if args.require_hcomm_payload_kernel:
                 required_ok = (
                     required_ok and

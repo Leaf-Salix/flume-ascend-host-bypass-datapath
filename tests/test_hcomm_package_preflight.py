@@ -52,6 +52,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
                 "v4_no_write_with_notify", "v4_with_hccl_p2p",
                 "v4_with_hccl_collective",
                 "v4_with_hccl_alltoall",
+                "v4_with_hccl_one_sided",
                 "v4_with_hccl_p2p_string",
                 "v4_with_hccl_p2p_json", "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
@@ -84,6 +85,10 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         if mode == "v4_with_hccl_alltoall":
             lines.extend([
                 "int HcclAlltoAll(void) { return 0; }",
+            ])
+        if mode == "v4_with_hccl_one_sided":
+            lines.extend([
+                "int HcclBatchWrite(void) { return 0; }",
             ])
         if mode == "v4_with_hccl_p2p_string":
             lines.extend([
@@ -869,6 +874,7 @@ def main() -> int:
             "payload_trace_word_count",
             "payload_primitive_deps",
             "payload_no_hccl_sendrecv_deps",
+            "payload_no_hccl_payload_api_deps",
             "build_mode_internal",
         )
         for label in flume_tool.HCOMM_PAYLOAD_READY_FUNCTION_LABELS:
@@ -1366,6 +1372,7 @@ def main() -> int:
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=absent" in v4.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclAllReduce=absent" in v4.stdout
         assert "payload_no_hccl_sendrecv_deps=passed" in v4.stdout
+        assert "payload_no_hccl_payload_api_deps=passed" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in v4.stdout
@@ -1386,6 +1393,7 @@ def main() -> int:
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=present" in hccp.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=present" in hccp.stdout
         assert "payload_no_hccl_sendrecv_deps=failed" in hccp.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in hccp.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in hccp.stdout
 
@@ -1400,6 +1408,7 @@ def main() -> int:
         assert "payload_primitive_deps=present" in collective.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclAllReduce=present" in collective.stdout
         assert "payload_no_hccl_sendrecv_deps=failed" in collective.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in collective.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in collective.stdout
 
@@ -1414,8 +1423,24 @@ def main() -> int:
         assert "payload_primitive_deps=present" in alltoall.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclAlltoAll=present" in alltoall.stdout
         assert "payload_no_hccl_sendrecv_deps=failed" in alltoall.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in alltoall.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in alltoall.stdout
+
+        one_sided_json, one_sided_tar = write_package(
+            tmp, mode="v4_with_hccl_one_sided")
+        one_sided = run_preflight(repo, one_sided_json, one_sided_tar)
+        if one_sided.returncode == 0:
+            print(one_sided.stdout)
+            print(one_sided.stderr, file=sys.stderr)
+            raise AssertionError(
+                "payload package with HCCL one-sided symbol passed")
+        assert "payload_primitive_deps=present" in one_sided.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclBatchWrite=present" in one_sided.stdout
+        assert "payload_no_hccl_sendrecv_deps=failed" in one_sided.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in one_sided.stdout
+        assert ("reason=payload kernel package references forbidden HCCL "
+                "payload or collective symbols") in one_sided.stdout
 
         hccp_string_json, hccp_string_tar = write_package(
             tmp, mode="v4_with_hccl_p2p_string")
@@ -1432,6 +1457,7 @@ def main() -> int:
         assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclSend=present" in hccp_string.stdout
         assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclRecv=present" in hccp_string.stdout
         assert "payload_no_hccl_sendrecv_deps=failed" in hccp_string.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in hccp_string.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in hccp_string.stdout
 
@@ -1451,6 +1477,7 @@ def main() -> int:
         assert "custom_op_json_forbidden_hccl_p2p_ref.HcclSend=present" in hccp_json.stdout
         assert "custom_op_json_forbidden_hccl_p2p_ref.HcclRecv=present" in hccp_json.stdout
         assert "payload_no_hccl_sendrecv_deps=failed" in hccp_json.stdout
+        assert "payload_no_hccl_payload_api_deps=failed" in hccp_json.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "payload or collective symbols") in hccp_json.stdout
 
