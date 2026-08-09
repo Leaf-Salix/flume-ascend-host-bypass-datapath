@@ -20,6 +20,13 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion9() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion10() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion11() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion12() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion13() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion14() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion15() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion16() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion17() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion18() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusWordCount() ==

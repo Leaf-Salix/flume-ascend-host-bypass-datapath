@@ -2361,6 +2361,7 @@ bool JsonLooksPayloadReady(const std::string& json_text,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V17_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
@@ -3900,6 +3901,7 @@ std::string HcommPayloadRuntimeDetail(
          "payload_semantic_v12=present payload_semantic_v13=present "
          "payload_semantic_v14=present payload_semantic_v15=present "
          "payload_semantic_v16=present payload_semantic_v17=present "
+         "payload_semantic_v18=present "
          "payload_official_p2p_layout=present "
          "payload_copy_api=hcomm-direct-aclrt "
          "payload_hccl_p2p_api=not-used "
@@ -4221,6 +4223,15 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
        "payload_semantic_v12=present payload_semantic_v13=present "
        "payload_semantic_v14=present payload_semantic_v15=present "
        "payload_semantic_v16=present payload_semantic_v17=missing"},
+      {FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V18_FUNC,
+       "payload_semantic=present payload_semantic_v5=present "
+       "payload_semantic_v6=present payload_semantic_v7=present "
+       "payload_semantic_v8=present payload_semantic_v9=present "
+       "payload_semantic_v10=present payload_semantic_v11=present "
+       "payload_semantic_v12=present payload_semantic_v13=present "
+       "payload_semantic_v14=present payload_semantic_v15=present "
+       "payload_semantic_v16=present payload_semantic_v17=present "
+       "payload_semantic_v18=missing"},
       {FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
        "payload_requires_comm_acquire=missing"},
       {FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,

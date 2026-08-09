@@ -296,6 +296,7 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion15`,
 `FlumeHcommPayloadCopySemanticVersion16`,
 `FlumeHcommPayloadCopySemanticVersion17`,
+`FlumeHcommPayloadCopySemanticVersion18`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadCopySupportsOfficialP2pLayout`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
@@ -317,7 +318,7 @@ reference HCCL payload or collective entrypoints, including `HcclSend`,
 through raw JSON/tar-contained strings, so strict-positive cannot be satisfied
 by a hidden HCCL fallback. When the target host can load
 the tar-contained SO, preflight also calls the exported metadata functions and
-requires the current values: payload ABI v4, semantic v17, status schema v7,
+requires the current values: payload ABI v4, semantic v18, status schema v7,
 status word count 17, trace schema v3, trace word count 82, comm-acquire
 marker 1, and official-p2p layout marker 1.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
@@ -370,7 +371,7 @@ explicit `payload_comm_binding=channel-handle`,
 `payload_desc_batch_tag=default|custom`,
 `payload_recv_path=local-buffer|direct-output`, `payload_semantic_v6=present`,
 `payload_semantic_v7=present`, `payload_semantic_v8=present`,
-`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`,
+`payload_semantic_v9=present`, `payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`, `payload_semantic_v18=present`,
 `payload_copy_api=hcomm-direct-aclrt`, `payload_hccl_p2p_api=not-used`,
 `payload_no_hccl_sendrecv=passed`,
 `payload_no_hccl_payload_collective=passed`,

@@ -245,6 +245,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion15() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion16() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion17() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion18() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySupportsOfficialP2pLayout() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
