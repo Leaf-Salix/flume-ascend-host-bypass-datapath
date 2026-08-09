@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import ctypes
 import datetime as _dt
 import json
 import os
@@ -334,6 +333,10 @@ def InspectAicpuTarFunctionValues(
 ) -> tuple[str, dict[str, tuple[str, Optional[int], int]], str]:
     if tar_path is None or not tar_path.exists():
         return ("not-checked", {}, "tar missing")
+    try:
+        import ctypes
+    except ImportError as exc:
+        return ("not-checked", {}, f"ctypes unavailable: {exc}")
     try:
         with tarfile.open(tar_path, "r:*") as tar:
             member = next((item for item in tar.getmembers()

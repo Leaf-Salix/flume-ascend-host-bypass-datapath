@@ -30,6 +30,14 @@ def load_flume_tool(repo: Path):
     return module
 
 
+def ctypes_available() -> bool:
+    try:
+        import ctypes  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def compile_kernel(tmp: Path, mode: str) -> Path:
     source = tmp / f"kernel_{mode}.c"
     lines = [
@@ -1165,11 +1173,15 @@ def main() -> int:
         assert "function_so.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
         assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
-        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=17 expected=17 status=match" in v4.stdout
-        assert "function_value.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=1 expected=1 status=match" in v4.stdout
-        assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=7 expected=7 status=match" in v4.stdout
-        assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=17 expected=17 status=match" in v4.stdout
-        assert "payload_metadata_values=match" in v4.stdout
+        if ctypes_available():
+            assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=17 expected=17 status=match" in v4.stdout
+            assert "function_value.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=1 expected=1 status=match" in v4.stdout
+            assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=7 expected=7 status=match" in v4.stdout
+            assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=17 expected=17 status=match" in v4.stdout
+            assert "payload_metadata_values=match" in v4.stdout
+        else:
+            assert "aicpu_tar_so_function_values=not-checked" in v4.stdout
+            assert "ctypes unavailable" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
@@ -1219,33 +1231,34 @@ def main() -> int:
             no_write_notify.stdout)
         assert "status=PASS" in no_write_notify.stdout
 
-        wrong_values_json, wrong_values_tar = write_package(
-            tmp, mode="wrong_values")
-        wrong_values = run_preflight(repo, wrong_values_json, wrong_values_tar)
-        if wrong_values.returncode == 0:
-            print(wrong_values.stdout)
-            print(wrong_values.stderr, file=sys.stderr)
-            raise AssertionError("package with wrong metadata values passed")
-        assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
-        assert "function.payload_semantic_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
-        assert "function.payload_semantic_v13.FlumeHcommPayloadCopySemanticVersion13=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v13.FlumeHcommPayloadCopySemanticVersion13=present" in wrong_values.stdout
-        assert "function.payload_semantic_v14.FlumeHcommPayloadCopySemanticVersion14=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v14.FlumeHcommPayloadCopySemanticVersion14=present" in wrong_values.stdout
-        assert "function.payload_semantic_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
-        assert "function.payload_semantic_v16.FlumeHcommPayloadCopySemanticVersion16=present" in wrong_values.stdout
-        assert "function.payload_semantic_v17.FlumeHcommPayloadCopySemanticVersion17=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
-        assert "function_so.payload_semantic_version_v17.FlumeHcommPayloadCopySemanticVersion17=present" in wrong_values.stdout
-        assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
-        assert "function_so.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
-        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=12 expected=17 status=mismatch" in wrong_values.stdout
-        assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=3 expected=7 status=mismatch" in wrong_values.stdout
-        assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=17 status=mismatch" in wrong_values.stdout
-        assert "payload_metadata_values=mismatch" in wrong_values.stdout
-        assert "reason=payload kernel package metadata function returned unexpected value" in wrong_values.stdout
+        if ctypes_available():
+            wrong_values_json, wrong_values_tar = write_package(
+                tmp, mode="wrong_values")
+            wrong_values = run_preflight(repo, wrong_values_json, wrong_values_tar)
+            if wrong_values.returncode == 0:
+                print(wrong_values.stdout)
+                print(wrong_values.stderr, file=sys.stderr)
+                raise AssertionError("package with wrong metadata values passed")
+            assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
+            assert "function.payload_semantic_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
+            assert "function.payload_semantic_v13.FlumeHcommPayloadCopySemanticVersion13=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v13.FlumeHcommPayloadCopySemanticVersion13=present" in wrong_values.stdout
+            assert "function.payload_semantic_v14.FlumeHcommPayloadCopySemanticVersion14=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v14.FlumeHcommPayloadCopySemanticVersion14=present" in wrong_values.stdout
+            assert "function.payload_semantic_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
+            assert "function.payload_semantic_v16.FlumeHcommPayloadCopySemanticVersion16=present" in wrong_values.stdout
+            assert "function.payload_semantic_v17.FlumeHcommPayloadCopySemanticVersion17=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
+            assert "function_so.payload_semantic_version_v17.FlumeHcommPayloadCopySemanticVersion17=present" in wrong_values.stdout
+            assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
+            assert "function_so.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
+            assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=12 expected=17 status=mismatch" in wrong_values.stdout
+            assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=3 expected=7 status=mismatch" in wrong_values.stdout
+            assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=17 status=mismatch" in wrong_values.stdout
+            assert "payload_metadata_values=mismatch" in wrong_values.stdout
+            assert "reason=payload kernel package metadata function returned unexpected value" in wrong_values.stdout
 
         installed_json = (
             tmp / "runtime" / "opp" / "vendors" / "flume" / "aicpu" /
@@ -1730,38 +1743,39 @@ def main() -> int:
             nbi_write_notify_preflight.read_text(encoding="utf-8"))
         assert "hcomm-custom-op-direct-build-preflight" in nbi_write_notify_build.stdout
 
-        fake_cann_no_hcomm_header = write_fake_cann_root(
-            tmp, "fake-cann-no-hcomm-header", hccl_header=False,
-            hcomm_header=False)
-        local_refer_log_root = tmp / "local-refer-direct-build-logs"
-        local_refer_build = subprocess.run(
-            [
-                sys.executable,
-                str(repo / "tools" / "flume_tool.py"),
-                f"--cann-package-root={fake_cann_no_hcomm_header}",
-                f"--build-dir={tmp / 'direct-build-local-refer-hcomm'}",
-                f"--log-root={local_refer_log_root}",
-                "--custom-op-build-mode=payload",
-                "hcomm-custom-op-direct-build",
-            ],
-            cwd=repo,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if local_refer_build.returncode != 0:
-            print(local_refer_build.stdout)
-            print(local_refer_build.stderr, file=sys.stderr)
-            raise AssertionError(
-                "direct custom-op build with local-refer HCOMM header did not pass")
-        local_refer_artifacts = next(
-            local_refer_log_root.glob(
-                "flume-check-*/HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"))
-        local_refer_artifact_text = local_refer_artifacts.read_text(
-            encoding="utf-8")
-        assert "hcomm_primitives_header_source: local-refer" in local_refer_artifact_text
-        assert "hcomm_write_with_notify_enabled: 1" in local_refer_artifact_text
-        assert "hcomm-custom-op-direct-build-preflight" in local_refer_build.stdout
+        if (local_hcomm_refer / "hcomm_primitives.h").exists():
+            fake_cann_no_hcomm_header = write_fake_cann_root(
+                tmp, "fake-cann-no-hcomm-header", hccl_header=False,
+                hcomm_header=False)
+            local_refer_log_root = tmp / "local-refer-direct-build-logs"
+            local_refer_build = subprocess.run(
+                [
+                    sys.executable,
+                    str(repo / "tools" / "flume_tool.py"),
+                    f"--cann-package-root={fake_cann_no_hcomm_header}",
+                    f"--build-dir={tmp / 'direct-build-local-refer-hcomm'}",
+                    f"--log-root={local_refer_log_root}",
+                    "--custom-op-build-mode=payload",
+                    "hcomm-custom-op-direct-build",
+                ],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if local_refer_build.returncode != 0:
+                print(local_refer_build.stdout)
+                print(local_refer_build.stderr, file=sys.stderr)
+                raise AssertionError(
+                    "direct custom-op build with local-refer HCOMM header did not pass")
+            local_refer_artifacts = next(
+                local_refer_log_root.glob(
+                    "flume-check-*/HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"))
+            local_refer_artifact_text = local_refer_artifacts.read_text(
+                encoding="utf-8")
+            assert "hcomm_primitives_header_source: local-refer" in local_refer_artifact_text
+            assert "hcomm_write_with_notify_enabled: 1" in local_refer_artifact_text
+            assert "hcomm-custom-op-direct-build-preflight" in local_refer_build.stdout
 
         fake_cann_minimal = tmp / "fake-cann-minimal"
         (fake_cann_minimal / "aarch64-linux" / "include").mkdir(parents=True)

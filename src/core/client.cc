@@ -2082,6 +2082,10 @@ std::string PayloadResourceStepFromError(const std::string& error) {
   return "unknown";
 }
 
+const char* PayloadRoleMarkerName(flume::hcomm_payload::PayloadRole role) {
+  return role == flume::hcomm_payload::PayloadRole::kSend ? "send" : "recv";
+}
+
 std::string MakeHcommPayloadResourceAcquireFailedDetail(
     flume::hcomm_payload::PayloadRole role,
     const CommState& state,
@@ -2100,7 +2104,7 @@ std::string MakeHcommPayloadResourceAcquireFailedDetail(
          PayloadResourceStepFromError(error) +
          " payload_resource_status=" +
          (unsupported ? "unsupported" : "backend-error") +
-         " payload_role=" + PayloadRoleName(role) +
+         " payload_role=" + PayloadRoleMarkerName(role) +
          " payload_local_rank=" + std::to_string(state.rank) +
          " payload_peer_rank=" + std::to_string(peer_rank) +
          " payload_bytes=" + std::to_string(bytes) +
@@ -2813,10 +2817,6 @@ std::string PayloadFailureStepName(uint32_t status) {
     default:
       return std::string("unknown-") + std::to_string(status);
   }
-}
-
-const char* PayloadRoleName(flume::hcomm_payload::PayloadRole role) {
-  return role == flume::hcomm_payload::PayloadRole::kSend ? "send" : "recv";
 }
 
 const char* PayloadCommBindingName(
@@ -4768,10 +4768,10 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_sync=passed "
                        "payload_launch_api=") +
            payload_launch_api + " " +
-                     PayloadBatchModeDetail(desc) +
-                     " payload_kernel_status=success "
-                     "payload_failure_step=primitive-return "
-                     "payload_status_word=0 payload_kernel_hcomm_ret=") +
+           PayloadBatchModeDetail(desc) +
+           " payload_kernel_status=success "
+           "payload_failure_step=primitive-return "
+           "payload_status_word=0 payload_kernel_hcomm_ret=" +
            std::to_string(kernel_hcomm_ret) +
            " payload_echo=observed" + PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
@@ -4805,11 +4805,11 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_sync=passed "
                        "payload_launch_api=") +
            payload_launch_api + " " +
-                     PayloadBatchModeDetail(desc) +
-                     " payload_kernel_status=success "
-                     "payload_failure_step=none "
-                     "payload_status_word=0 payload_kernel_hcomm_ret=0 "
-                       "payload_echo=failed") +
+           PayloadBatchModeDetail(desc) +
+           " payload_kernel_status=success "
+           "payload_failure_step=none "
+           "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+           "payload_echo=failed" +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
@@ -4836,14 +4836,14 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_sync=passed "
                        "payload_launch_api=") +
            payload_launch_api + " " +
-                     PayloadBatchModeDetail(desc) +
-                     " payload_kernel_status=success "
-                     "payload_failure_step=none "
-                     "payload_status_word=0 payload_kernel_hcomm_ret=0 "
-                       "payload_echo=passed "
-                       "payload_descriptor_fingerprint=passed "
-                       "payload_trace_gate=failed "
-                       "payload_trace_expected_thread_notify=") +
+           PayloadBatchModeDetail(desc) +
+           " payload_kernel_status=success "
+           "payload_failure_step=none "
+           "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+           "payload_echo=passed "
+           "payload_descriptor_fingerprint=passed "
+           "payload_trace_gate=failed "
+           "payload_trace_expected_thread_notify=" +
            (resource_info.host_thread_notify_ready ? "on" : "off") +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
@@ -4861,13 +4861,13 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "stage3b3e_payload_sync=passed "
                      "payload_launch_api=") +
          payload_launch_api + " " +
-                     PayloadBatchModeDetail(desc) +
-                     " payload_kernel_status=success "
-                     "payload_failure_step=none "
-                     "payload_status_word=0 "
-                     "payload_kernel_hcomm_ret=") +
+         PayloadBatchModeDetail(desc) +
+         " payload_kernel_status=success "
+         "payload_failure_step=none "
+         "payload_status_word=0 "
+         "payload_kernel_hcomm_ret=" +
          std::to_string(kernel_hcomm_ret) + " " +
-         "payload_echo=passed payload_role=" + PayloadRoleName(role) +
+         "payload_echo=passed payload_role=" + PayloadRoleMarkerName(role) +
          " payload_descriptor_fingerprint=passed "
          "payload_expected_desc_fingerprint=" +
          std::to_string(expected_desc_fingerprint) +
@@ -6504,7 +6504,7 @@ int flume_hcomm_payload_probe_ex(
       state.rank == 0 ? flume::hcomm_payload::PayloadRole::kSend :
                         flume::hcomm_payload::PayloadRole::kRecv,
       state, peer_rank, usable_buffer_bytes == 0 ? 1 : usable_buffer_bytes,
-      detail);
+      normalized_options, normalized_options.protocol, detail);
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
