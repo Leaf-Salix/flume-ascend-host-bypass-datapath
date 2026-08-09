@@ -22,6 +22,7 @@ enum Call {
   kAcquireComm = 10,
   kReleaseComm = 11,
   kWrite = 12,
+  kWriteWithNotify = 13,
 };
 
 extern int32_t acquire_comm_ret;
@@ -33,6 +34,7 @@ extern int32_t thread_record_ret;
 extern int32_t local_copy_ret;
 extern int32_t read_ret;
 extern int32_t write_ret;
+extern int32_t write_with_notify_ret;
 extern int32_t notify_record_ret;
 extern int32_t notify_wait_ret;
 extern int32_t channel_drain_ret;
@@ -46,6 +48,9 @@ extern void* last_read_dst;
 extern const void* last_read_src;
 extern void* last_write_dst;
 extern const void* last_write_src;
+extern void* last_write_with_notify_dst;
+extern const void* last_write_with_notify_src;
+extern uint32_t last_write_with_notify_idx;
 extern uint32_t* status_probe_words;
 extern int status_probe_call;
 extern uint32_t status_observed_at_probe;
@@ -132,6 +137,21 @@ inline int32_t HcommWriteOnThread(ThreadHandle, ChannelHandle, void* dst,
     memcpy(dst, src, static_cast<size_t>(bytes));
   }
   return write_ret;
+}
+
+inline int32_t HcommWriteWithNotifyOnThread(ThreadHandle, ChannelHandle,
+                                            void* dst, const void* src,
+                                            uint64_t bytes,
+                                            uint32_t remote_notify_idx) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kWriteWithNotify);
+  last_write_with_notify_dst = dst;
+  last_write_with_notify_src = src;
+  last_write_with_notify_idx = remote_notify_idx;
+  if (write_with_notify_ret == 0) {
+    memcpy(dst, src, static_cast<size_t>(bytes));
+  }
+  return write_with_notify_ret;
 }
 
 inline int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle,

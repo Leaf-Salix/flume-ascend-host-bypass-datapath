@@ -119,7 +119,7 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion10() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion11() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 11U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 11U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {

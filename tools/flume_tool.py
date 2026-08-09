@@ -45,6 +45,7 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_semantic_v9": "FlumeHcommPayloadCopySemanticVersion9",
     "payload_semantic_v10": "FlumeHcommPayloadCopySemanticVersion10",
     "payload_semantic_v11": "FlumeHcommPayloadCopySemanticVersion11",
+    "payload_semantic_v12": "FlumeHcommPayloadCopySemanticVersion12",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
     "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
@@ -67,6 +68,7 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8 = "FlumeHcommPayloadCopySemanticVersion8"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9 = "FlumeHcommPayloadCopySemanticVersion9"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10 = "FlumeHcommPayloadCopySemanticVersion10"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11 = "FlumeHcommPayloadCopySemanticVersion11"
+HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12 = "FlumeHcommPayloadCopySemanticVersion12"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
@@ -80,6 +82,7 @@ HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
     "HcommLocalCopyOnThread",
     "HcommReadOnThread",
     "HcommWriteOnThread",
+    "HcommWriteWithNotifyOnThread",
     "HcommChannelNotifyRecordOnThread",
     "HcommChannelNotifyWaitOnThread",
     "HcommChannelFenceOnThread",
@@ -93,7 +96,7 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
     "payload_abi_version_v3": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V3, 1),
     "payload_abi_version_v4": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V4, 1),
-    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 11),
+    "payload_semantic_version": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION, 12),
     "payload_semantic_version_v5": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5, 1),
     "payload_semantic_version_v6": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6, 1),
     "payload_semantic_version_v7": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7, 1),
@@ -101,6 +104,7 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_semantic_version_v9": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9, 1),
     "payload_semantic_version_v10": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10, 1),
     "payload_semantic_version_v11": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, 1),
+    "payload_semantic_version_v12": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, 1),
     "payload_requires_comm_acquire": (HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, 1),
     "payload_status_schema": (HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, 4),
     "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 14),
@@ -552,6 +556,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_semantic_v9",
         "payload_semantic_v10",
         "payload_semantic_v11",
+        "payload_semantic_v12",
         "payload_requires_comm_acquire",
         "payload_status_schema",
         "payload_status_word_count",
@@ -797,6 +802,19 @@ def FindHcommPrimitivesHeader(
         if candidate.exists():
             return candidate
     return None
+
+
+def HcommPrimitivesHeaderContains(
+        cann_binary_root: Path,
+        extra_include_root: str,
+        symbol: str) -> bool:
+    header = FindHcommPrimitivesHeader(cann_binary_root, extra_include_root)
+    if header is None:
+        return False
+    try:
+        return symbol in header.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
 
 
 def HcommPrimitiveLibraryDirs(cann_binary_root: Path,
@@ -1712,6 +1730,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                 command.append("--hcomm-payload-channel-fence")
             if args.hcomm_payload_write_path:
                 command.append("--hcomm-payload-write-path")
+            if args.hcomm_payload_write_with_notify:
+                command.append("--hcomm-payload-write-with-notify")
             if args.hcomm_payload_skip_comm_acquire:
                 command.append("--hcomm-payload-skip-comm-acquire")
             if args.hcomm_payload_comm_binding:
@@ -1907,6 +1927,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_semantic_v9=present",
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
+    "payload_semantic_v12=present",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",
@@ -2542,23 +2563,30 @@ def CommandUsesWritePath(command: list[str]) -> bool:
     return "--hcomm-payload-write-path" in command
 
 
+def CommandUsesWriteWithNotify(command: list[str]) -> bool:
+    return "--hcomm-payload-write-with-notify" in command
+
+
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
                                 command: list[str]) -> bool:
-    if (args.auto_run_hcomm_payload_channel_handle_candidate and
+    if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
             not CommandUsesChannelHandleBinding(command)):
         return True
-    if (args.auto_run_hcomm_payload_write_path_candidate and
+    if (getattr(args, "auto_run_hcomm_payload_write_path_candidate", False) and
             not CommandUsesWritePath(command)):
         return True
-    if (args.auto_run_hcomm_payload_channel_fence_diagnostic and
+    if (getattr(args, "auto_run_hcomm_payload_write_with_notify_candidate", False) and
+            not CommandUsesWriteWithNotify(command)):
+        return True
+    if (getattr(args, "auto_run_hcomm_payload_channel_fence_diagnostic", False) and
             not CommandUsesChannelFence(command)):
         return True
-    if (args.auto_run_hcomm_payload_nobatch_diagnostic and
+    if (getattr(args, "auto_run_hcomm_payload_nobatch_diagnostic", False) and
             not CommandUsesNoBatch(command)):
         return True
-    if args.auto_run_hcomm_payload_tagged_diagnostic:
+    if getattr(args, "auto_run_hcomm_payload_tagged_diagnostic", False):
         return True
-    if (args.auto_run_hcomm_payload_direct_output_diagnostic and
+    if (getattr(args, "auto_run_hcomm_payload_direct_output_diagnostic", False) and
             not CommandUsesDirectOutputRecv(command) and
             not CommandUsesWritePath(command)):
         return True
@@ -2569,6 +2597,7 @@ def PayloadCommandWithoutWritePath(command: list[str]) -> list[str]:
     return [
         item for item in command
         if item != "--hcomm-payload-write-path" and
+        item != "--hcomm-payload-write-with-notify" and
         item != "--hcomm-payload-recv-direct-output"
     ]
 
@@ -2589,6 +2618,12 @@ def BuildWritePathCandidateCommand(base_command: list[str],
         command.append("--hcomm-payload-disable-batch")
     if channel_handle:
         command.append("--hcomm-payload-comm-binding=channel-handle")
+    return command
+
+
+def BuildWriteWithNotifyCandidateCommand(base_command: list[str]) -> list[str]:
+    command = PayloadCommandWithoutWritePath(base_command)
+    command.append("--hcomm-payload-write-with-notify")
     return command
 
 
@@ -2699,6 +2734,105 @@ def RunHcommPayloadWritePathCandidate(
     if result.returncode != 0:
         WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
     WriteHcommPayloadWritePathCandidate(
+        runner.run_dir, default_log, result.log_path)
+    return result
+
+
+def WriteHcommPayloadWriteWithNotifyCandidate(
+        run_dir: Path,
+        default_log: Optional[Path],
+        candidate_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE.md"
+    try:
+        candidate_text = (candidate_log.read_text(encoding="utf-8",
+                                                  errors="replace")
+                          if candidate_log is not None else "")
+    except OSError as exc:
+        candidate_text = f"failed to read write-with-notify log: {exc}"
+    rank_lines = ExtractStrictPayloadRankLines(candidate_text)
+    passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(candidate_text)
+    failure_step = MarkerValue(candidate_text, "payload_failure_step")
+    transfer_mode = MarkerValue(candidate_text, "payload_transfer_mode")
+    trace_transfer_mode = MarkerValue(candidate_text,
+                                      "payload_trace_transfer_mode")
+    trace_path = MarkerValue(candidate_text, "payload_trace_primitive_path")
+    semantic_v12 = MarkerValue(candidate_text, "payload_semantic_v12")
+
+    if passed and transfer_mode == "write-with-notify":
+        decision = (
+            "write-with-notify HCOMM payload copy and checksum verification "
+            "passed; this run provides strict-positive evidence for the "
+            "HcommWriteWithNotifyOnThread backend")
+        next_action = (
+            "prefer --hcomm-payload-write-with-notify for this CANN "
+            "environment and proceed to the storage HCOMM strict gate")
+    elif semantic_v12 == "missing":
+        decision = (
+            "write-with-notify candidate package is missing the v12 semantic "
+            "export")
+        next_action = (
+            "rebuild/reinstall the payload custom-op package from this commit")
+    elif failure_step != "missing":
+        decision = (
+            "write-with-notify candidate reached the payload kernel but "
+            f"failed inside `{failure_step}`")
+        next_action = StrictPayloadFailureAction(1, failure_step)
+    else:
+        decision = (
+            "write-with-notify candidate did not produce complete payload "
+            "evidence")
+        next_action = "inspect direct ACL loader/package/descriptor handoff"
+
+    lines = [
+        "# HCOMM Payload Write-With-Notify Candidate",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- write_with_notify_log: `{candidate_log}`",
+        f"- failure_step: `{failure_step}`",
+        f"- transfer_mode: `{transfer_mode}`",
+        f"- trace_transfer_mode: `{trace_transfer_mode}`",
+        f"- trace_path: `{trace_path}`",
+        f"- semantic_v12: `{semantic_v12}`",
+        f"- rank0_evidence: `{'passed' if rank0_ok else 'missing'}`",
+        f"- rank1_evidence: `{'passed' if rank1_ok else 'missing'}`",
+        f"- payload_copy_and_verify: `{'passed' if passed else 'not-passed'}`",
+        "",
+        f"decision: {decision}",
+        f"next_action: {next_action}",
+        "",
+        "This candidate uses the HCOMM primitive that writes the remote HCCL "
+        "Buffer and records the ready notify as one operation. It can satisfy "
+        "the strict-positive gate only when both ranks pass with "
+        "`payload_transfer_mode=write-with-notify`, complete trace evidence, "
+        "checksum match, and `fallback=none`.",
+        "",
+        "## Rank Evidence",
+        "",
+        f"- rank0: `{rank_lines[0]}`",
+        f"- rank1: `{rank_lines[1]}`",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload write-with-notify candidate -> {note}")
+    return note
+
+
+def RunHcommPayloadWriteWithNotifyCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> StepResult:
+    command = BuildWriteWithNotifyCandidateCommand(base_command)
+    result = runner.run(
+        "hcomm-payload-write-with-notify-candidate",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadWriteWithNotifyCandidate(
         runner.run_dir, default_log, result.log_path)
     return result
 
@@ -4603,7 +4737,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_semantic_v9=present,payload_semantic_v10=present,"
-            "payload_semantic_v11=present,"
+            "payload_semantic_v11=present,payload_semantic_v12=present,"
             "payload_batch_mode=on|off,"
             "payload_comm_acquire=default,"
             "or payload_comm_binding=channel-handle,"
@@ -4800,6 +4934,14 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
                     args.hccl_smoke_timeout_sec, strict_result.log_path, args)
                 if write_candidate_log is not None:
                     strict_tree_log = write_candidate_log
+            if (args.auto_run_hcomm_payload_write_with_notify_candidate and
+                    package_payload_ready and
+                    not CommandUsesWriteWithNotify(strict_command)):
+                write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
+                    runner, strict_command, smoke_spec.env_updates,
+                    args.hccl_smoke_timeout_sec, strict_result.log_path)
+                if write_notify_result.returncode == 0:
+                    strict_tree_log = write_notify_result.log_path
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-disable-batch" not in strict_command):
@@ -5002,6 +5144,13 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path, args)
                     if write_candidate_log is not None:
                         strict_tree_log = write_candidate_log
+                if (args.auto_run_hcomm_payload_write_with_notify_candidate and
+                        not CommandUsesWriteWithNotify(spec.command)):
+                    write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
+                    if write_notify_result.returncode == 0:
+                        strict_tree_log = write_notify_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -5211,6 +5360,13 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         result.log_path, args)
                     if write_candidate_log is not None:
                         strict_tree_log = write_candidate_log
+                if (args.auto_run_hcomm_payload_write_with_notify_candidate and
+                        not CommandUsesWriteWithNotify(spec.command)):
+                    write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
+                        runner, spec.command, spec.env_updates, timeout,
+                        result.log_path)
+                    if write_notify_result.returncode == 0:
+                        strict_tree_log = write_notify_result.log_path
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -5574,6 +5730,10 @@ def _DirectBuildSharedLibraryCommand(
         ])
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1")
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
+        if HcommPrimitivesHeaderContains(
+                cann_root, args.hcomm_primitives_include_root,
+                "HcommWriteWithNotifyOnThread"):
+            defines.append("FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1")
     command = [cxx, "-std=c++14"]
     if platform.system() == "Darwin":
         command.append("-dynamiclib")
@@ -5926,6 +6086,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_semantic_v9")
         required_functions.append("payload_semantic_v10")
         required_functions.append("payload_semantic_v11")
+        required_functions.append("payload_semantic_v12")
         required_functions.append("payload_requires_comm_acquire")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
@@ -5950,6 +6111,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_semantic_v9_marker = False
     found_payload_semantic_v10_marker = False
     found_payload_semantic_v11_marker = False
+    found_payload_semantic_v12_marker = False
     found_payload_requires_comm_acquire_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
@@ -6005,6 +6167,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10,
             HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11,
+            HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12,
             HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
             HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
             HCOMM_PAYLOAD_STATUS_WORD_COUNT,
@@ -6072,6 +6235,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_semantic_v11_marker = (
                 found_payload_semantic_v11_marker or
                 functions_present.get("payload_semantic_v11", False))
+            found_payload_semantic_v12_marker = (
+                found_payload_semantic_v12_marker or
+                functions_present.get("payload_semantic_v12", False))
             found_payload_requires_comm_acquire_marker = (
                 found_payload_requires_comm_acquire_marker or
                 functions_present.get("payload_requires_comm_acquire", False))
@@ -6210,6 +6376,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_semantic_version_v11."
                       f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, False) else 'missing'}")
+                print("function_so.payload_semantic_version_v12."
+                      f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, False) else 'missing'}")
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
@@ -6296,6 +6465,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11, False) and
+                    symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
@@ -6325,6 +6495,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10}")
             print("required_payload_semantic_v11_symbol="
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11}")
+            print("required_payload_semantic_v12_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
             print("required_payload_status_schema_symbol="
@@ -6467,6 +6639,22 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v9_marker and
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
+                  not found_payload_semantic_v12_marker):
+                print("reason=payload kernel package has a stale payload "
+                      "semantic marker")
+                print("action=rebuild package with current Flume semantic "
+                      "v12 write-with-notify-capable payload kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
                   not found_payload_requires_comm_acquire_marker):
                 print("reason=payload kernel package is missing the payload "
                       "comm-acquire marker")
@@ -6482,6 +6670,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v9_marker and
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
                   found_payload_requires_comm_acquire_marker and
                   (not found_payload_status_schema_marker or
                    not found_payload_status_word_count_marker)):
@@ -6499,6 +6688,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v9_marker and
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
@@ -6518,6 +6708,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v9_marker and
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
@@ -6539,6 +6730,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v9_marker and
                   found_payload_semantic_v10_marker and
                   found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
                   found_payload_requires_comm_acquire_marker and
                   found_payload_status_schema_marker and
                   found_payload_status_word_count_marker and
@@ -6666,6 +6858,15 @@ def parse_args() -> argparse.Namespace:
                               "data into the remote HCCL Buffer, then records "
                               "ready; the recv kernel waits ready and copies "
                               "local HCCL Buffer into output HBM."))
+    parser.add_argument("--hcomm-payload-write-with-notify",
+                        action="store_true",
+                        help=("Run the Stage 3B write-with-notify candidate. "
+                              "The send payload kernel uses "
+                              "HcommWriteWithNotifyOnThread to place local "
+                              "HCCL Buffer data into the remote HCCL Buffer "
+                              "and signal ready in one primitive; the recv "
+                              "kernel waits ready and copies local HCCL "
+                              "Buffer into output HBM."))
     parser.add_argument("--hcomm-payload-skip-comm-acquire",
                         action="store_true",
                         help=("Diagnostic only: ask the direct ACL payload "
@@ -6702,8 +6903,9 @@ def parse_args() -> argparse.Namespace:
                               "candidate/diagnostic variants that can help "
                               "identify a passing primitive path or isolate "
                               "the first failing HCOMM primitive. This expands "
-                              "to channel-handle, write-path, channel-fence, "
-                              "no-batch, tagged-batch, direct-output, and "
+                              "to channel-handle, write-path, "
+                              "write-with-notify, channel-fence, no-batch, "
+                              "tagged-batch, direct-output, and "
                               "no-comm-acquire runs; it does not weaken the "
                               "strict-positive evidence gate."))
     parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
@@ -6756,6 +6958,16 @@ def parse_args() -> argparse.Namespace:
                               "HCOMM_PAYLOAD_WRITE_PATH_CANDIDATE_MATRIX.md. "
                               "A complete write-path HCOMM primitive copy can "
                               "satisfy the strict-positive evidence gate."))
+    parser.add_argument("--auto-run-hcomm-payload-write-with-notify-candidate",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the strict payload gate fails, automatically "
+                              "rerun the same smoke with "
+                              "--hcomm-payload-write-with-notify and write "
+                              "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE.md. "
+                              "A complete write-with-notify HCOMM primitive "
+                              "copy can satisfy the strict-positive evidence "
+                              "gate."))
     parser.add_argument("--auto-run-hcomm-payload-no-comm-acquire-diagnostic",
                         action="store_true",
                         help=("When a payload-ready package is present and "
@@ -6956,6 +7168,7 @@ def parse_args() -> argparse.Namespace:
     if args.auto_run_hcomm_payload_candidate_matrix:
         args.auto_run_hcomm_payload_channel_handle_candidate = True
         args.auto_run_hcomm_payload_write_path_candidate = True
+        args.auto_run_hcomm_payload_write_with_notify_candidate = True
         args.auto_run_hcomm_payload_channel_fence_diagnostic = True
         args.auto_run_hcomm_payload_nobatch_diagnostic = True
         args.auto_run_hcomm_payload_tagged_diagnostic = True

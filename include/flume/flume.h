@@ -101,6 +101,7 @@ typedef struct {
   flume_hcomm_payload_comm_binding_t payload_comm_binding;
   uint32_t payload_force_channel_fence;
   uint32_t payload_write_path;
+  uint32_t payload_write_with_notify;
 } flume_hcomm_channel_probe_options_t;
 
 typedef struct {

@@ -51,6 +51,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "int HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, unsigned long long d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
             "int HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
             "int HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
+            "int HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }",
             "int HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "int HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, unsigned int c, unsigned int d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
             "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
@@ -67,6 +68,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "  r += HcommChannelNotifyWaitOnThread(1, 2, 1, 60);",
             "  r += HcommReadOnThread(1, 2, a, b, 8);",
             "  r += HcommWriteOnThread(1, 2, b, a, 8);",
+            "  r += HcommWriteWithNotifyOnThread(1, 2, b, a, 8, 0);",
             "  r += HcommChannelFenceOnThread(1, 2);",
             "  r += HcommThreadNotifyWaitOnThread(1, 0, 60);",
             "  r += HcommThreadNotifyRecordOnThread(1, 3, 0);",
@@ -107,7 +109,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyAbiVersion4(void) { return 1; }"
         )
-    semantic_value = "10" if mode == "wrong_values" else "11"
+    semantic_value = "11" if mode == "wrong_values" else "12"
     status_schema_value = "3" if mode == "wrong_values" else "4"
     status_word_count_value = "8" if mode == "wrong_values" else "14"
     if mode not in ("legacy", "stale_v2"):
@@ -160,6 +162,15 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
                     "stale_semantic_v9", "stale_semantic_v10"):
         lines.append(
             "unsigned int FlumeHcommPayloadCopySemanticVersion11(void) "
+            "{ return 1; }"
+        )
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9", "stale_semantic_v10",
+                    "stale_semantic_v11"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopySemanticVersion12(void) "
             "{ return 1; }"
         )
     if mode not in ("legacy", "stale_v2", "stale_v3",
@@ -340,6 +351,18 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "functionName": "FlumeHcommPayloadCopySemanticVersion11",
             }
         }
+    if mode not in ("legacy", "stale_v2", "stale_semantic",
+                    "stale_semantic_v5", "stale_semantic_v6",
+                    "stale_semantic_v7", "stale_semantic_v8",
+                    "stale_semantic_v9", "stale_semantic_v10",
+                    "stale_semantic_v11"):
+        payload["FlumeHcommPayloadCopySemanticVersion12"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadCopySemanticVersion12",
+            }
+        }
     if mode not in ("legacy", "stale_v2", "stale_v3",
                     "stale_v4_no_comm_acquire",
                     "canary"):
@@ -417,6 +440,7 @@ typedef uint64_t ThreadHandle;
 int32_t HcommLocalCopyOnThread(ThreadHandle, void*, const void*, uint64_t);
 int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
 int32_t HcommWriteOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
+int32_t HcommWriteWithNotifyOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t, uint32_t);
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, uint32_t);
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, uint32_t, uint32_t);
 int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);
@@ -446,6 +470,7 @@ typedef uint64_t ThreadHandle;
 int32_t HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, uint64_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 int32_t HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
+int32_t HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e, uint32_t f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, uint32_t c, uint32_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
@@ -762,6 +787,7 @@ def main() -> int:
         assert "function.payload_semantic_v9.FlumeHcommPayloadCopySemanticVersion9=present" in marker_only.stdout
         assert "function.payload_semantic_v10.FlumeHcommPayloadCopySemanticVersion10=present" in marker_only.stdout
         assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in marker_only.stdout
+        assert "function.payload_semantic_v12.FlumeHcommPayloadCopySemanticVersion12=present" in marker_only.stdout
         assert "payload_primitive_deps=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
@@ -796,6 +822,8 @@ def main() -> int:
         assert "function_so.payload_semantic_version_v10.FlumeHcommPayloadCopySemanticVersion10=present" in v4.stdout
         assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in v4.stdout
         assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in v4.stdout
+        assert "function.payload_semantic_v12.FlumeHcommPayloadCopySemanticVersion12=present" in v4.stdout
+        assert "function_so.payload_semantic_version_v12.FlumeHcommPayloadCopySemanticVersion12=present" in v4.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
@@ -806,7 +834,7 @@ def main() -> int:
         assert "function_so.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
         assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
-        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=11 expected=11 status=match" in v4.stdout
+        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=12 expected=12 status=match" in v4.stdout
         assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=4 expected=4 status=match" in v4.stdout
         assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=14 expected=14 status=match" in v4.stdout
         assert "payload_metadata_values=match" in v4.stdout
@@ -828,7 +856,9 @@ def main() -> int:
             raise AssertionError("package with wrong metadata values passed")
         assert "function.payload_semantic_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
         assert "function_so.payload_semantic_version_v11.FlumeHcommPayloadCopySemanticVersion11=present" in wrong_values.stdout
-        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=10 expected=11 status=mismatch" in wrong_values.stdout
+        assert "function.payload_semantic_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
+        assert "function_so.payload_semantic_version_v12.FlumeHcommPayloadCopySemanticVersion12=present" in wrong_values.stdout
+        assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=11 expected=12 status=mismatch" in wrong_values.stdout
         assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=3 expected=4 status=mismatch" in wrong_values.stdout
         assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=14 status=mismatch" in wrong_values.stdout
         assert "payload_metadata_values=mismatch" in wrong_values.stdout

@@ -16,6 +16,7 @@ int32_t thread_record_ret = 0;
 int32_t local_copy_ret = 0;
 int32_t read_ret = 0;
 int32_t write_ret = 0;
+int32_t write_with_notify_ret = 0;
 int32_t notify_record_ret = 0;
 int32_t notify_wait_ret = 0;
 int32_t channel_drain_ret = 0;
@@ -29,6 +30,9 @@ void* last_read_dst = nullptr;
 const void* last_read_src = nullptr;
 void* last_write_dst = nullptr;
 const void* last_write_src = nullptr;
+void* last_write_with_notify_dst = nullptr;
+const void* last_write_with_notify_src = nullptr;
+uint32_t last_write_with_notify_idx = 0xFFFFFFFFU;
 uint32_t* status_probe_words = nullptr;
 int status_probe_call = 0;
 uint32_t status_observed_at_probe = 0xFFFFFFFFU;
@@ -52,6 +56,7 @@ void Reset() {
   local_copy_ret = 0;
   read_ret = 0;
   write_ret = 0;
+  write_with_notify_ret = 0;
   notify_record_ret = 0;
   notify_wait_ret = 0;
   channel_drain_ret = 0;
@@ -64,6 +69,9 @@ void Reset() {
   last_read_src = nullptr;
   last_write_dst = nullptr;
   last_write_src = nullptr;
+  last_write_with_notify_dst = nullptr;
+  last_write_with_notify_src = nullptr;
+  last_write_with_notify_idx = 0xFFFFFFFFU;
   status_probe_words = nullptr;
   status_probe_call = 0;
   status_observed_at_probe = 0xFFFFFFFFU;
@@ -93,6 +101,7 @@ bool EventUsesPendingReturn(uint32_t event) {
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER:
@@ -199,6 +208,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion9() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion10() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion11() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion12() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
@@ -356,6 +366,57 @@ int main() {
     FLUME_TEST_CHECK(trace[event_base + i] == send_write_events[i]);
     FLUME_TEST_CHECK(trace[ret_base + i] ==
                      (EventUsesPendingReturn(send_write_events[i]) ?
+                          0xFFFFFFFFU :
+                          0U));
+  }
+
+  Reset();
+  std::memset(local, 0, sizeof(local));
+  std::memset(remote, 0, sizeof(remote));
+  reset_status();
+  reset_trace();
+  send_desc = MakeDesc(FLUME_HCOMM_NOTIFY_ROLE_SEND, user, local, remote,
+                       status, trace);
+  send_desc.completion_mode |=
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH |
+      FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_WITH_NOTIFY;
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopyDirectAclrtKernelV4(&send_desc) ==
+                   FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[0] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(status[1] == 0U);
+  FLUME_TEST_CHECK(std::memcmp(local, user, 16) == 0);
+  FLUME_TEST_CHECK(std::memcmp(remote, user, 16) == 0);
+  FLUME_TEST_CHECK(last_write_with_notify_dst == remote);
+  FLUME_TEST_CHECK(last_write_with_notify_src == local);
+  FLUME_TEST_CHECK(last_write_with_notify_idx == send_desc.ready_notify_idx);
+  const int send_write_notify_calls[] = {
+      kAcquireComm, kBatchStart, kLocalCopy, kWriteWithNotify,
+      kNotifyWait, kBatchEnd, kReleaseComm};
+  FLUME_TEST_CHECK(CallsEqual(send_write_notify_calls, 7));
+  const uint32_t send_write_notify_events[] = {
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_ENTER,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE,
+      FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT,
+  };
+  FLUME_TEST_CHECK(trace[4] == sizeof(send_write_notify_events) /
+                                   sizeof(send_write_notify_events[0]));
+  for (uint32_t i = 0; i < trace[4]; ++i) {
+    FLUME_TEST_CHECK(trace[event_base + i] == send_write_notify_events[i]);
+    FLUME_TEST_CHECK(trace[ret_base + i] ==
+                     (EventUsesPendingReturn(send_write_notify_events[i]) ?
                           0xFFFFFFFFU :
                           0U));
   }

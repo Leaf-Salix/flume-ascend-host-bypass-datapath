@@ -376,6 +376,24 @@ int main() {
 " FLUME_HAVE_HCOMM_PRIMITIVES)
 
   check_cxx_source_compiles("
+${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
+#include <cstdint>
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  void *dst = nullptr;
+  const void *src = nullptr;
+  uint64_t bytes = 64;
+  uint32_t notify_idx = 0;
+  auto ret =
+      HcommWriteWithNotifyOnThread(thread, channel, dst, src, bytes,
+                                   notify_idx);
+  (void)ret;
+  return 0;
+}
+" FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY)
+
+  check_cxx_source_compiles("
 ${_FLUME_HCOMM_RANK_GRAPH_CHECK_INCLUDE}
 int main() {
   static_assert(sizeof(CommLink) > 0, \"CommLink missing\");
@@ -517,6 +535,7 @@ int main() {
       FLUME_HAVE_HCOMM_CHANNEL_RES
       FLUME_HAVE_HCOMM_THREAD_EXPORT
       FLUME_HAVE_HCOMM_PRIMITIVES
+      FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
       FLUME_HAVE_HCOMM_RANK_GRAPH
       FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
       FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH
@@ -565,6 +584,7 @@ int main() {
     FLUME_HAVE_HCOMM_CHANNEL_RES=${FLUME_HAVE_HCOMM_CHANNEL_RES_VALUE}
     FLUME_HAVE_HCOMM_THREAD_EXPORT=${FLUME_HAVE_HCOMM_THREAD_EXPORT_VALUE}
     FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
+    FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=${FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_VALUE}
     FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=${FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH_VALUE}
     FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=${FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH_VALUE}
@@ -590,6 +610,7 @@ else()
     FLUME_HAVE_HCOMM_CHANNEL_RES=0
     FLUME_HAVE_HCOMM_THREAD_EXPORT=0
     FLUME_HAVE_HCOMM_PRIMITIVES=0
+    FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=0
     FLUME_HAVE_HCOMM_RANK_GRAPH=0
     FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH=0
     FLUME_HAVE_ACLRT_CUSTOM_OP_LAUNCH=0
@@ -694,6 +715,8 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/tests/hcomm_kernel_stubs
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
+  target_compile_definitions(test_hcomm_payload_kernel PRIVATE
+    FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1)
   add_test(NAME hcomm_payload_kernel COMMAND test_hcomm_payload_kernel)
 
   add_executable(test_hcomm_canary_kernel tests/test_hcomm_canary_kernel.cc)
