@@ -6225,6 +6225,18 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "passed" if strict_official_p2p_shape_ok and
         strict_official_p2p_shape_reason != "not-applicable" else
         strict_official_p2p_shape_reason)
+    strict_completion_verdict = (
+        strict_positive_ok and package_payload_ready and
+        package_no_hccl_payload_api_deps == "passed" and
+        strict_checksum_match == "yes" and strict_data_flow_ok and
+        strict_host_data_ok and strict_trace_descriptor_ok and
+        strict_trace_count_ok and strict_trace_primitive_counts_ok and
+        strict_resource_layout_ok and strict_official_p2p_shape_ok and
+        strict_copy_api == "hcomm-direct-aclrt" and
+        strict_hccl_p2p_api == "not-used" and
+        strict_no_hccl_sendrecv == "passed" and
+        strict_no_hccl_payload_collective == "passed" and
+        strict_fallback == "none")
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -6392,6 +6404,16 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_thread_notify_order=...` + "
         "`payload_pattern=strict-v1` + checksum match + "
         "`payload_verify=passed` + "
+        "`fallback=none` |")
+    lines.append(
+        f"| HCOMM payload strict completion verdict | "
+        f"{'passed' if strict_completion_verdict else 'failed'} | "
+        "requires strict-positive rank evidence, payload-ready package, "
+        "`payload_no_hccl_payload_api_deps=passed`, "
+        "`payload_copy_api=hcomm-direct-aclrt`, "
+        "`payload_hccl_p2p_api=not-used`, no HCCL Send/Recv or collective "
+        "payload evidence, checksum/data-flow/host-data pass, trace "
+        "descriptor/count/primitive-count pass, resource-layout pass, and "
         "`fallback=none` |")
     lines.append(
         f"| Strict payload negative expected? | {'yes' if strict_negative_expected else 'no'} | `hcomm-payload-strict-negative` log |")
@@ -6817,9 +6839,7 @@ def DecisionTreeStrictPositiveEvidencePassed(tree_path: Path) -> bool:
     except OSError:
         return False
     return (
-        DecisionTreeStrictPositivePassed(tree_path) and
-        "| HCOMM custom-op package payload-ready? | payload-ready |" in text and
-        "| package no HCCL payload API deps | passed |" in text)
+        "| HCOMM payload strict completion verdict | passed |" in text)
 
 
 def DecisionTreeHcommStoragePassed(tree_path: Path) -> bool:
@@ -7053,6 +7073,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
     ]
     if passed:
         lines.extend([
+            "hcomm_payload_copy_strict_verdict=passed",
             "package_payload_ready=passed",
             "package_no_hccl_sendrecv_deps=passed",
             "package_no_hccl_payload_api_deps=passed",
@@ -7090,10 +7111,12 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
         ])
         lines.extend(StrictPayloadEvidenceSummaryLines(evidence_log))
     else:
+        lines.append("hcomm_payload_copy_strict_verdict=failed")
         lines.append(
             "reason=missing complete Stage 3B.3E strict-positive evidence")
         lines.append(
             "required_markers=rank0/1 passed,stage3b3e_payload_copy=passed,"
+            "HCOMM payload strict completion verdict=passed,"
             "hcomm-custom-op-package-preflight payload-ready,"
             "package payload_no_hccl_payload_api_deps=passed,"
             "stage3b3e_direct_aclrt_payload_loader=passed,"

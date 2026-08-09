@@ -1454,6 +1454,7 @@ def main() -> int:
             pass_dir, smoke, strict_pass, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | yes |" in text
+        assert "| HCOMM payload strict completion verdict | passed |" in text
         assert ("| HCOMM custom-op package source | source=<runtime-root>, "
                 "vendor=flume, tar=present, so=present |") in text
         assert "| package no HCCL Send/Recv deps | passed |" in text
@@ -2366,6 +2367,7 @@ def main() -> int:
             hccl_payload_api_dir, smoke, strict_with_hccl_payload_api, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| HCOMM payload strict completion verdict | failed |" in text
         assert "| HCCL P2P API in payload path | used |" in text
         assert "remove HcclSend/HcclRecv fallback from strict payload path" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
@@ -2380,6 +2382,7 @@ def main() -> int:
             no_hccl_marker_dir, smoke, strict_without_no_hccl_marker, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| HCOMM payload strict completion verdict | failed |" in text
         assert "| no HCCL Send/Recv evidence | missing |" in text
         assert "stale evidence cannot prove true HCOMM payload copy" in text
 
@@ -2394,6 +2397,7 @@ def main() -> int:
             strict_without_no_hccl_payload_collective, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| HCOMM payload strict completion verdict | failed |" in text
         assert "| no HCCL payload/collective evidence | missing |" in text
         assert "stale evidence cannot prove the payload path avoids hidden HCCL fallback APIs" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
@@ -2803,6 +2807,7 @@ def main() -> int:
         text = analyzed_tree.read_text(encoding="utf-8")
         assert "| HCOMM custom-op package payload-ready? | not-ready |" in text
         assert "| Strict payload positive passed? | yes |" in text
+        assert "| HCOMM payload strict completion verdict | failed |" in text
 
         multi_payload_package = write(
             tmp / "package-multi-candidate-payload.log",
@@ -3541,6 +3546,7 @@ def main() -> int:
         pass_evidence_text = pass_evidence_logs[-1].read_text(
             encoding="utf-8")
         assert "strict_positive_evidence=passed" in pass_evidence_text
+        assert "hcomm_payload_copy_strict_verdict=passed" in pass_evidence_text
         assert "package_no_hccl_sendrecv_deps=passed" in pass_evidence_text
         assert "package_no_hccl_payload_api_deps=passed" in pass_evidence_text
         assert "payload_data_flow=passed" in pass_evidence_text
@@ -3728,6 +3734,7 @@ def main() -> int:
         assert evidence_logs
         evidence_text = evidence_logs[-1].read_text(encoding="utf-8")
         assert "strict_positive_evidence=failed" in evidence_text
+        assert "hcomm_payload_copy_strict_verdict=failed" in evidence_text
         assert "package payload_no_hccl_payload_api_deps=passed" in evidence_text
         assert "payload_kernel_hcomm_ret=0" in evidence_text
         assert "payload_echo=passed" in evidence_text

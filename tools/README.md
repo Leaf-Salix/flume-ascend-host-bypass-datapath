@@ -465,6 +465,10 @@ strict-positive 日志还会输出 `payload_primitive_plan`，用于快速说明
 rank 的 host descriptor 计划执行哪些 HCOMM primitive。它只是计划锚点；
 最终通过仍以 device trace、primitive count、checksum、data-flow 和
 no-HCCL payload API gate 为准。
+`ASCEND_FULL_MATRIX_DECISION_TREE.md` 会汇总为
+`HCOMM payload strict completion verdict`，最终 evidence log 会写
+`hcomm_payload_copy_strict_verdict=passed|failed`；这个 verdict 是当前
+判断真正 HCOMM payload copy 是否完成的自动判据。
 如果当前机器能加载 tar 内
 SO，preflight 还会调用这些无参 metadata 函数并要求返回值匹配当前
 ABI：payload ABI v4、semantic v19、status schema v7、status word count
