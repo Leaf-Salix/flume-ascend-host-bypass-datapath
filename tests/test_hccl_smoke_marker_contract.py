@@ -11,6 +11,7 @@ REQUIRED_MARKERS = (
     "payload_status_schema=v7",
     "payload_status_word_count=17",
     "payload_local_buffer_prime=passed",
+    "payload_local_buffer_prime_source=host-sentinel-not-payload",
     "payload_echo=passed",
     "payload_descriptor_fingerprint=passed",
     "payload_data_probe=observed",

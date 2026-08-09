@@ -514,6 +514,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_status_word=0",
       "payload_kernel_hcomm_ret=0",
       "payload_local_buffer_prime=passed",
+      "payload_local_buffer_prime_source=host-sentinel-not-payload",
       "payload_status_schema=v7",
       "payload_status_word_count=17",
       "payload_echo=passed",

@@ -2725,6 +2725,7 @@ aclError PrimeHcommPayloadLocalBuffer(
 std::string PayloadLocalPrimeDetail(uint64_t bytes) {
   return std::string(" payload_local_buffer_prime=passed"
                      " payload_local_buffer_prime_pattern=strict-sentinel-v1"
+                     " payload_local_buffer_prime_source=host-sentinel-not-payload"
                      " payload_local_buffer_prime_bytes=") +
          std::to_string(bytes);
 }
