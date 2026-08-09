@@ -477,6 +477,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_ready_notify_idx=",
       "payload_trace_done_notify_idx=",
       "payload_trace_result=success",
+      "payload_trace_expected_thread_notify=",
       std::string("payload_role=") + expected_role,
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       skip_comm_acquire ? "payload_comm_acquire=skipped" :

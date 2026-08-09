@@ -1893,6 +1893,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
     "payload_trace_result=success",
+    "payload_trace_expected_thread_notify=",
     "payload_role=",
     "payload_batch_mode=on",
     "payload_comm_acquire=default",
@@ -4595,7 +4596,9 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_transfer_mode=read|write,"
             "payload_trace_ready_notify_idx=,"
             "payload_trace_done_notify_idx=,"
-            "payload_trace_result=success,payload_desc_batch_tag=,"
+            "payload_trace_result=success,"
+            "payload_trace_expected_thread_notify=,"
+            "payload_desc_batch_tag=,"
             "payload_transfer_mode=read|write,payload_recv_path=,"
             "payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
