@@ -837,6 +837,11 @@ if(FLUME_BUILD_TESTS)
       ${PROJECT_SOURCE_DIR}/tests/test_hcomm_package_preflight.py
       ${PROJECT_SOURCE_DIR})
 
+  add_test(NAME hcomm_payload_source_gate
+    COMMAND ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/test_hcomm_payload_source_gate.py
+      ${PROJECT_SOURCE_DIR})
+
   add_test(NAME strict_positive_decision_tree
     COMMAND ${Python3_EXECUTABLE}
       ${PROJECT_SOURCE_DIR}/tests/test_strict_positive_decision_tree.py
