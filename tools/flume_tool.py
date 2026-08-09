@@ -587,6 +587,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_semantic_v14",
         "payload_semantic_v15",
         "payload_requires_comm_acquire",
+        "payload_official_p2p_layout",
         "payload_status_schema",
         "payload_status_word_count",
         "payload_trace_schema",
