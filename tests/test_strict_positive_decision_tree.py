@@ -1217,6 +1217,7 @@ def main() -> int:
         assert "`payload_pattern=strict-v1`" in text
         assert "| payload data flow | passed |" in text
         assert "| payload host data | passed |" in text
+        assert "| payload official-p2p shape match | not-applicable |" in text
         assert ("| Direct ACL custom-op launch ABI observed? | "
                 "canary=host-args, notify=host-args, payload=host-args |"
                 in text)
@@ -1443,8 +1444,32 @@ def main() -> int:
             strict_channel_handle_direct_output_fence)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_no_batch_fence)[0]
-        assert flume_tool.StrictPayloadRankEvidencePassed(
+        assert flume_tool.StrictPayloadOfficialP2pShapePassed(
+            flume_tool.ExtractStrictPayloadRankLines(
+                strict_channel_handle_no_batch_direct_output)) == (
+                    True, "passed")
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_no_batch_direct_output_fence)[0]
+        assert flume_tool.StrictPayloadOfficialP2pShapePassed(
+            flume_tool.ExtractStrictPayloadRankLines(
+                strict_channel_handle_no_batch_direct_output_fence)) == (
+                    False,
+                    "rank0-official-p2p-payload_completion_mode-mismatch:"
+                    "observed=channel-fence:expected=ordered-notify")
+        official_shape_mismatch_log = write(
+            tmp / "strict-official-p2p-shape-mismatch.log",
+            strict_channel_handle_no_batch_direct_output_fence)
+        official_shape_mismatch_dir = tmp / "official-p2p-shape-mismatch"
+        official_shape_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            official_shape_mismatch_dir, smoke,
+            official_shape_mismatch_log, package)
+        shape_mismatch_text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in shape_mismatch_text
+        assert ("| payload official-p2p shape match | "
+                "rank0-official-p2p-payload_completion_mode-mismatch:"
+                "observed=channel-fence:expected=ordered-notify |"
+                in shape_mismatch_text)
         official_engine_mismatch = (
             strict_channel_handle_no_batch_direct_output.replace(
                 "payload_resolved_engine=aicpu",
@@ -1489,8 +1514,8 @@ def main() -> int:
                 self.calls.append((name, list(command)))
                 log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
                 if name == ("hcomm-payload-channel-handle-nobatch-"
-                             "direct-output-channel-fence-candidate"):
-                    text = strict_channel_handle_no_batch_direct_output_fence
+                             "direct-output-candidate"):
+                    text = strict_channel_handle_no_batch_direct_output
                     returncode = 0
                 else:
                     text = strict_log(False)
@@ -1547,29 +1572,29 @@ def main() -> int:
         assert selected_candidate is not None
         assert selected_candidate.name.endswith(
             "hcomm-payload-channel-handle-nobatch-direct-output-"
-            "channel-fence-candidate.log")
+            "candidate.log")
         assert fake_runner.calls[-1][0] == (
             "hcomm-payload-channel-handle-nobatch-direct-output-"
-            "channel-fence-candidate")
+            "candidate")
         final_command = fake_runner.calls[-1][1]
         assert "--hcomm-payload-comm-binding=channel-handle" in final_command
         assert "--hcomm-payload-disable-batch" in final_command
         assert "--hcomm-payload-recv-direct-output" in final_command
-        assert "--hcomm-payload-channel-fence" in final_command
+        assert "--hcomm-payload-channel-fence" not in final_command
         candidate_matrix = (
             fake_runner.run_dir /
             "HCOMM_PAYLOAD_CHANNEL_HANDLE_CANDIDATE_MATRIX.md")
         assert candidate_matrix.exists()
         candidate_matrix_text = candidate_matrix.read_text(encoding="utf-8")
-        assert "candidates_run: `8`" in candidate_matrix_text
+        assert "candidates_run: `7`" in candidate_matrix_text
         assert ("best_candidate: `hcomm-payload-channel-handle-nobatch-"
-                "direct-output-channel-fence-candidate`"
+                "direct-output-candidate`"
                 in candidate_matrix_text)
         assert "best_candidate_score: `" in candidate_matrix_text
         assert "best_candidate_next_action: `" in candidate_matrix_text
         assert "| engine | resource_layout |" in candidate_matrix_text
         assert ("hcomm-payload-channel-handle-nobatch-direct-output-"
-                "channel-fence-candidate | 0 | yes | passed"
+                "candidate | 0 | yes | passed"
                 in candidate_matrix_text)
         assert "hcomm-payload-channel-handle-direct-output-channel-fence-candidate" in candidate_matrix_text
         assert "selected_candidate_command: `" in candidate_matrix_text
@@ -2826,15 +2851,15 @@ def main() -> int:
             ) + smoke_with_hcomm_storage_path())
         write(
             storage_channel_handle_combo_fallback_dir /
-            "03-hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate.log",
-            strict_channel_handle_no_batch_direct_output_fence +
+            "03-hcomm-payload-channel-handle-nobatch-direct-output-candidate.log",
+            strict_channel_handle_no_batch_direct_output +
             smoke_with_hcomm_storage_path())
         analyzed_tree, storage_passed, _, storage_strict_log, _ = (
             flume_tool.AnalyzeHcommStorageStrictPositiveLogs(
                 storage_channel_handle_combo_fallback_dir))
         assert storage_strict_log is not None
         assert storage_strict_log.name.endswith(
-            "hcomm-payload-channel-handle-nobatch-direct-output-channel-fence-candidate.log")
+            "hcomm-payload-channel-handle-nobatch-direct-output-candidate.log")
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
 

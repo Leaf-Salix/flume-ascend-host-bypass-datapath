@@ -2501,6 +2501,64 @@ def StrictPayloadResourceLayoutPassed(
     return True, "passed"
 
 
+def StrictPayloadOfficialP2pShapePassed(
+        rank_lines: dict[int, str]) -> tuple[bool, str]:
+    rank0_line = rank_lines.get(0, "")
+    rank1_line = rank_lines.get(1, "")
+    if not rank0_line or not rank1_line:
+        return False, "missing-rank-line"
+    rank0_layout = MarkerValueFromLine(rank0_line, "payload_layout")
+    rank1_layout = MarkerValueFromLine(rank1_line, "payload_layout")
+    if rank0_layout != "official-p2p" and rank1_layout != "official-p2p":
+        return True, "not-applicable"
+    if rank0_layout != "official-p2p" or rank1_layout != "official-p2p":
+        return False, "official-p2p-rank-layout-mismatch"
+
+    expected = {
+        0: {
+            "payload_role": "send",
+            "payload_transfer_mode": "read",
+            "payload_trace_transfer_mode": "read",
+            "payload_completion_mode": "ordered-notify",
+            "payload_batch_mode": "off",
+            "payload_comm_binding": "channel-handle",
+            "payload_comm_acquire": "skipped",
+            "payload_recv_path": "direct-output",
+            "payload_trace_recv_path": "1",
+            "payload_trace_primitive_path": "send-local-copy",
+            "payload_trace_count": "8",
+            "payload_trace_write_notify_backend": "none",
+            "payload_trace_expected_thread_notify": "off",
+        },
+        1: {
+            "payload_role": "recv",
+            "payload_transfer_mode": "read",
+            "payload_trace_transfer_mode": "read",
+            "payload_completion_mode": "ordered-notify",
+            "payload_batch_mode": "off",
+            "payload_comm_binding": "channel-handle",
+            "payload_comm_acquire": "skipped",
+            "payload_recv_path": "direct-output",
+            "payload_trace_recv_path": "1",
+            "payload_trace_primitive_path": "recv-read-direct-output",
+            "payload_trace_count": "8",
+            "payload_trace_write_notify_backend": "none",
+            "payload_trace_expected_thread_notify": "off",
+        },
+    }
+    for rank, fields in expected.items():
+        line = rank_lines[rank]
+        for name, expected_value in fields.items():
+            observed = MarkerValueFromLine(line, name)
+            if observed == "missing":
+                return False, f"rank{rank}-official-p2p-missing-{name}"
+            if observed != expected_value:
+                return False, (
+                    f"rank{rank}-official-p2p-{name}-mismatch:"
+                    f"observed={observed}:expected={expected_value}")
+    return True, "passed"
+
+
 def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     rank_lines = ExtractStrictPayloadRankLines(strict)
     accepted_marker_sets = tuple(
@@ -2600,10 +2658,12 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         rank_lines)
     resource_layout_ok, _resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(rank_lines))
+    official_p2p_shape_ok, _official_p2p_shape_reason = (
+        StrictPayloadOfficialP2pShapePassed(rank_lines))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
             checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok and
-            trace_count_ok and resource_layout_ok,
+            trace_count_ok and resource_layout_ok and official_p2p_shape_ok,
             rank0_ok, rank1_ok)
 
 
@@ -5667,6 +5727,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         StrictPayloadTraceCountPassed(strict_rank_lines))
     strict_resource_layout_ok, strict_resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(strict_rank_lines))
+    strict_official_p2p_shape_ok, strict_official_p2p_shape_reason = (
+        StrictPayloadOfficialP2pShapePassed(strict_rank_lines))
+    strict_official_p2p_shape_result = (
+        "passed" if strict_official_p2p_shape_ok and
+        strict_official_p2p_shape_reason != "not-applicable" else
+        strict_official_p2p_shape_reason)
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
         StrictPayloadNoBatchDiagnosticPassed(no_batch))
     no_batch_result = (
@@ -5871,6 +5937,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, write_notify_backend=rank0:{strict_rank0_write_notify_selected}/rank1:{strict_rank1_write_notify_selected}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel; `payload_layout` must match transfer/batch/binding/recv-path semantics; `payload_write_notify_backend` is the host-selected primitive backend before device trace is available |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload resource layout match | {'passed' if strict_resource_layout_ok else strict_resource_layout_reason} | `official-p2p` requires `payload_resolved_engine=aicpu`, channel-handle binding, no-batch mode, and direct-output recv; other accepted read/write candidates keep their selected engine semantics |",
+            f"| payload official-p2p shape match | {strict_official_p2p_shape_result} | `official-p2p` must match the public custom P2P example shape: read transfer, ordered notify, channel-handle binding, no batch, rank0 `send-local-copy`, rank1 `recv-read-direct-output`, and 8 trace events on each rank |",
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
             f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_entry}/{strict_rank0_data_remote_entry}/{strict_rank0_data_transfer_exit}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_entry}/{strict_rank1_data_remote_entry}/{strict_rank1_data_transfer_exit}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
