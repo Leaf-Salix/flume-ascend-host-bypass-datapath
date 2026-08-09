@@ -7568,6 +7568,13 @@ def parse_args() -> argparse.Namespace:
             not (args.run_hcomm_payload_smoke or args.run_storage_hbm_smoke)):
         parser.error("--hcomm-require-payload-copy requires "
                      "--run-hcomm-payload-smoke or --run-storage-hbm-smoke")
+    if (args.hcomm_payload_recv_direct_output and
+            (args.hcomm_payload_write_path or
+             args.hcomm_payload_write_with_notify)):
+        parser.error("--hcomm-payload-recv-direct-output only applies to the "
+                     "read path; do not combine it with "
+                     "--hcomm-payload-write-path or "
+                     "--hcomm-payload-write-with-notify")
     try:
         parsed_hccl_devices = ParseDeviceList(args.hccl_devices)
     except ValueError as exc:

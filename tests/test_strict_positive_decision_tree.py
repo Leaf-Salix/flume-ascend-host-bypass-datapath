@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -724,6 +725,23 @@ def main() -> int:
         return 2
     repo = Path(sys.argv[1]).resolve()
     flume_tool = load_flume_tool(repo)
+    direct_output_write_conflict = subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tools" / "flume_tool.py"),
+            "--hcomm-payload-recv-direct-output",
+            "--hcomm-payload-write-path",
+            "local",
+        ],
+        cwd=repo,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert direct_output_write_conflict.returncode == 2
+    assert ("--hcomm-payload-recv-direct-output only applies to the read path"
+            in direct_output_write_conflict.stderr)
 
     with tempfile.TemporaryDirectory(prefix="flume-strict-tree-") as tmp_text:
         tmp = Path(tmp_text)
