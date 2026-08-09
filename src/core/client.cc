@@ -2930,6 +2930,31 @@ const char* PayloadDescOperandLayout(
   return "unknown";
 }
 
+const char* PayloadPrimitivePlan(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  const char* primitive_path = PayloadDescPrimitivePath(desc);
+  if (strcmp(primitive_path, "send-local-copy") == 0) {
+    return "hcomm-local-copy+notify-record+notify-wait";
+  }
+  if (strcmp(primitive_path, "send-write") == 0) {
+    return "hcomm-local-copy+hcomm-write+notify-record+notify-wait";
+  }
+  if (strcmp(primitive_path, "send-write-with-notify") == 0) {
+    return "hcomm-local-copy+hcomm-write-with-notify+notify-wait";
+  }
+  if (strcmp(primitive_path, "recv-read-local-copy") == 0) {
+    return "notify-wait+hcomm-read+hcomm-local-copy+notify-record";
+  }
+  if (strcmp(primitive_path, "recv-read-direct-output") == 0) {
+    return "notify-wait+hcomm-read+notify-record";
+  }
+  if (strcmp(primitive_path, "recv-write-local-copy") == 0 ||
+      strcmp(primitive_path, "recv-write-notify-local-copy") == 0) {
+    return "notify-wait+hcomm-local-copy+notify-record";
+  }
+  return "unknown";
+}
+
 uint64_t PayloadEchoBytes(const uint32_t* status_words) {
   return static_cast<uint64_t>(status_words[4]) |
          (static_cast<uint64_t>(status_words[5]) << 32U);
@@ -3098,6 +3123,7 @@ std::string PayloadDescriptorDetail(
          (recv_direct_output ? "direct-output" : "local-buffer") +
          " payload_desc_primitive_path=" + PayloadDescPrimitivePath(desc) +
          " payload_desc_operand_layout=" + PayloadDescOperandLayout(desc) +
+         " payload_primitive_plan=" + PayloadPrimitivePlan(desc) +
          " payload_desc_local_hccl_buffer_bytes=" +
          std::to_string(desc.local_hccl_buffer_bytes) +
          " payload_desc_remote_hccl_buffer_bytes=" +

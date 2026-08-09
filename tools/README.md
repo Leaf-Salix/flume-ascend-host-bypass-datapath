@@ -461,6 +461,10 @@ Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
 `ascend-full-matrix` 的 strict-positive evidence gate 也会把这个 package
 级 marker 写入 decision tree；缺失或失败时，即使 payload smoke 日志看似
 通过，也不会被认定为真正的 HCOMM payload copy。
+strict-positive 日志还会输出 `payload_primitive_plan`，用于快速说明当前
+rank 的 host descriptor 计划执行哪些 HCOMM primitive。它只是计划锚点；
+最终通过仍以 device trace、primitive count、checksum、data-flow 和
+no-HCCL payload API gate 为准。
 如果当前机器能加载 tar 内
 SO，preflight 还会调用这些无参 metadata 函数并要求返回值匹配当前
 ABI：payload ABI v4、semantic v19、status schema v7、status word count

@@ -6071,6 +6071,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_rank_lines[0], "payload_desc_operand_layout")
     strict_rank1_desc_operand_layout = marker_value_from_line(
         strict_rank_lines[1], "payload_desc_operand_layout")
+    strict_rank0_primitive_plan = marker_value_from_line(
+        strict_rank_lines[0], "payload_primitive_plan")
+    strict_rank1_primitive_plan = marker_value_from_line(
+        strict_rank_lines[1], "payload_primitive_plan")
     strict_trace_result = marker_value(strict, "payload_trace_result")
     strict_rank0_role = marker_value_from_line(strict_rank_lines[0],
                                                "payload_role")
@@ -6441,7 +6445,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
             f"| local HCCL Buffer prime | {strict_local_prime} | pattern={strict_local_prime_pattern}, source={strict_local_prime_source}, bytes={strict_local_prime_bytes}; strict smoke seeds the local HCCL Buffer with a host-written sentinel before launch so entry/exit fingerprints prove HCOMM primitive data movement rather than stale contents; this sentinel is not user payload |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
-            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, primitive=rank0:{strict_rank0_desc_path}/rank1:{strict_rank1_desc_path}, operand=rank0:{strict_rank0_desc_operand_layout}/rank1:{strict_rank1_desc_operand_layout}, write_notify_backend=rank0:{strict_rank0_write_notify_selected}/rank1:{strict_rank1_write_notify_selected}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel; descriptor primitive/operand markers must match the device trace; `payload_layout` must match transfer/batch/binding/recv-path semantics; `payload_write_notify_backend` is the host-selected primitive backend before device trace is available |",
+            f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, primitive=rank0:{strict_rank0_desc_path}/rank1:{strict_rank1_desc_path}, operand=rank0:{strict_rank0_desc_operand_layout}/rank1:{strict_rank1_desc_operand_layout}, plan=rank0:{strict_rank0_primitive_plan}/rank1:{strict_rank1_primitive_plan}, write_notify_backend=rank0:{strict_rank0_write_notify_selected}/rank1:{strict_rank1_write_notify_selected}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel; descriptor primitive/operand markers must match the device trace; `payload_primitive_plan` is the host-side HCOMM primitive sequence selected for this rank; `payload_layout` must match transfer/batch/binding/recv-path semantics; `payload_write_notify_backend` is the host-selected primitive backend before device trace is available |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",
             f"| payload resource layout match | {'passed' if strict_resource_layout_ok else strict_resource_layout_reason} | `official-p2p` requires `payload_resolved_engine=aicpu`, channel-handle binding, no-batch mode, and direct-output recv; other accepted read/write candidates keep their selected engine semantics |",
             f"| payload official-p2p shape match | {strict_official_p2p_shape_result} | `official-p2p` must match the public custom P2P example shape: read transfer, ordered notify, channel-handle binding, no batch, rank0 `send-local-copy`, rank1 `recv-read-direct-output`, and 8 trace events on each rank |",
@@ -6907,6 +6911,10 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
         MarkerValueFromLine(rank_lines[0], "payload_desc_operand_layout"),
         "selected_payload_rank1_desc_operand_layout=" +
         MarkerValueFromLine(rank_lines[1], "payload_desc_operand_layout"),
+        "selected_payload_rank0_primitive_plan=" +
+        MarkerValueFromLine(rank_lines[0], "payload_primitive_plan"),
+        "selected_payload_rank1_primitive_plan=" +
+        MarkerValueFromLine(rank_lines[1], "payload_primitive_plan"),
         "selected_payload_rank0_transfer_mode=" +
         MarkerValueFromLine(rank_lines[0], "payload_transfer_mode"),
         "selected_payload_rank1_transfer_mode=" +

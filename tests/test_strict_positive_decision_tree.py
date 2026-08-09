@@ -91,6 +91,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_recv_path=local-buffer "
             "payload_desc_primitive_path=send-local-copy "
             "payload_desc_operand_layout=input-hbm->local-hccl-buffer "
+            "payload_primitive_plan=hcomm-local-copy+notify-record+notify-wait "
             "payload_desc_local_hccl_buffer_bytes=8192 "
             "payload_desc_remote_hccl_buffer_bytes=8192")
     resource = (" payload_resolved_engine=aicpu-ts "
@@ -149,6 +150,9 @@ def strict_log(include_verify: bool) -> str:
         "payload_desc_operand_layout=input-hbm->local-hccl-buffer",
         "payload_desc_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm")
+    recv_desc = recv_desc.replace(
+        "payload_primitive_plan=hcomm-local-copy+notify-record+notify-wait",
+        "payload_primitive_plan=notify-wait+hcomm-read+hcomm-local-copy+notify-record")
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
         "rank 0 hcomm payload smoke passed: fallback=none "
@@ -326,6 +330,10 @@ def strict_write_path_log(include_verify: bool) -> str:
         "payload_desc_operand_layout=input-hbm->local-hccl-buffer",
         "payload_desc_operand_layout=input-hbm->local-hccl-buffer->"
         "remote-hccl-buffer")
+    text = text.replace(
+        "payload_primitive_plan=hcomm-local-copy+notify-record+notify-wait",
+        "payload_primitive_plan=hcomm-local-copy+hcomm-write+notify-record+notify-wait",
+        1)
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-write-local-copy")
     text = text.replace("payload_desc_primitive_path=recv-read-local-copy",
@@ -338,6 +346,9 @@ def strict_write_path_log(include_verify: bool) -> str:
         "payload_desc_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_desc_operand_layout=local-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_primitive_plan=notify-wait+hcomm-read+hcomm-local-copy+notify-record",
+        "payload_primitive_plan=notify-wait+hcomm-local-copy+notify-record")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -377,6 +388,10 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
         "payload_desc_operand_layout=input-hbm->local-hccl-buffer->"
         "remote-hccl-buffer+ready-notify")
     text = text.replace(
+        "payload_primitive_plan=hcomm-local-copy+notify-record+notify-wait",
+        "payload_primitive_plan=hcomm-local-copy+hcomm-write-with-notify+notify-wait",
+        1)
+    text = text.replace(
         "payload_trace_primitive_path=recv-read-local-copy",
         "payload_trace_primitive_path=recv-write-notify-local-copy")
     text = text.replace(
@@ -390,6 +405,9 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
         "payload_desc_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_desc_operand_layout=local-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_primitive_plan=notify-wait+hcomm-read+hcomm-local-copy+notify-record",
+        "payload_primitive_plan=notify-wait+hcomm-local-copy+notify-record")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -790,6 +808,9 @@ def strict_log_with_recv_direct_output() -> str:
         "payload_desc_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_desc_operand_layout=remote-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_primitive_plan=notify-wait+hcomm-read+hcomm-local-copy+notify-record",
+        "payload_primitive_plan=notify-wait+hcomm-read+notify-record")
     text = text.replace("payload_trace_recv_path=0",
                         "payload_trace_recv_path=1")
     return _adjust_trace_counts(text, 0, -2)
@@ -1446,6 +1467,9 @@ def main() -> int:
         assert "`payload_pattern=strict-v1`" in text
         assert "| payload data flow | passed |" in text
         assert "| payload host data | passed |" in text
+        assert ("plan=rank0:hcomm-local-copy+notify-record+notify-wait/"
+                "rank1:notify-wait+hcomm-read+hcomm-local-copy+notify-record"
+                in text)
         assert "| no HCCL payload/collective evidence | passed |" in text
         assert "| payload official-p2p shape match | not-applicable |" in text
         assert ("| Direct ACL custom-op launch ABI observed? | "
@@ -1465,6 +1489,8 @@ def main() -> int:
                 "primitive=rank0:send-local-copy/rank1:recv-read-local-copy, "
                 "operand=rank0:input-hbm->local-hccl-buffer/rank1:"
                 "remote-hccl-buffer->local-hccl-buffer->output-hbm, "
+                "plan=rank0:hcomm-local-copy+notify-record+notify-wait/rank1:"
+                "notify-wait+hcomm-read+hcomm-local-copy+notify-record, "
                 "write_notify_backend=rank0:none/rank1:none, "
                 "batch_tag=default, recv_path=local-buffer, local_buffer=8192, "
                 "remote_buffer=8192 |") in text
@@ -3534,6 +3560,8 @@ def main() -> int:
         assert "selected_payload_rank1_trace_path=recv-read-local-copy" in pass_evidence_text
         assert "selected_payload_rank0_trace_operand_layout=input-hbm->local-hccl-buffer" in pass_evidence_text
         assert "selected_payload_rank1_trace_operand_layout=remote-hccl-buffer->local-hccl-buffer->output-hbm" in pass_evidence_text
+        assert "selected_payload_rank0_primitive_plan=hcomm-local-copy+notify-record+notify-wait" in pass_evidence_text
+        assert "selected_payload_rank1_primitive_plan=notify-wait+hcomm-read+hcomm-local-copy+notify-record" in pass_evidence_text
         assert "selected_payload_rank0_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_rank1_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_recv_path=local-buffer" in pass_evidence_text
