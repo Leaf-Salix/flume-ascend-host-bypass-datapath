@@ -913,6 +913,24 @@ def main() -> int:
     assert ("--hcomm-payload-official-p2p-layout is a read-path layout"
             in official_p2p_write_conflict.stderr)
 
+    official_p2p_engine_conflict = subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tools" / "flume_tool.py"),
+            "--hcomm-payload-official-p2p-layout",
+            "--hcomm-channel-engine=aicpu-ts",
+            "local",
+        ],
+        cwd=repo,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert official_p2p_engine_conflict.returncode == 2
+    assert ("--hcomm-payload-official-p2p-layout follows the public custom P2P "
+            "example shape" in official_p2p_engine_conflict.stderr)
+
     with tempfile.TemporaryDirectory(prefix="flume-strict-tree-") as tmp_text:
         tmp = Path(tmp_text)
         smoke = write(
@@ -968,6 +986,7 @@ def main() -> int:
         assert official_args.hcomm_payload_disable_batch
         assert official_args.hcomm_payload_recv_direct_output
         assert official_args.hcomm_payload_comm_binding == "channel-handle"
+        assert official_args.hcomm_channel_engine == "aicpu"
         assert not official_args.hcomm_payload_write_path
         assert not official_args.hcomm_payload_channel_fence
         official_commands = flume_tool.build_commands(
@@ -979,6 +998,7 @@ def main() -> int:
         assert "--hcomm-payload-disable-batch" in official_smoke_command
         assert "--hcomm-payload-recv-direct-output" in official_smoke_command
         assert "--hcomm-payload-comm-binding=channel-handle" in official_smoke_command
+        assert "--hcomm-channel-engine=aicpu" in official_smoke_command
         assert "--hcomm-payload-write-path" not in official_smoke_command
         assert "--hcomm-payload-channel-fence" not in official_smoke_command
         assert flume_tool.CommandUsesOfficialP2pLayout(official_smoke_command)
@@ -1001,11 +1021,13 @@ def main() -> int:
         assert multiproc_args.hcomm_payload_disable_batch
         assert multiproc_args.hcomm_payload_recv_direct_output
         assert multiproc_args.hcomm_payload_comm_binding == "channel-handle"
+        assert multiproc_args.hcomm_channel_engine == "aicpu"
         multiproc_rank_command = flume_multiproc.build_rank_command(
             multiproc_args, 1, "1", 2, tmp / "root-info.bin")
         assert "--hcomm-payload-disable-batch" in multiproc_rank_command
         assert "--hcomm-payload-recv-direct-output" in multiproc_rank_command
         assert "--hcomm-payload-comm-binding=channel-handle" in multiproc_rank_command
+        assert "--hcomm-channel-engine=aicpu" in multiproc_rank_command
         assert "--hcomm-payload-write-path" not in multiproc_rank_command
         assert "--hcomm-payload-channel-fence" not in multiproc_rank_command
 
@@ -1347,6 +1369,8 @@ def main() -> int:
         assert official_selected is None
         assert official_runner.calls[0][0] == "hcomm-payload-official-p2p-candidate"
         official_command = official_runner.calls[0][1]
+        assert "--hcomm-channel-engine=aicpu" in official_command
+        assert "--hcomm-channel-engine=auto" not in official_command
         assert "--hcomm-payload-comm-binding=channel-handle" in official_command
         assert "--hcomm-payload-disable-batch" in official_command
         assert "--hcomm-payload-recv-direct-output" in official_command

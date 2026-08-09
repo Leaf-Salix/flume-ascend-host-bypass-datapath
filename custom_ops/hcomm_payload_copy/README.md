@@ -167,6 +167,10 @@ recv rank kernel:
   HcommChannelNotifyRecordOnThread(done)
 ```
 
+The `official-p2p` layout is the strict public-example shape: channel acquire
+uses `COMM_ENGINE_AICPU`, payload binding uses the HCOMM channel handle, batch
+mode is disabled, and recv reads directly into output HBM.
+
 Expected markers:
 
 - success: `stage3b3a_kernel_launch=passed stage3b2_kernel_consume=passed`

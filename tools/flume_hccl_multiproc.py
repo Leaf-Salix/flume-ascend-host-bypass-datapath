@@ -160,6 +160,11 @@ def parse_args() -> argparse.Namespace:
                 args.hcomm_payload_comm_binding != "channel-handle"):
             parser.error("--hcomm-payload-official-p2p-layout requires "
                          "--hcomm-payload-comm-binding=channel-handle")
+        if args.hcomm_channel_engine not in ("auto", "aicpu"):
+            parser.error("--hcomm-payload-official-p2p-layout follows the "
+                         "public custom P2P example shape and requires "
+                         "--hcomm-channel-engine=aicpu")
+        args.hcomm_channel_engine = "aicpu"
         args.hcomm_payload_disable_batch = True
         args.hcomm_payload_recv_direct_output = True
         args.hcomm_payload_comm_binding = "channel-handle"

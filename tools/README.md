@@ -156,6 +156,13 @@ strict-positive 证据、checksum match 和 `fallback=none` 时，工具会把�
 通过的 HCOMM payload-copy evidence。此时 accepted recv path 会明确记录为
 `payload_recv_path=direct-output`。
 
+`--hcomm-payload-official-p2p-layout` 是更严格的 direct-output 变体：
+它会强制 `--hcomm-channel-engine=aicpu`，并组合
+`channel-handle + no-batch + direct-output`，用于贴齐 CANN 公开 custom
+P2P 示例里的 `HcclChannelAcquire(COMM_ENGINE_AICPU)` resource shape。若用户显式
+指定其它 channel engine，工具会拒绝运行，避免把非官方形态误判为
+official-p2p 证据。
+
 若怀疑 `HcommReadOnThread` 返回后 local-buffer 数据尚未完成落地，可以显式加
 `--hcomm-payload-channel-fence`。该模式会让 recv kernel 在 remote read 后调用
 `HcommChannelFenceOnThread`，即使当前协议不是 RoCE；日志会出现

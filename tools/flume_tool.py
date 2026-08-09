@@ -2832,6 +2832,16 @@ def PayloadCommandWithoutCommBinding(command: list[str]) -> list[str]:
     ]
 
 
+def PayloadCommandWithChannelEngine(command: list[str],
+                                    engine: str) -> list[str]:
+    next_command = [
+        item for item in command
+        if not item.startswith("--hcomm-channel-engine=")
+    ]
+    next_command.append(f"--hcomm-channel-engine={engine}")
+    return next_command
+
+
 def CommandUsesChannelHandleBinding(command: list[str]) -> bool:
     return "--hcomm-payload-comm-binding=channel-handle" in command
 
@@ -2885,6 +2895,11 @@ def ApplyOfficialP2pLayoutArgs(parser: argparse.ArgumentParser,
             args.hcomm_payload_comm_binding != "channel-handle"):
         parser.error("--hcomm-payload-official-p2p-layout requires "
                      "--hcomm-payload-comm-binding=channel-handle")
+    if args.hcomm_channel_engine not in ("auto", "aicpu"):
+        parser.error("--hcomm-payload-official-p2p-layout follows the public "
+                     "custom P2P example shape and requires "
+                     "--hcomm-channel-engine=aicpu")
+    args.hcomm_channel_engine = "aicpu"
     args.hcomm_payload_disable_batch = True
     args.hcomm_payload_recv_direct_output = True
     args.hcomm_payload_comm_binding = "channel-handle"
@@ -3140,6 +3155,7 @@ def _PayloadCandidateNextAction(text: str) -> str:
 
 def _PayloadCandidateFocusFlags(command: list[str]) -> str:
     focus_prefixes = (
+        "--hcomm-channel-engine=",
         "--hcomm-payload-comm-binding=",
         "--hcomm-payload-batch-tag=",
     )
@@ -4251,6 +4267,7 @@ def RunHcommPayloadOfficialP2pCandidate(
         timeout_seconds: int,
         default_log: Optional[Path]) -> Optional[Path]:
     command = PayloadCommandWithoutCommBinding(base_command)
+    command = PayloadCommandWithChannelEngine(command, "aicpu")
     command = [
         item for item in command
         if item not in (

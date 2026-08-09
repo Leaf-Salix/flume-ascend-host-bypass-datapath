@@ -6969,7 +6969,9 @@ int flume_hcomm_payload_send_ex(
     *out = MakeIo(FLUME_ERR_INVALID_ARGUMENT, 0, 0, options_error);
     return FLUME_OK;
   }
-  options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+  if (options.engine == FLUME_HCOMM_ENGINE_AUTO) {
+    options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+  }
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
@@ -7093,7 +7095,9 @@ int flume_hcomm_payload_recv_ex(
     *out = MakeIo(FLUME_ERR_INVALID_ARGUMENT, 0, 0, options_error);
     return FLUME_OK;
   }
-  options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+  if (options.engine == FLUME_HCOMM_ENGINE_AUTO) {
+    options.engine = FLUME_HCOMM_ENGINE_AICPU_TS;
+  }
   size_t usable_buffer_bytes = 0;
   int probe_status = FLUME_ERR_BACKEND;
   std::string detail;
