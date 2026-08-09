@@ -3052,6 +3052,11 @@ def WriteHcommPayloadNoBatchDiagnostic(
     if no_batch_batch_mode == "missing":
         no_batch_batch_mode = MarkerValueFromLine(
             no_batch_rank_lines[0], "payload_batch_mode")
+    no_batch_validation_reason = MarkerValueFromLine(
+        no_batch_rank_lines[1], "payload_validation_reason")
+    if no_batch_validation_reason == "missing":
+        no_batch_validation_reason = MarkerValueFromLine(
+            no_batch_rank_lines[0], "payload_validation_reason")
 
     if no_batch_ok:
         decision = (
@@ -3065,7 +3070,9 @@ def WriteHcommPayloadNoBatchDiagnostic(
         decision = (
             "no-batch diagnostic reached the payload kernel but failed inside "
             f"`{no_batch_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, no_batch_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, no_batch_failure_step,
+            validation_reason=no_batch_validation_reason)
     elif no_batch_kernel != "missing":
         decision = (
             "no-batch diagnostic launched but did not produce complete rank "
@@ -3179,6 +3186,11 @@ def WriteHcommPayloadNoCommAcquireDiagnostic(
     no_comm_hcomm_ret = MarkerValue(no_comm_text, "payload_kernel_hcomm_ret")
     no_comm_acquire = MarkerValue(no_comm_text, "payload_comm_acquire")
     no_comm_binding = MarkerValue(no_comm_text, "payload_comm_binding")
+    no_comm_validation_reason = MarkerValueFromLine(
+        no_comm_rank_lines[1], "payload_validation_reason")
+    if no_comm_validation_reason == "missing":
+        no_comm_validation_reason = MarkerValueFromLine(
+            no_comm_rank_lines[0], "payload_validation_reason")
 
     if no_comm_ok:
         decision = (
@@ -3193,7 +3205,9 @@ def WriteHcommPayloadNoCommAcquireDiagnostic(
         decision = (
             "no-comm-acquire diagnostic reached the payload kernel but failed "
             f"inside `{no_comm_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, no_comm_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, no_comm_failure_step,
+            validation_reason=no_comm_validation_reason)
     elif no_comm_kernel != "missing":
         decision = (
             "no-comm-acquire diagnostic launched but did not produce complete "
@@ -3724,9 +3738,11 @@ def _PayloadCandidateNextAction(text: str) -> str:
             f"`{resource_layout_reason}`")
     failure_step = MarkerValue(text, "payload_failure_step")
     first_error_event = MarkerValue(text, "payload_trace_first_error_event")
+    validation_reason = MarkerValue(text, "payload_validation_reason")
     if failure_step not in ("missing", "none"):
         return StrictPayloadFailureAction(
-            1, failure_step, first_error_event=first_error_event)
+            1, failure_step, first_error_event=first_error_event,
+            validation_reason=validation_reason)
     if MarkerValue(text, "stage3b3e_direct_aclrt_payload_loader") != "passed":
         return "fix custom-op package load/function lookup before retesting"
     if MarkerValue(text, "stage3b3e_payload_descriptor_handoff") != "passed":
@@ -4027,8 +4043,11 @@ def WriteHcommPayloadWritePathCandidate(
         decision = (
             "write-path candidate reached the payload kernel but failed "
             f"inside `{write_failure_step}`")
+        write_validation_reason = MarkerValue(write_text,
+                                              "payload_validation_reason")
         next_action = StrictPayloadFailureAction(
-            1, write_failure_step, first_error_event=write_first_error_event)
+            1, write_failure_step, first_error_event=write_first_error_event,
+            validation_reason=write_validation_reason)
     else:
         decision = (
             "write-path candidate did not produce complete payload evidence")
@@ -4159,8 +4178,11 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         decision = (
             "write-with-notify candidate reached the payload kernel but "
             f"failed inside `{failure_step}`")
+        validation_reason = MarkerValue(candidate_text,
+                                        "payload_validation_reason")
         next_action = StrictPayloadFailureAction(
-            1, failure_step, first_error_event=first_error_event)
+            1, failure_step, first_error_event=first_error_event,
+            validation_reason=validation_reason)
     else:
         decision = (
             "write-with-notify candidate did not produce complete payload "
@@ -4792,6 +4814,11 @@ def WriteHcommPayloadChannelHandleCandidate(
     channel_binding = MarkerValue(channel_text, "payload_comm_binding")
     channel_acquire = MarkerValue(channel_text, "payload_comm_acquire")
     channel_hcomm_ret = MarkerValue(channel_text, "payload_kernel_hcomm_ret")
+    channel_validation_reason = MarkerValueFromLine(
+        channel_rank_lines[1], "payload_validation_reason")
+    if channel_validation_reason == "missing":
+        channel_validation_reason = MarkerValueFromLine(
+            channel_rank_lines[0], "payload_validation_reason")
 
     if channel_ok and channel_binding == "channel-handle":
         decision = (
@@ -4805,7 +4832,9 @@ def WriteHcommPayloadChannelHandleCandidate(
         decision = (
             "channel-handle candidate reached the payload kernel but failed "
             f"inside `{channel_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, channel_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, channel_failure_step,
+            validation_reason=channel_validation_reason)
     else:
         decision = (
             "channel-handle candidate did not produce complete payload "
@@ -5284,6 +5313,11 @@ def WriteHcommPayloadTaggedDiagnostic(
     tagged_batch_tag = MarkerValue(tagged_text, "payload_desc_batch_tag")
     tagged_hcomm_ret = MarkerValue(tagged_text, "payload_kernel_hcomm_ret")
     tagged_rank_lines = ExtractStrictPayloadRankLines(tagged_text)
+    tagged_validation_reason = MarkerValueFromLine(
+        tagged_rank_lines[1], "payload_validation_reason")
+    if tagged_validation_reason == "missing":
+        tagged_validation_reason = MarkerValueFromLine(
+            tagged_rank_lines[0], "payload_validation_reason")
 
     if tagged_ok:
         decision = (
@@ -5297,7 +5331,9 @@ def WriteHcommPayloadTaggedDiagnostic(
         decision = (
             "tagged batch diagnostic reached the payload kernel but failed "
             f"inside `{tagged_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, tagged_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, tagged_failure_step,
+            validation_reason=tagged_validation_reason)
     else:
         decision = "tagged batch diagnostic did not reach complete payload evidence"
         next_action = "inspect tagged direct ACL loader/package/descriptor handoff"
@@ -5382,6 +5418,11 @@ def WriteHcommPayloadDirectOutputDiagnostic(
     direct_checksum_match = (
         direct_source != "missing" and direct_source == direct_payload and
         direct_payload == direct_expected)
+    direct_validation_reason = MarkerValueFromLine(
+        direct_rank_lines[1], "payload_validation_reason")
+    if direct_validation_reason == "missing":
+        direct_validation_reason = MarkerValueFromLine(
+            direct_rank_lines[0], "payload_validation_reason")
 
     if direct_ok and direct_path_ok:
         decision = (
@@ -5396,7 +5437,9 @@ def WriteHcommPayloadDirectOutputDiagnostic(
         decision = (
             "direct-output diagnostic reached the payload kernel but failed "
             f"inside `{direct_failure_step}`")
-        next_action = StrictPayloadFailureAction(1, direct_failure_step)
+        next_action = StrictPayloadFailureAction(
+            1, direct_failure_step,
+            validation_reason=direct_validation_reason)
     elif direct_kernel != "missing":
         decision = (
             "direct-output diagnostic launched but did not produce complete "
@@ -5536,14 +5579,88 @@ def StrictPayloadFirstErrorAction(first_error_event: str) -> str:
     return ""
 
 
+def StrictPayloadValidationAction(rank: int,
+                                  validation_reason: str = "missing") -> str:
+    prefix = f"inspect rank {rank} payload descriptor "
+    actions = {
+        "comm-name": (
+            "comm-name handoff; rerun with "
+            "--hcomm-payload-comm-binding=channel-handle to bypass "
+            "in-kernel HcommAcquireComm and use the acquired ChannelHandle"),
+        "batch-tag": (
+            "batch tag fill; rerun with --hcomm-payload-disable-batch or "
+            "set --hcomm-payload-batch-tag to a stable non-empty value"),
+        "cpu-thread-on-aicpu": (
+            "host/AICPU thread notify handle handoff; rerun a candidate that "
+            "uses stream-sync+status-word completion and verify thread notify "
+            "capability before enabling host/AICPU notify"),
+        "channel-handle": (
+            "ChannelHandle resource handoff; inspect HcclChannelAcquire, "
+            "HcclChannelGetHcclBuffer, and the descriptor channel handle "
+            "field before launch"),
+        "aicpu-thread": (
+            "AICPU thread resource handoff; inspect HCOMM Channel resource "
+            "probe and resolved engine before direct ACL launch"),
+        "user-buffer": (
+            "user HBM pointer handoff; inspect source/destination buffer "
+            "registration and aclrt malloc/copy setup"),
+        "local-hccl-buffer": (
+            "local HCCL Buffer handoff; inspect HcclChannelGetHcclBuffer and "
+            "local buffer prime before launch"),
+        "remote-hccl-buffer": (
+            "remote HCCL Buffer handoff; inspect peer buffer acquisition and "
+            "rank-pair descriptor wiring"),
+        "local-hccl-buffer-bytes": (
+            "payload byte count versus local HCCL Buffer capacity; reduce "
+            "--hccl-count/bytes or inspect resource buffer size"),
+        "remote-hccl-buffer-bytes": (
+            "payload byte count versus remote HCCL Buffer capacity; reduce "
+            "--hccl-count/bytes or inspect peer resource buffer size"),
+        "status-word": (
+            "device status-word pointer handoff; inspect aclrtMalloc/"
+            "aclrtMemcpy setup before kernel launch"),
+        "status-word-count": (
+            "status schema word-count mismatch; rebuild/reinstall the "
+            "current payload package and rerun strict-positive"),
+        "status-schema": (
+            "status schema version mismatch; rebuild/reinstall the current "
+            "payload package and rerun strict-positive"),
+        "thread-notify-mode": (
+            "thread notify mode field; disable host/AICPU thread notify for "
+            "this candidate or verify thread notify capability"),
+        "completion-mode": (
+            "completion mode field; compare ordered-notify versus "
+            "channel-fence candidates"),
+        "notify-index": (
+            "ready/done notify indices; ensure ready and done notify slots "
+            "are distinct and within the acquired notify count"),
+        "rank-size": "rank size; strict payload copy currently requires exactly 2 ranks",
+        "role": "rank role field; rank0 must be send and rank1 must be recv",
+        "local-rank": "local rank field",
+        "peer-rank": "peer rank field",
+        "rank-pair": "rank pairing; local rank and peer rank must differ",
+        "bytes": "payload byte count; strict payload copy requires bytes > 0",
+        "header": "descriptor magic/version header and ABI layout",
+        "ok": "validation reported ok; inspect failure step instead",
+        "not-applicable": "validation is not applicable; inspect failure step instead",
+        "missing": "descriptor validation reason is missing; rerun with semantic v19 package",
+    }
+    return prefix + actions.get(
+        validation_reason,
+        f"field `{validation_reason}` from payload_validation_reason")
+
+
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing",
                                first_error_event: str = "missing",
-                               hcomm_ret: str = "missing") -> str:
+                               hcomm_ret: str = "missing",
+                               validation_reason: str = "missing") -> str:
     prefix = f"inspect rank {rank} "
     if primitive_state == "pending":
         return (prefix + "pending HCOMM primitive timeout/hang at " +
                 failure_step)
+    if failure_step == "invalid-argument":
+        return StrictPayloadValidationAction(rank, validation_reason)
     first_error_action = StrictPayloadFirstErrorAction(first_error_event)
     if first_error_action and hcomm_ret not in ("0", "missing"):
         return (prefix + first_error_action + " (first_error_event=" +
@@ -6135,7 +6252,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             rank, rank_status[rank]["failure_step"],
             rank_status[rank]["primitive_state"],
             rank_status[rank]["trace_first_error_event"],
-            rank_status[rank]["hcomm_ret"])
+            rank_status[rank]["hcomm_ret"],
+            rank_status[rank]["validation_reason"])
 
     lines.append(
         f"| HCCL collective ok? | {'yes' if hccl_ok else 'no'} | `{caps}` |")

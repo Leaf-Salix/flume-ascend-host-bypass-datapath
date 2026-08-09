@@ -491,6 +491,24 @@ def strict_log_with_nonzero_hcomm_ret() -> str:
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
 
 
+def strict_log_with_invalid_descriptor(reason: str, code: int) -> str:
+    text = strict_log(True)
+    text = text.replace(
+        "payload_kernel_status=success payload_failure_step=none "
+        "payload_status_word=0 payload_kernel_hcomm_ret=0",
+        "payload_kernel_status=invalid-argument "
+        "payload_failure_step=invalid-argument "
+        f"payload_status_word=1 payload_kernel_hcomm_ret={code}",
+        1)
+    text = text.replace(
+        "payload_primitive_state=completed ",
+        "payload_primitive_state=not-started "
+        f"payload_validation_reason={reason} "
+        f"payload_validation_reason_code={code} ",
+        1)
+    return text
+
+
 def strict_log_with_primitive_return_first_error() -> str:
     text = strict_log(True)
     text = text.replace(
@@ -3420,6 +3438,24 @@ def main() -> int:
         _tree, passed, _smoke_log, _strict_log, _package_log = (
             flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(fail_log_dir))
         assert not passed
+
+        invalid_cases = [
+            ("comm-name", 21, "rerun with --hcomm-payload-comm-binding=channel-handle"),
+            ("batch-tag", 22, "rerun with --hcomm-payload-disable-batch"),
+            ("cpu-thread-on-aicpu", 23, "stream-sync+status-word completion"),
+        ]
+        for reason, code, expected_action in invalid_cases:
+            invalid_dir = tmp / f"invalid-descriptor-{reason}"
+            invalid_dir.mkdir()
+            invalid_log = write(
+                invalid_dir / "01-hcomm-payload-strict-positive.log",
+                strict_log_with_invalid_descriptor(reason, code))
+            tree = flume_tool.WriteMatrixDecisionTree(
+                invalid_dir, smoke, invalid_log, package)
+            text = tree.read_text(encoding="utf-8")
+            assert (f"| rank0 descriptor validation reason | {reason} / "
+                    f"{code} |") in text
+            assert expected_action in text
 
         pass_runner = flume_tool.Runner(tmp / "runner-pass")
         flume_tool.RecordStrictPositiveEvidenceGate(
