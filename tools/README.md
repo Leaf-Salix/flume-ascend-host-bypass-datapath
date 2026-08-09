@@ -465,14 +465,17 @@ HCOMM primitive 的 marker-only 包会被拒绝。preflight 会同时打印旧�
 和广义 marker `payload_no_hccl_payload_api_deps`；后者覆盖 HCCL
 Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
 本地 CTest 还包含 `hcomm_payload_source_gate`，会扫描
-`custom_ops/hcomm_payload_copy/` 和 `src/hcomm_payload/` 下的 C/C++ 源码；
+`custom_ops/hcomm_payload_copy/`、`src/hcomm_payload/` 下的 C/C++ 源码，
+以及 `src/core/client.cc` 中 HCOMM payload host scheduler 相关函数范围；
 如果 HCOMM payload kernel 源码直接引用 `HcclSend`、`HcclRecv`、
 collective 或 one-sided HCCL payload API，测试会失败。这样可以在打包前
-阻止把 HCCL payload 捷径混进 HCOMM custom-op 路径。
+阻止把 HCCL payload 捷径混进 HCOMM custom-op 路径，也避免 host 侧
+direct ACL launch / payload send-recv scheduler 偷调 HCCL fallback。
 `ascend-full-matrix`、`hcomm-payload-strict-positive` 和
 `hcomm-storage-strict-positive` 也会先记录
 `hcomm-payload-source-gate` 步骤，并把
-`hcomm_payload_source_no_hccl_payload_api=passed` 写入 decision tree 和
+`hcomm_payload_source_no_hccl_payload_api=passed`、
+`hcomm_payload_host_source_no_hccl_payload_api=passed` 写入 decision tree 和
 strict-positive evidence gate；缺失或失败时，即使 payload smoke 日志看似
 通过，也不会被认定为真正的 HCOMM payload copy。
 strict-positive 日志还会输出 `payload_primitive_plan`，用于快速说明当前

@@ -44,7 +44,11 @@ def write_source_gate_pass(run_dir: Path) -> Path:
         run_dir / "00-hcomm-payload-source-gate.log",
         "hcomm_payload_source_gate=checked\n"
         "hcomm_payload_source_no_hccl_payload_api=passed\n"
-        "files_scanned=7\n")
+        "hcomm_payload_custom_source_no_hccl_payload_api=passed\n"
+        "hcomm_payload_host_source_no_hccl_payload_api=passed\n"
+        "files_scanned=7\n"
+        "host_ranges_scanned=9\n"
+        "host_lines_scanned=900\n")
 
 
 def _replace_trace_counts(text: str, rank0: int, rank1: int) -> str:
@@ -3610,6 +3614,7 @@ def main() -> int:
         assert "strict_positive_evidence=passed" in pass_evidence_text
         assert "hcomm_payload_copy_strict_verdict=passed" in pass_evidence_text
         assert "hcomm_payload_source_no_hccl_payload_api=passed" in pass_evidence_text
+        assert "hcomm_payload_host_source_no_hccl_payload_api=passed" in pass_evidence_text
         assert "package_no_hccl_sendrecv_deps=passed" in pass_evidence_text
         assert "package_no_hccl_payload_api_deps=passed" in pass_evidence_text
         assert "payload_data_flow=passed" in pass_evidence_text

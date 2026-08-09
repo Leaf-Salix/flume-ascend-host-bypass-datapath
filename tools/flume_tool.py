@@ -171,6 +171,18 @@ HCOMM_PAYLOAD_SOURCE_GATE_ROOTS = (
 )
 HCOMM_PAYLOAD_SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh",
                                  ".hpp"}
+HCOMM_PAYLOAD_HOST_SOURCE_PATH = REPO_ROOT / "src" / "core" / "client.cc"
+HCOMM_PAYLOAD_HOST_SOURCE_RANGES = (
+    "SubmitSimHcommPayload",
+    "FillFlumePayloadCopyDesc",
+    "TryLaunchHcommPayloadCopyDirectAclrt",
+    "flume_hcomm_payload_probe",
+    "flume_hcomm_payload_probe_ex",
+    "flume_hcomm_payload_send_ex",
+    "flume_hcomm_payload_send_async",
+    "flume_hcomm_payload_recv_ex",
+    "flume_hcomm_payload_recv_async",
+)
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
@@ -1337,8 +1349,12 @@ def HcommPayloadSourceGateLines(
         r"\b(" + "|".join(
             re.escape(name)
             for name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS) + r")\b")
+    source_roots = (
+        repo_root / "custom_ops" / "hcomm_payload_copy",
+        repo_root / "src" / "hcomm_payload",
+    )
     files: list[Path] = []
-    for root in HCOMM_PAYLOAD_SOURCE_GATE_ROOTS:
+    for root in source_roots:
         if not root.exists():
             continue
         for path in root.rglob("*"):
@@ -1359,11 +1375,30 @@ def HcommPayloadSourceGateLines(
             violations.append(
                 f"{rel}:{line_no}:forbidden={match.group(1)}")
 
+    host_path = repo_root / "src" / "core" / "client.cc"
+    host_violations, host_ranges_scanned, host_lines_scanned = (
+        ScanHcommPayloadHostSourceRanges(host_path, repo_root, pattern))
+    violations.extend(host_violations)
+
     lines = [
         "hcomm_payload_source_gate=checked",
         f"files_scanned={len(files)}",
+        f"host_ranges_scanned={host_ranges_scanned}",
+        f"host_lines_scanned={host_lines_scanned}",
         "source_roots=custom_ops/hcomm_payload_copy,src/hcomm_payload",
     ]
+    custom_passed = not any(
+        not violation.startswith("src/core/client.cc:")
+        for violation in violations)
+    host_passed = not host_violations
+    lines.insert(
+        2,
+        "hcomm_payload_custom_source_no_hccl_payload_api=" +
+        ("passed" if custom_passed else "failed"))
+    lines.insert(
+        3,
+        "hcomm_payload_host_source_no_hccl_payload_api=" +
+        ("passed" if host_passed else "failed"))
     if not violations:
         lines.insert(1, "hcomm_payload_source_no_hccl_payload_api=passed")
         return True, lines
@@ -1375,6 +1410,71 @@ def HcommPayloadSourceGateLines(
     lines.extend(f"violation.{index}={violation}"
                  for index, violation in enumerate(violations, start=1))
     return False, lines
+
+
+def ScanHcommPayloadHostSourceRanges(
+        path: Path,
+        repo_root: Path,
+        pattern: re.Pattern[str]) -> tuple[list[str], int, int]:
+    if not path.exists():
+        return [], 0, 0
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    target_names = set(HCOMM_PAYLOAD_HOST_SOURCE_RANGES)
+    violations: list[str] = []
+    ranges_scanned = 0
+    lines_scanned = 0
+    index = 0
+    try:
+        rel = path.relative_to(repo_root)
+    except ValueError:
+        rel = path
+
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith((" ", "\t")):
+            index += 1
+            continue
+        matched_name = next(
+            (name for name in target_names
+             if re.search(rf"\b{re.escape(name)}\s*\(", line)),
+            None)
+        if matched_name is None:
+            index += 1
+            continue
+
+        signature_index = index
+        brace_index = index
+        while brace_index < len(lines) and "{" not in lines[brace_index]:
+            brace_index += 1
+        if brace_index >= len(lines):
+            index += 1
+            continue
+
+        signature_text = "\n".join(lines[signature_index:brace_index + 1])
+        if ";" in signature_text.split("{", 1)[0]:
+            index += 1
+            continue
+
+        ranges_scanned += 1
+        depth = 0
+        scan_index = signature_index
+        while scan_index < len(lines):
+            current = lines[scan_index]
+            lines_scanned += 1
+            match = pattern.search(current)
+            if match is not None:
+                violations.append(
+                    f"{rel}:{scan_index + 1}:range={matched_name}:"
+                    f"forbidden={match.group(1)}")
+            depth += current.count("{")
+            depth -= current.count("}")
+            scan_index += 1
+            if scan_index > brace_index and depth <= 0:
+                break
+        index = max(scan_index, index + 1)
+
+    return violations, ranges_scanned, lines_scanned
 
 
 def RecordHcommPayloadSourceGate(runner: Runner, *,
@@ -6164,7 +6264,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         package, "payload_no_hccl_payload_api_deps")
     source_no_hccl_payload_api = marker_value(
         source_gate, "hcomm_payload_source_no_hccl_payload_api")
+    host_source_no_hccl_payload_api = marker_value(
+        source_gate, "hcomm_payload_host_source_no_hccl_payload_api")
     source_files_scanned = marker_value(source_gate, "files_scanned")
+    host_ranges_scanned = marker_value(source_gate, "host_ranges_scanned")
     strict_loader = marker_state(strict, "stage3b3e_direct_aclrt_payload_loader")
     strict_handoff = marker_state(strict, "stage3b3e_payload_descriptor_handoff")
     strict_launch = marker_state(strict, "stage3b3e_direct_aclrt_payload_launch")
@@ -6367,6 +6470,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_completion_verdict = (
         strict_positive_ok and package_payload_ready and
         source_no_hccl_payload_api == "passed" and
+        host_source_no_hccl_payload_api == "passed" and
         package_no_hccl_payload_api_deps == "passed" and
         strict_checksum_match == "yes" and strict_data_flow_ok and
         strict_host_data_ok and strict_trace_descriptor_ok and
@@ -6500,6 +6604,12 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`hcomm-payload-source-gate` scans current HCOMM payload source; "
         f"files_scanned={source_files_scanned} |")
     lines.append(
+        f"| host scheduler source no HCCL payload API usage | "
+        f"{host_source_no_hccl_payload_api} | "
+        "`hcomm-payload-source-gate` scans HCOMM payload host scheduler "
+        f"function ranges in `src/core/client.cc`; "
+        f"host_ranges_scanned={host_ranges_scanned} |")
+    lines.append(
         f"| HCOMM primitive ABI fixture | {hcomm_abi_status} | "
         f"{hcomm_abi_evidence} |")
     lines.append(
@@ -6555,6 +6665,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         f"{'passed' if strict_completion_verdict else 'failed'} | "
         "requires strict-positive rank evidence, payload-ready package, "
         "`hcomm_payload_source_no_hccl_payload_api=passed`, "
+        "`hcomm_payload_host_source_no_hccl_payload_api=passed`, "
         "`payload_no_hccl_payload_api_deps=passed`, "
         "`payload_copy_api=hcomm-direct-aclrt`, "
         "`payload_hccl_p2p_api=not-used`, no HCCL Send/Recv or collective "
@@ -7221,6 +7332,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
         lines.extend([
             "hcomm_payload_copy_strict_verdict=passed",
             "hcomm_payload_source_no_hccl_payload_api=passed",
+            "hcomm_payload_host_source_no_hccl_payload_api=passed",
             "package_payload_ready=passed",
             "package_no_hccl_sendrecv_deps=passed",
             "package_no_hccl_payload_api_deps=passed",
@@ -7265,6 +7377,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "required_markers=rank0/1 passed,stage3b3e_payload_copy=passed,"
             "HCOMM payload strict completion verdict=passed,"
             "hcomm_payload_source_no_hccl_payload_api=passed,"
+            "hcomm_payload_host_source_no_hccl_payload_api=passed,"
             "hcomm-custom-op-package-preflight payload-ready,"
             "package payload_no_hccl_payload_api_deps=passed,"
             "stage3b3e_direct_aclrt_payload_loader=passed,"

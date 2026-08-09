@@ -1,85 +1,88 @@
 #!/usr/bin/env python3
-"""Reject HCCL payload API shortcuts in HCOMM custom-op source files."""
+"""Reject HCCL payload API shortcuts in HCOMM payload source ranges."""
 
 from __future__ import annotations
 
-import re
+import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 
 
-FORBIDDEN_HCCL_PAYLOAD_APIS = (
-    "HcclSend",
-    "HcclRecv",
-    "HcclBatchSendRecv",
-    "HcclBatchSendRecvV2",
-    "HcclAllReduce",
-    "HcclAllReduceV2",
-    "HcclAllGather",
-    "HcclAllGatherV",
-    "HcclReduceScatter",
-    "HcclReduceScatterV",
-    "HcclBroadcast",
-    "HcclBroadcastV2",
-    "HcclReduce",
-    "HcclGather",
-    "HcclScatter",
-    "HcclAlltoAll",
-    "HcclAlltoAllV",
-    "HcclAlltoAllVC",
-    "HcclBarrier",
-    "HcclBatchPut",
-    "HcclBatchGet",
-    "HcclBatchRead",
-    "HcclBatchWrite",
-)
-
-SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp"}
+def load_flume_tool(repo_root: Path):
+    spec = importlib.util.spec_from_file_location(
+        "flume_tool_source_gate_under_test",
+        repo_root / "tools" / "flume_tool.py")
+    if spec is None or spec.loader is None:
+        raise AssertionError("failed to load tools/flume_tool.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def source_files(repo_root: Path) -> list[Path]:
-    roots = [
-        repo_root / "custom_ops" / "hcomm_payload_copy",
-        repo_root / "src" / "hcomm_payload",
-    ]
-    files: list[Path] = []
-    for root in roots:
-        if not root.exists():
-            continue
-        for path in root.rglob("*"):
-            if path.is_file() and path.suffix in SOURCE_SUFFIXES:
-                files.append(path)
-    return sorted(files)
+def write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def run_self_tests(flume_tool) -> None:
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        write(tmp / "custom_ops" / "hcomm_payload_copy" / "kernel.cc",
+              "void kernel() { HcommReadOnThread(nullptr); }\n")
+        write(tmp / "src" / "hcomm_payload" / "scheduler.cc",
+              "void scheduler() { HcommWriteOnThread(nullptr); }\n")
+        write(tmp / "src" / "core" / "client.cc",
+              "int flume_hccl_p2p_send() {\n"
+              "  HcclSend(nullptr, 0, HCCL_DATA_TYPE_UINT8, 1, nullptr, nullptr);\n"
+              "  return 0;\n"
+              "}\n"
+              "\n"
+              "int flume_hcomm_payload_send_ex(\n"
+              "    flume_client_t* client) {\n"
+              "  HcommReadOnThread(nullptr);\n"
+              "  return 0;\n"
+              "}\n")
+        passed, lines = flume_tool.HcommPayloadSourceGateLines(tmp)
+        if not passed:
+            raise AssertionError("\n".join(lines))
+        joined = "\n".join(lines)
+        assert "hcomm_payload_host_source_no_hccl_payload_api=passed" in joined
+        assert "host_ranges_scanned=1" in joined
+
+    with tempfile.TemporaryDirectory() as tmp_name:
+        tmp = Path(tmp_name)
+        write(tmp / "src" / "core" / "client.cc",
+              "int flume_hcomm_payload_recv_ex(\n"
+              "    flume_client_t* client) {\n"
+              "  HcclRecv(nullptr, 0, HCCL_DATA_TYPE_UINT8, 0, nullptr, nullptr);\n"
+              "  return 0;\n"
+              "}\n")
+        passed, lines = flume_tool.HcommPayloadSourceGateLines(tmp)
+        if passed:
+            raise AssertionError("expected host scheduler violation")
+        joined = "\n".join(lines)
+        assert "hcomm_payload_host_source_no_hccl_payload_api=failed" in joined
+        assert "range=flume_hcomm_payload_recv_ex:forbidden=HcclRecv" in joined
 
 
 def main() -> int:
     repo_root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else (
         Path(__file__).resolve().parents[1])
-    pattern = re.compile(
-        r"\b(" + "|".join(re.escape(name)
-                           for name in FORBIDDEN_HCCL_PAYLOAD_APIS) + r")\b")
-    violations: list[str] = []
-    files = source_files(repo_root)
-    for path in files:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            match = pattern.search(line)
-            if match is None:
-                continue
-            rel = path.relative_to(repo_root)
-            violations.append(f"{rel}:{line_no}: forbidden {match.group(1)}")
-
-    if violations:
+    flume_tool = load_flume_tool(repo_root)
+    run_self_tests(flume_tool)
+    passed, lines = flume_tool.HcommPayloadSourceGateLines(repo_root)
+    if not passed:
         print("HCOMM payload source gate failed:")
-        print("\n".join(violations))
+        print("\n".join(lines))
         print("")
         print("HCOMM payload kernels must use HCOMM primitives such as "
               "HcommReadOnThread/HcommWriteOnThread, not HCCL payload, "
               "collective, or one-sided APIs.")
         return 1
 
-    print("hcomm_payload_source_no_hccl_payload_api=passed")
-    print(f"files_scanned={len(files)}")
+    print("\n".join(lines))
     return 0
 
 
