@@ -2307,6 +2307,14 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         rank_lines[0], "payload_trace_transfer_mode")
     rank1_trace_transfer_mode = MarkerValueFromLine(
         rank_lines[1], "payload_trace_transfer_mode")
+    rank0_write_notify_backend = MarkerValueFromLine(
+        rank_lines[0], "payload_trace_write_notify_backend")
+    rank1_write_notify_backend = MarkerValueFromLine(
+        rank_lines[1], "payload_trace_write_notify_backend")
+    rank0_completion_mode = MarkerValueFromLine(
+        rank_lines[0], "payload_completion_mode")
+    rank1_completion_mode = MarkerValueFromLine(
+        rank_lines[1], "payload_completion_mode")
     rank1_recv_path = MarkerValueFromLine(rank_lines[1], "payload_recv_path")
     binding_ok = (
         rank0_binding == rank1_binding and
@@ -2320,6 +2328,16 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     trace_transfer_ok = (
         rank0_trace_transfer_mode == rank1_trace_transfer_mode and
         rank0_trace_transfer_mode == rank0_transfer_mode)
+    write_notify_backend_ok = True
+    if rank0_transfer_mode == "write-with-notify":
+        write_notify_backend_ok = (
+            rank0_write_notify_backend == rank1_write_notify_backend and
+            rank0_write_notify_backend in ("blocking", "nbi"))
+        if rank0_write_notify_backend == "nbi":
+            write_notify_backend_ok = (
+                write_notify_backend_ok and
+                rank0_completion_mode == "channel-fence" and
+                rank1_completion_mode == "channel-fence")
     if rank0_transfer_mode == "write":
         rank0_trace_ok = rank0_trace_path == "send-write"
         rank1_trace_ok = rank1_trace_path == "recv-write-local-copy"
@@ -2340,12 +2358,13 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         all(marker in rank_lines[0] for marker in markers)
         for markers in accepted_marker_sets) and (
             "payload_role=send" in rank_lines[0] and
-            rank0_trace_ok)
+            rank0_trace_ok and write_notify_backend_ok)
     rank1_ok = (bool(rank_lines[1]) and any(
         all(marker in rank_lines[1] for marker in markers)
         for markers in accepted_marker_sets) and
                 "payload_role=recv" in rank_lines[1] and
                 rank1_trace_ok and
+                write_notify_backend_ok and
                 "payload_verify=passed" in rank_lines[1])
     source_match = re.search(r"\bpayload_source_checksum=([^\s\"]+)",
                              rank_lines[0])
@@ -3383,6 +3402,8 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
             "completion": _CandidateMarker(text, "payload_completion_mode"),
             "transfer": _CandidateMarker(text, "payload_transfer_mode"),
             "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+            "backend": _CandidateMarker(
+                text, "payload_trace_write_notify_backend"),
             "fallback": _CandidateMarker(text, "fallback"),
             "log": result.log_path.name,
         })
@@ -3408,8 +3429,8 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | backend | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -3419,12 +3440,16 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
             f"{row['trace_error']} | {row['trace_error_ret']} | "
             f"{row['binding']} | {row['batch']} | "
             f"{row['completion']} | {row['transfer']} | "
-            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+            f"{row['trace']} | {row['backend']} | "
+            f"{row['fallback']} | {row['log']} |")
     lines.extend([
         "",
         "A write-with-notify candidate can satisfy the strict-positive gate "
         "only when both ranks show `payload_transfer_mode=write-with-notify`, "
         "complete payload trace evidence, checksum match, and `fallback=none`. "
+        "The NBI backend also requires `payload_completion_mode=channel-fence` "
+        "so a non-blocking write-with-notify return cannot be accepted before "
+        "channel completion is explicitly drained. "
         "This table is a triage aid; it does not weaken the gate.",
     ])
     note.write_text("\n".join(lines) + "\n", encoding="utf-8")

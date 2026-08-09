@@ -84,6 +84,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_launch_api=host-args "
+        "payload_completion_mode=ordered-notify "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
@@ -125,6 +126,7 @@ def strict_log(include_verify: bool) -> str:
         "stage3b3e_direct_aclrt_payload_launch=passed "
         "stage3b3e_payload_sync=passed "
         "payload_launch_api=host-args "
+        "payload_completion_mode=ordered-notify "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
         "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
@@ -524,8 +526,16 @@ def strict_log_with_recv_direct_output() -> str:
 
 
 def strict_log_with_channel_fence(text: str) -> str:
-    return text.replace("payload_desc_completion_mode=0",
+    text = text.replace("payload_desc_completion_mode=0",
                         "payload_desc_completion_mode=1")
+    return text.replace("payload_completion_mode=ordered-notify",
+                        "payload_completion_mode=channel-fence")
+
+
+def strict_write_with_notify_nbi_log(include_verify: bool) -> str:
+    return strict_write_with_notify_path_log(include_verify).replace(
+        "payload_trace_write_notify_backend=blocking",
+        "payload_trace_write_notify_backend=nbi")
 
 
 def strict_log_with_missing_handoff() -> str:
@@ -1215,6 +1225,11 @@ def main() -> int:
             strict_write_with_notify)[0]
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_write_with_notify_trace_mismatch_log())[0]
+        strict_write_with_notify_nbi = strict_write_with_notify_nbi_log(True)
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_with_notify_nbi)[0]
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_channel_fence(strict_write_with_notify_nbi))[0]
         write_with_notify_note = (
             flume_tool.WriteHcommPayloadWriteWithNotifyCandidate(
                 tmp, None, strict_write_with_notify_path))

@@ -444,6 +444,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
     const char* expected_role,
     bool write_path,
     bool write_with_notify,
+    bool force_channel_fence,
     bool recv_direct_output) {
   const bool skip_comm_acquire =
       comm_binding != FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
@@ -471,6 +472,11 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
 #endif
   const char* write_notify_backend =
       write_with_notify ? available_write_notify_backend : "none";
+  const bool require_channel_fence =
+      force_channel_fence ||
+      (write_with_notify && std::string(write_notify_backend) == "nbi");
+  const char* completion_mode =
+      require_channel_fence ? "channel-fence" : "ordered-notify";
   std::vector<std::string> markers = {
       "stage3b3e_payload_copy=passed",
       "stage3b3e_direct_aclrt_payload_loader=passed",
@@ -479,6 +485,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "stage3b3e_payload_sync=passed",
       "payload_sync_api=",
       "payload_sync_timeout_sec=",
+      DetailValueMarker("payload_completion_mode", completion_mode),
       "payload_kernel_status=success",
       "payload_failure_step=none",
       "payload_status_word=0",
@@ -545,6 +552,7 @@ bool CheckHcommPayloadIoMarkers(flume_io_t* io,
                                 flume_hcomm_payload_comm_binding_t comm_binding,
                                 bool write_path,
                                 bool write_with_notify,
+                                bool force_channel_fence,
                                 bool recv_direct_output,
                                 const char* expected_role,
                                 const char* label,
@@ -557,6 +565,7 @@ bool CheckHcommPayloadIoMarkers(flume_io_t* io,
                                                           expected_role,
                                                           write_path,
                                                           write_with_notify,
+                                                          force_channel_fence,
                                                           recv_direct_output),
                             &missing_marker)) {
     return true;
@@ -1845,6 +1854,7 @@ void RankMain(RankContext* ctx) {
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
                 ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_channel_fence,
                 ctx->hcomm_payload_recv_direct_output,
                 expected_role, "HCOMM payload copy", &error)) {
           log_hcomm_payload_line();
@@ -1969,6 +1979,7 @@ void RankMain(RankContext* ctx) {
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
                 ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_channel_fence,
                 ctx->hcomm_payload_recv_direct_output, "send",
                 "storage HBM HCOMM send", &error)) {
           goto cleanup;
@@ -2048,6 +2059,7 @@ void RankMain(RankContext* ctx) {
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
                 ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_channel_fence,
                 ctx->hcomm_payload_recv_direct_output, "recv",
                 "storage HBM HCOMM recv", &error)) {
           goto cleanup;
