@@ -427,6 +427,11 @@ bool DetailContainsMarkers(const char* detail,
   return true;
 }
 
+std::string DetailValueMarker(const std::string& key,
+                              const std::string& value) {
+  return key + "=" + value + " ";
+}
+
 const char* HcommPayloadCommBindingName(
     flume_hcomm_payload_comm_binding_t binding);
 
@@ -435,17 +440,24 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
     flume_hcomm_payload_comm_binding_t comm_binding,
     const char* expected_role,
     bool write_path,
-    bool write_with_notify) {
+    bool write_with_notify,
+    bool recv_direct_output) {
   const bool skip_comm_acquire =
       comm_binding != FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
   const bool send_role = std::string(expected_role) == "send";
   const char* transfer_mode = write_with_notify ? "write-with-notify" :
                               (write_path ? "write" : "read");
+  const bool effective_recv_direct_output =
+      recv_direct_output && !write_path && !write_with_notify;
+  const char* recv_path =
+      effective_recv_direct_output ? "direct-output" : "local-buffer";
   const char* primitive_path = send_role ?
       (write_with_notify ? "send-write-with-notify" :
        (write_path ? "send-write" : "send-local-copy")) :
       (write_with_notify ? "recv-write-notify-local-copy" :
-       (write_path ? "recv-write-local-copy" : "recv-read"));
+       (write_path ? "recv-write-local-copy" :
+        (effective_recv_direct_output ? "recv-read-direct-output" :
+                                        "recv-read-local-copy")));
   std::vector<std::string> markers = {
       "stage3b3e_payload_copy=passed",
       "stage3b3e_direct_aclrt_payload_loader=passed",
@@ -474,15 +486,16 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_event=kernel-exit",
       "payload_trace_order=passed",
       "payload_trace_ret_order=passed",
-      std::string("payload_trace_primitive_path=") + primitive_path,
+      DetailValueMarker("payload_trace_primitive_path", primitive_path),
       "payload_trace_bytes=",
       std::string("payload_trace_batch_mode=") + (disable_batch ? "1" : "0"),
-      "payload_trace_recv_path=",
+      DetailValueMarker("payload_trace_recv_path",
+                        effective_recv_direct_output ? "1" : "0"),
       skip_comm_acquire ? "payload_trace_comm_acquire=skipped" :
                           "payload_trace_comm_acquire=default",
-      std::string("payload_trace_comm_binding=") +
-          HcommPayloadCommBindingName(comm_binding),
-      std::string("payload_trace_transfer_mode=") + transfer_mode,
+      DetailValueMarker("payload_trace_comm_binding",
+                        HcommPayloadCommBindingName(comm_binding)),
+      DetailValueMarker("payload_trace_transfer_mode", transfer_mode),
       "payload_trace_ready_notify_idx=",
       "payload_trace_done_notify_idx=",
       "payload_trace_result=success",
@@ -494,11 +507,11 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       skip_comm_acquire ? "payload_comm_acquire=skipped" :
                           "payload_comm_acquire=default",
-      std::string("payload_comm_binding=") +
-          HcommPayloadCommBindingName(comm_binding),
+      DetailValueMarker("payload_comm_binding",
+                        HcommPayloadCommBindingName(comm_binding)),
       "payload_desc_batch_tag=",
-      std::string("payload_transfer_mode=") + transfer_mode,
-      "payload_recv_path=",
+      DetailValueMarker("payload_transfer_mode", transfer_mode),
+      DetailValueMarker("payload_recv_path", recv_path),
       "payload_semantic_v6=present",
       "payload_semantic_v7=present",
       "payload_semantic_v8=present",
@@ -517,6 +530,7 @@ bool CheckHcommPayloadIoMarkers(flume_io_t* io,
                                 flume_hcomm_payload_comm_binding_t comm_binding,
                                 bool write_path,
                                 bool write_with_notify,
+                                bool recv_direct_output,
                                 const char* expected_role,
                                 const char* label,
                                 std::string* error) {
@@ -527,7 +541,8 @@ bool CheckHcommPayloadIoMarkers(flume_io_t* io,
                                                           comm_binding,
                                                           expected_role,
                                                           write_path,
-                                                          write_with_notify),
+                                                          write_with_notify,
+                                                          recv_direct_output),
                             &missing_marker)) {
     return true;
   }
@@ -1815,6 +1830,7 @@ void RankMain(RankContext* ctx) {
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
                 ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_recv_direct_output,
                 expected_role, "HCOMM payload copy", &error)) {
           log_hcomm_payload_line();
           goto cleanup;
@@ -1937,7 +1953,8 @@ void RankMain(RankContext* ctx) {
                 storage_hbm_io, ctx->hcomm_payload_disable_batch,
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
-                ctx->hcomm_payload_write_with_notify, "send",
+                ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_recv_direct_output, "send",
                 "storage HBM HCOMM send", &error)) {
           goto cleanup;
         }
@@ -2015,7 +2032,8 @@ void RankMain(RankContext* ctx) {
                 storage_hbm_io, ctx->hcomm_payload_disable_batch,
                 ctx->hcomm_payload_comm_binding,
                 ctx->hcomm_payload_write_path,
-                ctx->hcomm_payload_write_with_notify, "recv",
+                ctx->hcomm_payload_write_with_notify,
+                ctx->hcomm_payload_recv_direct_output, "recv",
                 "storage HBM HCOMM recv", &error)) {
           goto cleanup;
         }
