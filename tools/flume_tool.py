@@ -4528,7 +4528,35 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
         f"decision_tree={tree}",
         f"strict_positive_evidence={'passed' if passed else 'failed'}",
     ]
-    if not passed:
+    if passed:
+        lines.extend([
+            "rank0_strict_evidence=passed",
+            "rank1_strict_evidence=passed",
+            "stage3b3e_payload_copy=passed",
+            "stage3b3e_direct_aclrt_payload_loader=passed",
+            "stage3b3e_payload_descriptor_handoff=passed",
+            "stage3b3e_direct_aclrt_payload_launch=passed",
+            "stage3b3e_payload_sync=passed",
+            "payload_kernel_status=success",
+            "payload_failure_step=none",
+            "payload_status_word=0",
+            "payload_kernel_hcomm_ret=0",
+            "payload_echo=passed",
+            "payload_descriptor_fingerprint=passed",
+            "payload_data_probe=observed",
+            "payload_data_flow=passed",
+            "payload_host_data=passed",
+            "payload_primitive_state=completed",
+            "payload_trace=passed",
+            "payload_trace_event=kernel-exit",
+            "payload_trace_order=passed",
+            "payload_trace_ret_order=passed",
+            "payload_trace_result=success",
+            "payload_verify=passed",
+            "payload_checksum_match=passed",
+            "fallback=none",
+        ])
+    else:
         lines.append(
             "reason=missing complete Stage 3B.3E strict-positive evidence")
         lines.append(

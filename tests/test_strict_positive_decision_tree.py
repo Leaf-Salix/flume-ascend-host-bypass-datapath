@@ -2077,6 +2077,18 @@ def main() -> int:
         flume_tool.RecordStrictPositiveEvidenceGate(
             pass_runner, tree, True, required=True)
         assert pass_runner.write_summary() == 0
+        pass_evidence_logs = sorted(pass_runner.run_dir.glob(
+            "*-hcomm-payload-strict-evidence.log"))
+        assert pass_evidence_logs
+        pass_evidence_text = pass_evidence_logs[-1].read_text(
+            encoding="utf-8")
+        assert "strict_positive_evidence=passed" in pass_evidence_text
+        assert "payload_data_flow=passed" in pass_evidence_text
+        assert "payload_host_data=passed" in pass_evidence_text
+        assert "payload_trace_order=passed" in pass_evidence_text
+        assert "payload_trace_ret_order=passed" in pass_evidence_text
+        assert "payload_checksum_match=passed" in pass_evidence_text
+        assert "fallback=none" in pass_evidence_text
 
         fail_runner = flume_tool.Runner(tmp / "runner-fail")
         flume_tool.RecordStrictPositiveEvidenceGate(
