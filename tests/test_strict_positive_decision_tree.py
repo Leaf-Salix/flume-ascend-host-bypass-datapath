@@ -3244,6 +3244,8 @@ def main() -> int:
         assert "payload_official_p2p_layout=present" in pass_evidence_text
         assert "payload_checksum_match=passed" in pass_evidence_text
         assert "fallback=none" in pass_evidence_text
+        pass_tree_text = strict_pass_tree.read_text(encoding="utf-8")
+        assert "| payload device-side self-check | rank0=passed/send-read-side, rank1=passed/recv-read-local-buffer-side |" in pass_tree_text
         assert "selected_evidence_log=02-hcomm-payload-strict-positive.log" in pass_evidence_text
         assert ("selected_payload_command=flume-hccl-collective-smoke "
                 "--hcomm-require-payload-copy") in pass_evidence_text

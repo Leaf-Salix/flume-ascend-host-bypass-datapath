@@ -5871,6 +5871,14 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_rank_lines[1], "payload_data_local_exit_fingerprint")
     strict_rank1_data_user_exit = marker_value_from_line(
         strict_rank_lines[1], "payload_data_user_exit_fingerprint")
+    strict_rank0_device_side = marker_value_from_line(
+        strict_rank_lines[0], "payload_device_data_side")
+    strict_rank0_device_side_reason = marker_value_from_line(
+        strict_rank_lines[0], "payload_device_data_side_reason")
+    strict_rank1_device_side = marker_value_from_line(
+        strict_rank_lines[1], "payload_device_data_side")
+    strict_rank1_device_side_reason = marker_value_from_line(
+        strict_rank_lines[1], "payload_device_data_side_reason")
     strict_data_flow_ok, strict_data_flow_reason = (
         StrictPayloadDataFlowPassed(strict_rank_lines))
     strict_host_data_ok, strict_host_data_reason = (
@@ -6133,6 +6141,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload status schema | {strict_status_schema} / {strict_status_word_count} | `payload_status_schema` and `payload_status_word_count` |",
             f"| payload descriptor echo | {strict_echo} | `payload_echo` and `payload_descriptor_fingerprint` must pass so the kernel confirms role/peer/bytes and the exact descriptor fingerprint |",
             f"| payload data probe | {strict_data_probe} | sample_bytes={strict_data_sample_bytes}, rank0 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank0_data_user_entry}/{strict_rank0_data_local_entry}/{strict_rank0_data_remote_entry}/{strict_rank0_data_transfer_exit}/{strict_rank0_data_local_exit}/{strict_rank0_data_user_exit}, rank1 user-entry/local-entry/remote-entry/transfer-exit/local-exit/user-exit={strict_rank1_data_user_entry}/{strict_rank1_data_local_entry}/{strict_rank1_data_remote_entry}/{strict_rank1_data_transfer_exit}/{strict_rank1_data_local_exit}/{strict_rank1_data_user_exit}; this is a device-side sampled fingerprint for primitive data-flow diagnosis, not the final checksum gate |",
+            f"| payload device-side self-check | rank0={strict_rank0_device_side}/{strict_rank0_device_side_reason}, rank1={strict_rank1_device_side}/{strict_rank1_device_side_reason} | per-rank status-word self-check derived before the cross-rank data-flow gate; this catches local copy/read/write/direct-output inconsistencies without using HCCL Send/Recv fallback |",
             f"| payload data flow | {'passed' if strict_data_flow_ok else strict_data_flow_reason} | source fingerprint must propagate from rank0 user HBM into rank0 local HCCL Buffer and then into rank1 output HBM through the selected read/write/direct-output path |",
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload trace descriptor match | {'passed' if strict_trace_descriptor_ok else strict_trace_descriptor_reason} | trace bytes/batch/recv/comm/transfer fields and `payload_layout` must match the host descriptor on both ranks |",
