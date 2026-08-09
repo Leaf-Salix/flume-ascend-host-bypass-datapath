@@ -316,9 +316,10 @@ preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，
 后续 strict-positive 命令传 `--custom-op-root <temporary-custom-op-root>` 即可。
 如果只想临时验证 loose build artifacts，也可以在 strict-positive smoke
-中同时传 `--custom-op-json <json>` 和 `--custom-op-aicpu-tar <tar>`；工具会把
-两者都转发给 runtime，避免 package preflight 通过但 C++ launcher 因找不到
-matching AICPU tar 而降级为 not-ready。
+中同时传 `--custom-op-json <json>` 和 `--custom-op-aicpu-tar <tar>`；工具会在
+本次日志目录下自动导出一个 isolated runtime root，再把该 root 转发给
+C++ launcher，避免 package preflight 通过但 ACL loader 找不到 matching
+AICPU tar。
 
 安装包后可以先做不依赖 NPU 的包体自检：
 

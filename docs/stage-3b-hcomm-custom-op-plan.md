@@ -548,6 +548,11 @@ Then pass `--custom-op-root <temporary-custom-op-root>` to
 `hcomm-payload-strict-positive` or `ascend-full-matrix`. This does not build
 the kernel by itself; it makes already-built JSON/tar artifacts visible through
 the same runtime layout that direct ACL loading uses.
+Focused strict-positive and full-matrix also accept loose
+`--custom-op-json <json>` plus `--custom-op-aicpu-tar <tar>` artifacts; before
+launch they automatically export those files into an isolated runtime root
+under the current log directory so `aclrtBinaryLoadFromFile(JSON)` sees the
+same OPP-style layout as an installed package.
 The preflight also verifies that the SO inside the tar exports the required
 entrypoints, so a JSON/SO mismatch fails before strict payload smoke. If the
 second check fails, the next action is to rebuild the package with

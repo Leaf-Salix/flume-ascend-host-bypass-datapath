@@ -465,6 +465,64 @@ def MaybeAutoBuildPayloadPackage(
     return auto_args, package_result
 
 
+def MaybeExportExplicitCustomOpRuntime(
+        runner: Runner,
+        args: argparse.Namespace) -> tuple[argparse.Namespace,
+                                           Optional[StepResult]]:
+    if not args.custom_op_json or not args.custom_op_aicpu_tar:
+        return args, None
+    json_path = Path(args.custom_op_json).expanduser()
+    tar_path = Path(args.custom_op_aicpu_tar).expanduser()
+    runtime_tar = RuntimeAicpuTarForJson(json_path)
+    if runtime_tar is not None and runtime_tar.exists():
+        return args, None
+    if not json_path.exists() or not tar_path.exists():
+        return args, None
+
+    vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
+    export_root = runner.run_dir / "explicit-custom-op-runtime"
+    dest_json, dest_tar = RuntimeCustomOpArtifactPaths(export_root, vendor)
+    try:
+        dest_json.parent.mkdir(parents=True, exist_ok=True)
+        dest_tar.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(json_path, dest_json)
+        shutil.copy2(tar_path, dest_tar)
+    except OSError as exc:
+        result = runner.record_static(
+            "hcomm-custom-op-explicit-runtime-export",
+            [
+                "explicit_custom_op_runtime_export=failed",
+                f"source_json={json_path}",
+                f"source_aicpu_tar={tar_path}",
+                f"export_root={export_root}",
+                f"error={exc}",
+            ],
+            returncode=1,
+            required=True,
+        )
+        return args, result
+
+    exported_args = copy.copy(args)
+    exported_args.custom_op_root = str(export_root)
+    exported_args.custom_op_json = ""
+    exported_args.custom_op_aicpu_tar = ""
+    result = runner.record_static(
+        "hcomm-custom-op-explicit-runtime-export",
+        [
+            "explicit_custom_op_runtime_export=passed",
+            f"source_json={json_path}",
+            f"source_aicpu_tar={tar_path}",
+            f"custom_op_root={export_root}",
+            f"runtime_json={dest_json}",
+            f"runtime_aicpu_tar={dest_tar}",
+            "reason=converted loose JSON/tar artifacts to an ACL runtime-loadable OPP layout",
+        ],
+        returncode=0,
+        required=True,
+    )
+    return exported_args, result
+
+
 def PackageRequirementBlocks(package_text: str) -> list[tuple[set[str], str]]:
     blocks: list[tuple[set[str], str]] = []
     current_required: Optional[set[str]] = None
@@ -1715,6 +1773,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                 timeout_seconds=args.step_timeout_sec,
             )
     if args.run_hcomm_payload_smoke or args.run_hcomm_notify_only_smoke:
+        args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
+        if export_result is not None and export_result.returncode != 0:
+            return runner.write_summary()
         runner.run(
             "hcomm-custom-op-package-preflight",
             HcommCustomOpPackageCommand(
@@ -4609,6 +4670,9 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             required=False,
             timeout_seconds=args.step_timeout_sec,
         )
+    args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
+    if export_result is not None and export_result.returncode != 0:
+        return runner.write_summary()
     runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
     if not runtime_json_ok:
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
@@ -4808,6 +4872,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
             timeout_seconds=args.step_timeout_sec,
         )
 
+    args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
+    if export_result is not None and export_result.returncode != 0:
+        return runner.write_summary()
     runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
     if not runtime_json_ok:
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
@@ -5015,6 +5082,9 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
             timeout_seconds=args.step_timeout_sec,
         )
 
+    args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
+    if export_result is not None and export_result.returncode != 0:
+        return runner.write_summary()
     runtime_json_ok, runtime_json_error = ValidateRuntimeCustomOpJson(args)
     if not runtime_json_ok:
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"

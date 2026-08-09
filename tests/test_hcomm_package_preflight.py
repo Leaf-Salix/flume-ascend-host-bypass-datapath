@@ -852,6 +852,27 @@ def main() -> int:
             SimpleNamespace(custom_op_json=str(v4_json),
                             custom_op_aicpu_tar=str(v4_tar)))
         assert ok, message
+        export_runner = flume_tool.Runner(tmp / "explicit-runtime-export-run")
+        exported_args, export_result = flume_tool.MaybeExportExplicitCustomOpRuntime(
+            export_runner,
+            SimpleNamespace(custom_op_vendor="flume,cust",
+                            custom_op_root="",
+                            custom_op_json=str(v4_json),
+                            custom_op_aicpu_tar=str(v4_tar)))
+        assert export_result is not None
+        assert export_result.returncode == 0
+        assert exported_args.custom_op_json == ""
+        assert exported_args.custom_op_aicpu_tar == ""
+        exported_root = Path(exported_args.custom_op_root)
+        exported_json = (exported_root / "opp" / "vendors" / "flume" /
+                         "aicpu" / "config" / KERNEL_JSON)
+        exported_tar = (exported_root / "opp" / "vendors" / "flume" /
+                        "aicpu" / "kernel" / AICPU_TAR)
+        assert exported_json.exists()
+        assert exported_tar.exists()
+        assert flume_tool.ValidateRuntimeCustomOpJson(
+            SimpleNamespace(custom_op_json=str(exported_json),
+                            custom_op_aicpu_tar=""))[0]
         found_json, found_tar = flume_tool.FindInstalledCustomOpRuntimeArtifacts(
             "flume", [str(tmp / "runtime")])
         assert found_json == installed_json
