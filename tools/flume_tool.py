@@ -2628,9 +2628,21 @@ def BuildWritePathCandidateCommand(base_command: list[str],
     return command
 
 
-def BuildWriteWithNotifyCandidateCommand(base_command: list[str]) -> list[str]:
+def BuildWriteWithNotifyCandidateCommand(base_command: list[str],
+                                         *,
+                                         channel_handle: bool = False,
+                                         channel_fence: bool = False,
+                                         no_batch: bool = False) -> list[str]:
     command = PayloadCommandWithoutWritePath(base_command)
+    if channel_handle:
+        command = PayloadCommandWithoutCommBinding(command)
     command.append("--hcomm-payload-write-with-notify")
+    if channel_fence and "--hcomm-payload-channel-fence" not in command:
+        command.append("--hcomm-payload-channel-fence")
+    if no_batch and "--hcomm-payload-disable-batch" not in command:
+        command.append("--hcomm-payload-disable-batch")
+    if channel_handle:
+        command.append("--hcomm-payload-comm-binding=channel-handle")
     return command
 
 
@@ -2828,10 +2840,20 @@ def RunHcommPayloadWriteWithNotifyCandidate(
         base_command: list[str],
         env_updates: Optional[dict[str, str]],
         timeout_seconds: int,
-        default_log: Optional[Path]) -> StepResult:
-    command = BuildWriteWithNotifyCandidateCommand(base_command)
+        default_log: Optional[Path],
+        *,
+        channel_handle: bool = False,
+        channel_fence: bool = False,
+        no_batch: bool = False,
+        step_name: str = "hcomm-payload-write-with-notify-candidate") -> StepResult:
+    command = BuildWriteWithNotifyCandidateCommand(
+        base_command,
+        channel_handle=channel_handle,
+        channel_fence=channel_fence,
+        no_batch=no_batch,
+    )
     result = runner.run(
-        "hcomm-payload-write-with-notify-candidate",
+        step_name,
         command,
         required=False,
         timeout_seconds=timeout_seconds,
@@ -2842,6 +2864,192 @@ def RunHcommPayloadWriteWithNotifyCandidate(
     WriteHcommPayloadWriteWithNotifyCandidate(
         runner.run_dir, default_log, result.log_path)
     return result
+
+
+def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+        run_dir: Path,
+        default_log: Optional[Path],
+        candidate_results: list[StepResult],
+        selected_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md"
+    rows = []
+    for result in candidate_results:
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError as exc:
+            text = f"failed to read log: {exc}"
+        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+        rows.append({
+            "step": result.name,
+            "returncode": str(result.returncode),
+            "selected": "yes" if selected_log == result.log_path else "no",
+            "evidence": "passed" if passed else "not-passed",
+            "rank0": "passed" if rank0_ok else "missing",
+            "rank1": "passed" if rank1_ok else "missing",
+            "failure": _CandidateMarker(text, "payload_failure_step"),
+            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "trace_error": _CandidateMarker(
+                text, "payload_trace_first_error_event"),
+            "trace_error_ret": _CandidateMarker(
+                text, "payload_trace_first_error_ret"),
+            "binding": _CandidateMarker(text, "payload_comm_binding"),
+            "batch": _CandidateMarker(text, "payload_batch_mode"),
+            "completion": _CandidateMarker(text, "payload_completion_mode"),
+            "transfer": _CandidateMarker(text, "payload_transfer_mode"),
+            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+            "fallback": _CandidateMarker(text, "fallback"),
+            "log": result.log_path.name,
+        })
+
+    if selected_log is not None:
+        decision = (
+            "a write-with-notify candidate produced complete "
+            "strict-positive HCOMM payload evidence")
+    elif candidate_results:
+        decision = (
+            "no write-with-notify candidate produced complete "
+            "strict-positive evidence; inspect failure steps below")
+    else:
+        decision = "no write-with-notify candidates were executed"
+
+    lines = [
+        "# HCOMM Payload Write-With-Notify Candidate Matrix",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
+        f"- candidates_run: `{len(candidate_results)}`",
+        "",
+        f"decision: {decision}",
+        "",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['step']} | {row['returncode']} | {row['selected']} | "
+            f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
+            f"{row['failure']} | {row['hcomm_ret']} | "
+            f"{row['trace_error']} | {row['trace_error_ret']} | "
+            f"{row['binding']} | {row['batch']} | "
+            f"{row['completion']} | {row['transfer']} | "
+            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+    lines.extend([
+        "",
+        "A write-with-notify candidate can satisfy the strict-positive gate "
+        "only when both ranks show `payload_transfer_mode=write-with-notify`, "
+        "complete payload trace evidence, checksum match, and `fallback=none`. "
+        "This table is a triage aid; it does not weaken the gate.",
+    ])
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload write-with-notify candidate matrix -> {note}")
+    return note
+
+
+def RunHcommPayloadWriteWithNotifyFallbackCandidates(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path],
+        args: argparse.Namespace) -> Optional[Path]:
+    candidate_results: list[StepResult] = []
+    selected_log: Optional[Path] = None
+
+    def remember(result: StepResult) -> Optional[Path]:
+        nonlocal selected_log
+        candidate_results.append(result)
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError:
+            text = ""
+        transfer_mode = MarkerValue(text, "payload_transfer_mode")
+        if (StrictPayloadRankEvidencePassed(text)[0] and
+                transfer_mode == "write-with-notify"):
+            selected_log = result.log_path
+            return result.log_path
+        return None
+
+    write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
+        runner, base_command, env_updates, timeout_seconds, default_log)
+    passed_log = remember(write_notify_result)
+    if passed_log is not None:
+        WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+            runner.run_dir, default_log, candidate_results, selected_log)
+        return passed_log
+
+    can_try_channel_handle = (
+        args.auto_run_hcomm_payload_channel_handle_candidate and
+        not CommandUsesChannelHandleBinding(base_command))
+    can_try_channel_fence = (
+        args.auto_run_hcomm_payload_channel_fence_diagnostic and
+        not CommandUsesChannelFence(base_command))
+    can_try_no_batch = (
+        args.auto_run_hcomm_payload_nobatch_diagnostic and
+        not CommandUsesNoBatch(base_command))
+
+    if can_try_channel_handle:
+        channel_result = RunHcommPayloadWriteWithNotifyCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log,
+            channel_handle=True,
+            step_name=("hcomm-payload-write-with-notify-"
+                       "channel-handle-candidate"))
+        passed_log = remember(channel_result)
+        if passed_log is not None:
+            WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                runner.run_dir, default_log, candidate_results, selected_log)
+            return passed_log
+
+        if can_try_channel_fence:
+            channel_fence_result = RunHcommPayloadWriteWithNotifyCandidate(
+                runner, base_command, env_updates, timeout_seconds, default_log,
+                channel_handle=True,
+                channel_fence=True,
+                step_name=("hcomm-payload-write-with-notify-channel-handle-"
+                           "channel-fence-candidate"))
+            passed_log = remember(channel_fence_result)
+            if passed_log is not None:
+                WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
+
+        if can_try_no_batch:
+            channel_no_batch_result = RunHcommPayloadWriteWithNotifyCandidate(
+                runner, base_command, env_updates, timeout_seconds, default_log,
+                channel_handle=True,
+                no_batch=True,
+                step_name=("hcomm-payload-write-with-notify-channel-handle-"
+                           "nobatch-candidate"))
+            passed_log = remember(channel_no_batch_result)
+            if passed_log is not None:
+                WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                    runner.run_dir, default_log, candidate_results,
+                    selected_log)
+                return passed_log
+
+            if can_try_channel_fence:
+                channel_no_batch_fence_result = (
+                    RunHcommPayloadWriteWithNotifyCandidate(
+                        runner, base_command, env_updates, timeout_seconds,
+                        default_log,
+                        channel_handle=True,
+                        no_batch=True,
+                        channel_fence=True,
+                        step_name=("hcomm-payload-write-with-notify-"
+                                   "channel-handle-nobatch-"
+                                   "channel-fence-candidate")))
+                passed_log = remember(channel_no_batch_fence_result)
+                if passed_log is not None:
+                    WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+                        runner.run_dir, default_log, candidate_results,
+                        selected_log)
+                    return passed_log
+
+    WriteHcommPayloadWriteWithNotifyCandidateMatrix(
+        runner.run_dir, default_log, candidate_results, selected_log)
+    return None
 
 
 def WriteHcommPayloadWritePathCandidateMatrix(
@@ -4560,6 +4768,10 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-write-path-channel-handle-nobatch-candidate",
     "hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate",
     "hcomm-payload-write-with-notify-candidate",
+    "hcomm-payload-write-with-notify-channel-handle-candidate",
+    "hcomm-payload-write-with-notify-channel-handle-channel-fence-candidate",
+    "hcomm-payload-write-with-notify-channel-handle-nobatch-candidate",
+    "hcomm-payload-write-with-notify-channel-handle-nobatch-channel-fence-candidate",
     "hcomm-payload-channel-handle-candidate",
     "hcomm-payload-channel-handle-channel-fence-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
@@ -4951,11 +5163,13 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
             if (args.auto_run_hcomm_payload_write_with_notify_candidate and
                     package_payload_ready and
                     not CommandUsesWriteWithNotify(strict_command)):
-                write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
-                    runner, strict_command, smoke_spec.env_updates,
-                    args.hccl_smoke_timeout_sec, strict_result.log_path)
-                if write_notify_result.returncode == 0:
-                    strict_tree_log = write_notify_result.log_path
+                write_notify_candidate_log = (
+                    RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                        runner, strict_command, smoke_spec.env_updates,
+                        args.hccl_smoke_timeout_sec, strict_result.log_path,
+                        args))
+                if write_notify_candidate_log is not None:
+                    strict_tree_log = write_notify_candidate_log
             if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                     package_payload_ready and
                     "--hcomm-payload-disable-batch" not in strict_command):
@@ -5161,11 +5375,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
                         strict_tree_log = write_candidate_log
                 if (args.auto_run_hcomm_payload_write_with_notify_candidate and
                         not CommandUsesWriteWithNotify(spec.command)):
-                    write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                    if write_notify_result.returncode == 0:
-                        strict_tree_log = write_notify_result.log_path
+                    write_notify_candidate_log = (
+                        RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                            runner, spec.command, spec.env_updates, timeout,
+                            result.log_path, args))
+                    if write_notify_candidate_log is not None:
+                        strict_tree_log = write_notify_candidate_log
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -5382,11 +5597,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
                         strict_tree_log = write_candidate_log
                 if (args.auto_run_hcomm_payload_write_with_notify_candidate and
                         not CommandUsesWriteWithNotify(spec.command)):
-                    write_notify_result = RunHcommPayloadWriteWithNotifyCandidate(
-                        runner, spec.command, spec.env_updates, timeout,
-                        result.log_path)
-                    if write_notify_result.returncode == 0:
-                        strict_tree_log = write_notify_result.log_path
+                    write_notify_candidate_log = (
+                        RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                            runner, spec.command, spec.env_updates, timeout,
+                            result.log_path, args))
+                    if write_notify_candidate_log is not None:
+                        strict_tree_log = write_notify_candidate_log
                 if (args.auto_run_hcomm_payload_nobatch_diagnostic and
                         not args.hcomm_payload_disable_batch and
                         "--hcomm-payload-disable-batch" not in spec.command):
@@ -6994,9 +7210,13 @@ def parse_args() -> argparse.Namespace:
                         action="store_true",
                         help=("When a payload-ready package is present and "
                               "the strict payload gate fails, automatically "
-                              "rerun the same smoke with "
-                              "--hcomm-payload-write-with-notify and write "
-                              "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE.md. "
+                              "rerun a write-with-notify candidate matrix. "
+                              "The matrix starts with "
+                              "--hcomm-payload-write-with-notify and, when "
+                              "matching auto flags are enabled, adds "
+                              "channel-handle, channel-fence, and no-batch "
+                              "cross-products. It writes "
+                              "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md. "
                               "A complete write-with-notify HCOMM primitive "
                               "copy can satisfy the strict-positive evidence "
                               "gate."))

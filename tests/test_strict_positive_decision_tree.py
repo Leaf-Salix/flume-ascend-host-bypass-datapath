@@ -1052,6 +1052,76 @@ def main() -> int:
             write_with_notify_select_dir,
             None,
             require_storage=False) == write_with_notify_candidate_log
+        strict_write_notify_channel_handle = (
+            strict_log_with_channel_handle_binding(strict_write_with_notify))
+        strict_write_notify_channel_handle_no_batch_fence = (
+            strict_log_with_channel_fence(
+                strict_log_with_no_batch(strict_write_notify_channel_handle)))
+        assert flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_notify_channel_handle_no_batch_fence)[0]
+
+        class FakeWriteNotifyCandidateRunner:
+            def __init__(self, run_dir: Path) -> None:
+                self.run_dir = run_dir
+                self.run_dir.mkdir()
+                self.calls: list[tuple[str, list[str]]] = []
+
+            def run(self, name, command, *, required=False,
+                    timeout_seconds=0, env_updates=None):
+                del timeout_seconds, env_updates
+                self.calls.append((name, list(command)))
+                log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
+                if name == ("hcomm-payload-write-with-notify-channel-handle-"
+                             "nobatch-channel-fence-candidate"):
+                    text = strict_write_notify_channel_handle_no_batch_fence
+                    returncode = 0
+                else:
+                    text = strict_log(False).replace(
+                        "payload_failure_step=none",
+                        "payload_failure_step=remote-read")
+                    returncode = 1
+                log_path.write_text(text, encoding="utf-8")
+                return flume_tool.StepResult(
+                    name=name,
+                    command=list(command),
+                    returncode=returncode,
+                    seconds=0.0,
+                    log_path=log_path,
+                    required=required)
+
+        fake_write_notify_runner = FakeWriteNotifyCandidateRunner(
+            tmp / "write-with-notify-sequence")
+        selected_write_notify_candidate = (
+            flume_tool.RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                fake_write_notify_runner,
+                ["flume-hccl-collective-smoke",
+                 "--hcomm-require-payload-copy",
+                 "--hcomm-payload-recv-direct-output"],
+                None,
+                10,
+                strict_write_with_notify_path,
+                candidate_args))
+        assert selected_write_notify_candidate is not None
+        assert selected_write_notify_candidate.name.endswith(
+            "hcomm-payload-write-with-notify-channel-handle-nobatch-"
+            "channel-fence-candidate.log")
+        final_write_notify_command = fake_write_notify_runner.calls[-1][1]
+        assert "--hcomm-payload-write-with-notify" in final_write_notify_command
+        assert "--hcomm-payload-comm-binding=channel-handle" in final_write_notify_command
+        assert "--hcomm-payload-disable-batch" in final_write_notify_command
+        assert "--hcomm-payload-channel-fence" in final_write_notify_command
+        assert "--hcomm-payload-recv-direct-output" not in final_write_notify_command
+        write_notify_matrix = (
+            fake_write_notify_runner.run_dir /
+            "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md")
+        assert write_notify_matrix.exists()
+        write_notify_matrix_text = write_notify_matrix.read_text(
+            encoding="utf-8")
+        assert "candidates_run: `5`" in write_notify_matrix_text
+        assert ("hcomm-payload-write-with-notify-channel-handle-nobatch-"
+                "channel-fence-candidate | 0 | yes | passed"
+                in write_notify_matrix_text)
+        assert "| write-with-notify | recv-write-notify-local-copy |" in write_notify_matrix_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
