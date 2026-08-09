@@ -1048,6 +1048,14 @@ def main() -> int:
             sys.argv = old_argv
         commands = flume_tool.build_commands(
             storage_args, enable_hccl=True, run_dir=tmp / "command-run")
+        command_names = [spec.name for spec in commands]
+        assert "acl-runtime-probe" in command_names
+        assert command_names.index("acl-runtime-probe") < command_names.index(
+            "hccl-collective-smoke")
+        acl_probe_command = next(
+            spec.command for spec in commands
+            if spec.name == "acl-runtime-probe")
+        assert acl_probe_command[-1] == "--devices=0,1"
         smoke_command = next(
             spec.command for spec in commands
             if spec.name == "hccl-collective-smoke")
@@ -3058,6 +3066,22 @@ def main() -> int:
         assert ("| NPU runtime ready for strict payload? | "
                 "driver-runtime-unavailable |") in text
         assert "fix NPU driver/runtime visibility before rerunning strict-positive" in text
+
+        acl_runtime_dir = tmp / "acl-runtime-unavailable"
+        acl_runtime_dir.mkdir()
+        write(acl_runtime_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        write(acl_runtime_dir / "01-acl-runtime-probe.log",
+              "acl_runtime_probe=failed step=aclInit ret=500000\n"
+              "DrvMngGetConsoleLogLevel failed. (ret=4)\n")
+        tree = flume_tool.WriteMatrixDecisionTree(
+            acl_runtime_dir, None, acl_runtime_dir /
+            "01-acl-runtime-probe.log",
+            acl_runtime_dir / "00-hcomm-custom-op-package-preflight.log")
+        text = tree.read_text(encoding="utf-8")
+        assert ("| NPU runtime ready for strict payload? | "
+                "driver-runtime-unavailable |") in text
+        assert "strict payload markers" not in text
 
         incomplete_rank_dir = tmp / "rank-launch-incomplete"
         incomplete_rank_dir.mkdir()
