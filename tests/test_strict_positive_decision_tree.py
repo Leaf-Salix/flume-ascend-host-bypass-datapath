@@ -2502,6 +2502,9 @@ def main() -> int:
         assert summary is not None
         summary_text = summary.read_text(encoding="utf-8")
         assert "best_candidate: `hcomm-payload-write-path-candidate`" in summary_text
+        assert ("best_candidate_command: `flume-hccl-collective-smoke "
+                "--hcomm-payload-write-path`" in summary_text)
+        assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in summary_text
         assert "selected_evidence_log: `" in summary_text
         assert "transfer | trace_transfer" in summary_text
         assert "write | write" in summary_text

@@ -2892,6 +2892,27 @@ def _PayloadCandidateNextAction(text: str) -> str:
     return "inspect missing rank evidence, checksum, trace, or fallback marker"
 
 
+def _PayloadCandidateFocusFlags(command: list[str]) -> str:
+    focus_prefixes = (
+        "--hcomm-payload-comm-binding=",
+        "--hcomm-payload-batch-tag=",
+    )
+    focus_flags = {
+        "--hcomm-payload-write-path",
+        "--hcomm-payload-write-with-notify",
+        "--hcomm-payload-channel-fence",
+        "--hcomm-payload-disable-batch",
+        "--hcomm-payload-recv-direct-output",
+        "--hcomm-payload-skip-comm-acquire",
+    }
+    values = [
+        item for item in command
+        if item in focus_flags or
+        any(item.startswith(prefix) for prefix in focus_prefixes)
+    ]
+    return ShellCommand(values) if values else "<default-read-path>"
+
+
 def WriteHcommPayloadStrictCandidateSummary(
         run_dir: Path,
         results: list[StepResult],
@@ -2935,6 +2956,8 @@ def WriteHcommPayloadStrictCandidateSummary(
             "fallback": _CandidateMarker(text, "fallback"),
             "next": _PayloadCandidateNextAction(text),
             "log": result.log_path,
+            "command": ShellCommand(result.command),
+            "focus_flags": _PayloadCandidateFocusFlags(result.command),
         })
     if not candidates:
         return None
@@ -2952,6 +2975,8 @@ def WriteHcommPayloadStrictCandidateSummary(
         f"- best_candidate: `{best['name']}`",
         f"- best_candidate_score: `{best['score']}`",
         f"- best_candidate_log: `{Path(str(best['log'])).name}`",
+        f"- best_candidate_command: `{best['command']}`",
+        f"- best_candidate_focus_flags: `{best['focus_flags']}`",
         f"- best_candidate_next_action: `{best['next']}`",
         "",
         "This summary ranks already executed strict-positive candidates. It "
