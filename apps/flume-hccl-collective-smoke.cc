@@ -555,6 +555,9 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_first_error_index=-1",
       "payload_trace_expected_thread_notify=",
       std::string("payload_role=") + expected_role,
+      "payload_copy_api=hcomm-direct-aclrt",
+      "payload_hccl_p2p_api=not-used",
+      "payload_no_hccl_sendrecv=passed",
       disable_batch ? "payload_batch_mode=off" : "payload_batch_mode=on",
       skip_comm_acquire ? "payload_comm_acquire=skipped" :
                           "payload_comm_acquire=default",

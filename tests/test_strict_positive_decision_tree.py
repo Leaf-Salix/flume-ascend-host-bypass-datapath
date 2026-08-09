@@ -111,7 +111,10 @@ def strict_log(include_verify: bool) -> str:
                        "payload_semantic_v13=present "
                        "payload_semantic_v14=present "
                        "payload_semantic_v15=present payload_semantic_v16=present payload_semantic_v17=present "
-                       "payload_official_p2p_layout=present")
+                       "payload_official_p2p_layout=present "
+                       "payload_copy_api=hcomm-direct-aclrt "
+                       "payload_hccl_p2p_api=not-used "
+                       "payload_no_hccl_sendrecv=passed")
     send_data_probe = (" payload_data_probe=observed "
                        "payload_data_user_entry_fingerprint=222 "
                        "payload_data_local_entry_fingerprint=111 "

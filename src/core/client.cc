@@ -3751,6 +3751,9 @@ std::string HcommPayloadRuntimeDetail(
          "payload_semantic_v14=present payload_semantic_v15=present "
          "payload_semantic_v16=present payload_semantic_v17=present "
          "payload_official_p2p_layout=present "
+         "payload_copy_api=hcomm-direct-aclrt "
+         "payload_hccl_p2p_api=not-used "
+         "payload_no_hccl_sendrecv=passed "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }

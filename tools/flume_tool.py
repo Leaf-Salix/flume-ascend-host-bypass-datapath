@@ -2127,6 +2127,9 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_first_error_index=-1",
     "payload_trace_expected_thread_notify=",
     "payload_role=",
+    "payload_copy_api=hcomm-direct-aclrt",
+    "payload_hccl_p2p_api=not-used",
+    "payload_no_hccl_sendrecv=passed",
     "payload_batch_mode=on",
     "payload_comm_acquire=default",
     "payload_comm_binding=comm-name",
@@ -5672,6 +5675,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_semantic_v17 = marker_value(strict, "payload_semantic_v17")
     strict_official_p2p_layout = marker_value(
         strict, "payload_official_p2p_layout")
+    strict_copy_api = marker_value(strict, "payload_copy_api")
+    strict_hccl_p2p_api = marker_value(strict, "payload_hccl_p2p_api")
+    strict_no_hccl_sendrecv = marker_value(strict, "payload_no_hccl_sendrecv")
     strict_data_probe = marker_value(strict, "payload_data_probe")
     strict_data_sample_bytes = marker_value(
         strict, "payload_data_sample_bytes")
@@ -5985,6 +5991,9 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload semantic v16 marker | {strict_semantic_v16} | `payload_semantic_v16=missing` means the package predates trace status/ret mirror evidence |",
             f"| payload semantic v17 marker | {strict_semantic_v17} | `payload_semantic_v17=missing` means the package predates remote-buffer-safe send-side data probes |",
             f"| payload official-p2p layout marker | {strict_official_p2p_layout} | `payload_official_p2p_layout=missing` means the package predates official-p2p/channel-handle direct-output layout evidence |",
+            f"| payload copy API | {strict_copy_api} | expected `hcomm-direct-aclrt`; anything else means the strict pass is not proving the HCOMM custom-op payload path |",
+            f"| HCCL P2P API in payload path | {strict_hccl_p2p_api} | expected `not-used`; this keeps HcclSend/HcclRecv fallback out of strict HCOMM payload evidence |",
+            f"| no HCCL Send/Recv evidence | {strict_no_hccl_sendrecv} | expected `passed`; missing means the evidence predates the no-HCCL-P2P payload marker |",
             f"| payload build mode | {strict_build_mode} | `payload_build_mode=not-internal` means canary/stub package |",
             f"| runtime package identity | source={strict_runtime_package_source}, tar={strict_runtime_package_tar}, readable={strict_runtime_package_tar_readable} | package probe attached to the C++ direct ACL launcher detail |",
             f"| rank1 verify | {strict_verify} | `payload_verify` |",
