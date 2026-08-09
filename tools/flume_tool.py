@@ -91,6 +91,7 @@ HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
 )
 HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
     "HcommWriteWithNotifyOnThread",
+    "HcommWriteWithNotifyNbiOnThread",
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
@@ -586,7 +587,7 @@ def PackageTextWriteWithNotifyReady(package_text: str) -> bool:
                   package_text, re.MULTILINE) is not None or
         re.search(
             r"^function_so\.payload_optional_primitive_dep\."
-            r"HcommWriteWithNotifyOnThread=present$",
+            r"HcommWriteWithNotify(OnThread|NbiOnThread)=present$",
             package_text,
             re.MULTILINE) is not None)
 
@@ -6602,6 +6603,8 @@ def _DirectBuildSharedLibraryCommand(
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
         if HcommWriteWithNotifySupported(args, cann_root):
             defines.append("FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1")
+        if HcommWriteWithNotifyNbiSupported(args, cann_root):
+            defines.append("FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=1")
     command = [cxx, "-std=c++14"]
     if platform.system() == "Darwin":
         command.append("-dynamiclib")
@@ -6640,6 +6643,23 @@ def HcommWriteWithNotifySupported(args: argparse.Namespace,
         HcommPrimitiveLibraryExportsSymbol(
             cann_root, args.hcomm_primitives_lib_root,
             "HcommWriteWithNotifyOnThread"))
+
+
+def HcommWriteWithNotifyNbiSupported(args: argparse.Namespace,
+                                     cann_root: Path) -> bool:
+    return (
+        HcommPrimitivesHeaderContains(
+            cann_root, args.hcomm_primitives_include_root,
+            "HcommWriteWithNotifyNbiOnThread") and
+        HcommPrimitiveLibraryExportsSymbol(
+            cann_root, args.hcomm_primitives_lib_root,
+            "HcommWriteWithNotifyNbiOnThread"))
+
+
+def HcommAnyWriteWithNotifySupported(args: argparse.Namespace,
+                                     cann_root: Path) -> bool:
+    return (HcommWriteWithNotifySupported(args, cann_root) or
+            HcommWriteWithNotifyNbiSupported(args, cann_root))
 
 
 def _WriteAicpuTar(so_path: Path, tar_path: Path) -> None:
@@ -6724,9 +6744,15 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"
         hcomm_header = FindHcommPrimitivesHeader(
             cann_root, args.hcomm_primitives_include_root)
-        write_with_notify_enabled = (
+        write_with_notify_blocking_enabled = (
             args.custom_op_build_mode == "payload" and
             HcommWriteWithNotifySupported(args, cann_root))
+        write_with_notify_nbi_enabled = (
+            args.custom_op_build_mode == "payload" and
+            HcommWriteWithNotifyNbiSupported(args, cann_root))
+        write_with_notify_enabled = (
+            write_with_notify_blocking_enabled or
+            write_with_notify_nbi_enabled)
         artifact_note.write_text(
             "Flume HCOMM direct custom-op build artifacts\n"
             f"cann_binary_root: {cann_root}\n"
@@ -6738,6 +6764,10 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
             f"{HcommPrimitiveIncludeRootsDetail(cann_root, args.hcomm_primitives_include_root)}\n"
             "hcomm_write_with_notify_enabled: "
             f"{1 if write_with_notify_enabled else 0}\n"
+            "hcomm_write_with_notify_blocking_enabled: "
+            f"{1 if write_with_notify_blocking_enabled else 0}\n"
+            "hcomm_write_with_notify_nbi_enabled: "
+            f"{1 if write_with_notify_nbi_enabled else 0}\n"
             f"json: {output_json}\n"
             f"aicpu_tar: {output_tar}\n",
             encoding="utf-8",
@@ -7306,8 +7336,11 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     print("function_so.payload_optional_primitive_dep."
                           f"{primitive_name}="
                           f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
+                write_with_notify_present = (
+                    symbols_present.get("HcommWriteWithNotifyOnThread", False) or
+                    symbols_present.get("HcommWriteWithNotifyNbiOnThread", False))
                 print("payload_optional_write_with_notify="
-                      f"{'present' if symbols_present.get('HcommWriteWithNotifyOnThread', False) else 'missing'}")
+                      f"{'present' if write_with_notify_present else 'missing'}")
             if value_state == "present":
                 metadata_values_valid = all(
                     state == "match"

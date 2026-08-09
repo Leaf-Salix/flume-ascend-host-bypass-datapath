@@ -69,6 +69,9 @@
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+#define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
 #define FLUME_HAVE_HCOMM_RANK_GRAPH 0
 #endif
@@ -2583,7 +2586,12 @@ int main(int argc, char** argv) {
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
             << " hcomm_write_with_notify="
+            << ((FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY ||
+                 FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI) ? 1 : 0)
+            << " hcomm_write_with_notify_blocking="
             << FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+            << " hcomm_write_with_notify_nbi="
+            << FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
             << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
             << " hcomm_aicpu_kernel_launch="
             << FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH

@@ -69,6 +69,9 @@
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+#define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
 #define FLUME_HAVE_HCOMM_RANK_GRAPH 0
 #endif
@@ -3614,12 +3617,13 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
     return MakeDirectAclrtPayloadBlockedDetail(
         decision, "payload bytes exceed usable HCCL buffer size");
   }
-#if !FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+#if !FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY && !FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
   if (payload_write_with_notify) {
     *status = FLUME_ERR_UNSUPPORTED;
     return MakeDirectAclrtPayloadBlockedDetail(
         decision,
-        "HcommWriteWithNotifyOnThread is unavailable in this CANN build");
+        "HcommWriteWithNotifyOnThread and HcommWriteWithNotifyNbiOnThread "
+        "are unavailable in this CANN build");
   }
 #endif
 
@@ -5383,7 +5387,8 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
   caps.hcomm_payload_thread_notify =
       (FLUME_HAVE_HCOMM_THREAD_EXPORT && FLUME_HAVE_HCOMM_PRIMITIVES) ? 1U : 0U;
   caps.hcomm_write_with_notify =
-      FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY ? 1U : 0U;
+      (FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY ||
+       FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI) ? 1U : 0U;
   caps.hcomm_payload_scheduler_candidate =
       (sim_attached ||
        (FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES &&

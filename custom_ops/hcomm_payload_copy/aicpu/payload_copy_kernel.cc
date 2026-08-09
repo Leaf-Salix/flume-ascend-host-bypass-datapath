@@ -9,6 +9,9 @@
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+#define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI 0
+#endif
 
 namespace {
 
@@ -332,6 +335,10 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
             -1);
 #if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
         ret = HcommWriteWithNotifyOnThread(
+            thread, channel, remote_hccl_buffer, local_hccl_buffer,
+            desc.bytes, desc.ready_notify_idx);
+#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+        ret = HcommWriteWithNotifyNbiOnThread(
             thread, channel, remote_hccl_buffer, local_hccl_buffer,
             desc.bytes, desc.ready_notify_idx);
 #else

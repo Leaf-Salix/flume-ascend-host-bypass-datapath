@@ -154,6 +154,21 @@ inline int32_t HcommWriteWithNotifyOnThread(ThreadHandle, ChannelHandle,
   return write_with_notify_ret;
 }
 
+inline int32_t HcommWriteWithNotifyNbiOnThread(ThreadHandle, ChannelHandle,
+                                               void* dst, const void* src,
+                                               uint64_t bytes,
+                                               uint32_t remote_notify_idx) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kWriteWithNotify);
+  last_write_with_notify_dst = dst;
+  last_write_with_notify_src = src;
+  last_write_with_notify_idx = remote_notify_idx;
+  if (write_with_notify_ret == 0) {
+    memcpy(dst, src, static_cast<size_t>(bytes));
+  }
+  return write_with_notify_ret;
+}
+
 inline int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle,
                                                 uint32_t) {
   using namespace flume_hcomm_payload_kernel_mock;

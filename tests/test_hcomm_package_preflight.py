@@ -40,8 +40,10 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
     ]
-    if mode in ("v4", "v4_no_write_with_notify", "wrong_values"):
+    if mode in ("v4", "v4_nbi_write_with_notify",
+                "v4_no_write_with_notify", "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
+        include_write_with_notify_nbi = mode == "v4_nbi_write_with_notify"
         lines.extend([
             "typedef unsigned long long ThreadHandle;",
             "typedef unsigned long long ChannelHandle;",
@@ -80,14 +82,18 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         if include_write_with_notify:
             kernel_index = lines.index(
                 "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {")
+            write_symbol = (
+                "HcommWriteWithNotifyNbiOnThread"
+                if include_write_with_notify_nbi
+                else "HcommWriteWithNotifyOnThread")
             lines.insert(
                 kernel_index,
-                "int HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }")
+                f"int {write_symbol}(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) {{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }}")
             write_index = lines.index(
                 "  r += HcommChannelFenceOnThread(1, 2);")
             lines.insert(
                 write_index,
-                "  r += HcommWriteWithNotifyOnThread(1, 2, b, a, 8, 0);")
+                f"  r += {write_symbol}(1, 2, b, a, 8, 0);")
     else:
         lines.append(
             "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) "
@@ -431,7 +437,8 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
 def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
                          *, hccl_header: bool = True,
                          hcomm_header: bool = True,
-                         write_with_notify_lib: bool = True) -> Path:
+                         write_with_notify_lib: bool = True,
+                         write_with_notify_nbi_lib: bool = True) -> Path:
     root = tmp / name
     include_hccl = root / "aarch64-linux" / "include" / "hccl"
     include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
@@ -452,6 +459,7 @@ int32_t HcommLocalCopyOnThread(ThreadHandle, void*, const void*, uint64_t);
 int32_t HcommReadOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
 int32_t HcommWriteOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t);
 int32_t HcommWriteWithNotifyOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t, uint32_t);
+int32_t HcommWriteWithNotifyNbiOnThread(ThreadHandle, ChannelHandle, void*, const void*, uint64_t, uint32_t);
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle, ChannelHandle, uint32_t);
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle, uint32_t, uint32_t);
 int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);
@@ -495,6 +503,12 @@ int32_t HcommThreadNotifyWaitOnThread(ThreadHandle a, uint32_t b, uint32_t c) { 
     if write_with_notify_lib:
         source_lines.append(
             "int32_t HcommWriteWithNotifyOnThread(ThreadHandle a, "
+            "ChannelHandle b, void* c, const void* d, uint64_t e, "
+            "uint32_t f) { (void)a; (void)b; (void)c; (void)d; "
+            "(void)e; (void)f; return 0; }\n")
+    if write_with_notify_nbi_lib:
+        source_lines.append(
+            "int32_t HcommWriteWithNotifyNbiOnThread(ThreadHandle a, "
             "ChannelHandle b, void* c, const void* d, uint64_t e, "
             "uint32_t f) { (void)a; (void)b; (void)c; (void)d; "
             "(void)e; (void)f; return 0; }\n")
@@ -913,6 +927,23 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
 
+        nbi_write_notify_json, nbi_write_notify_tar = write_package(
+            tmp, mode="v4_nbi_write_with_notify")
+        nbi_write_notify = run_preflight(
+            repo, nbi_write_notify_json, nbi_write_notify_tar)
+        if nbi_write_notify.returncode != 0:
+            print(nbi_write_notify.stdout)
+            print(nbi_write_notify.stderr, file=sys.stderr)
+            raise AssertionError(
+                "ABI v4 package with NBI write-with-notify did not pass")
+        assert "payload_primitive_deps=present" in nbi_write_notify.stdout
+        assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=missing" in nbi_write_notify.stdout
+        assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyNbiOnThread=present" in nbi_write_notify.stdout
+        assert "payload_optional_write_with_notify=present" in nbi_write_notify.stdout
+        assert flume_tool.PackageTextWriteWithNotifyReady(
+            nbi_write_notify.stdout)
+        assert "status=PASS" in nbi_write_notify.stdout
+
         no_write_notify_json, no_write_notify_tar = write_package(
             tmp, mode="v4_no_write_with_notify")
         no_write_notify = run_preflight(
@@ -927,6 +958,7 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in no_write_notify.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in no_write_notify.stdout
         assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=missing" in no_write_notify.stdout
+        assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyNbiOnThread=missing" in no_write_notify.stdout
         assert "payload_optional_write_with_notify=missing" in no_write_notify.stdout
         assert not flume_tool.PackageTextWriteWithNotifyReady(
             no_write_notify.stdout)
@@ -1225,6 +1257,10 @@ def main() -> int:
             hcomm_primitives_lib_root="")
         assert flume_tool.HcommWriteWithNotifySupported(
             primitive_args, fake_cann / "aarch64-linux")
+        assert flume_tool.HcommWriteWithNotifyNbiSupported(
+            primitive_args, fake_cann / "aarch64-linux")
+        assert flume_tool.HcommAnyWriteWithNotifySupported(
+            primitive_args, fake_cann / "aarch64-linux")
         runtime_env = flume_tool.CannRuntimeEnvUpdates(
             SimpleNamespace(cann_package_root=str(fake_cann)))
         assert runtime_env["ASCEND_HOME_PATH"] == str(fake_cann)
@@ -1339,8 +1375,13 @@ def main() -> int:
 
         fake_cann_no_write_notify = write_fake_cann_root(
             tmp, "fake-cann-no-write-notify", hccl_header=False,
-            hcomm_header=True, write_with_notify_lib=False)
+            hcomm_header=True, write_with_notify_lib=False,
+            write_with_notify_nbi_lib=False)
         assert not flume_tool.HcommWriteWithNotifySupported(
+            primitive_args, fake_cann_no_write_notify / "aarch64-linux")
+        assert not flume_tool.HcommWriteWithNotifyNbiSupported(
+            primitive_args, fake_cann_no_write_notify / "aarch64-linux")
+        assert not flume_tool.HcommAnyWriteWithNotifySupported(
             primitive_args, fake_cann_no_write_notify / "aarch64-linux")
         no_write_notify_log_root = tmp / "no-write-notify-direct-build-logs"
         no_write_notify_build = subprocess.run(
@@ -1370,6 +1411,52 @@ def main() -> int:
             no_write_notify_artifacts.read_text(encoding="utf-8"))
         assert "hcomm_write_with_notify_enabled: 0" in no_write_notify_artifact_text
         assert "hcomm-custom-op-direct-build-preflight" in no_write_notify_build.stdout
+
+        fake_cann_nbi_write_notify = write_fake_cann_root(
+            tmp, "fake-cann-nbi-write-notify", hccl_header=False,
+            hcomm_header=True, write_with_notify_lib=False,
+            write_with_notify_nbi_lib=True)
+        assert not flume_tool.HcommWriteWithNotifySupported(
+            primitive_args, fake_cann_nbi_write_notify / "aarch64-linux")
+        assert flume_tool.HcommWriteWithNotifyNbiSupported(
+            primitive_args, fake_cann_nbi_write_notify / "aarch64-linux")
+        assert flume_tool.HcommAnyWriteWithNotifySupported(
+            primitive_args, fake_cann_nbi_write_notify / "aarch64-linux")
+        nbi_write_notify_log_root = tmp / "nbi-write-notify-direct-build-logs"
+        nbi_write_notify_build = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_nbi_write_notify}",
+                f"--build-dir={tmp / 'direct-build-nbi-write-notify'}",
+                f"--log-root={nbi_write_notify_log_root}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if nbi_write_notify_build.returncode != 0:
+            print(nbi_write_notify_build.stdout)
+            print(nbi_write_notify_build.stderr, file=sys.stderr)
+            raise AssertionError(
+                "direct custom-op build with NBI write-with-notify did not pass")
+        nbi_write_notify_artifacts = next(
+            nbi_write_notify_log_root.glob(
+                "flume-check-*/HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"))
+        nbi_write_notify_artifact_text = (
+            nbi_write_notify_artifacts.read_text(encoding="utf-8"))
+        assert "hcomm_write_with_notify_enabled: 1" in nbi_write_notify_artifact_text
+        assert "hcomm_write_with_notify_blocking_enabled: 0" in nbi_write_notify_artifact_text
+        assert "hcomm_write_with_notify_nbi_enabled: 1" in nbi_write_notify_artifact_text
+        nbi_write_notify_preflight = next(
+            nbi_write_notify_log_root.glob(
+                "flume-check-*/02-hcomm-custom-op-direct-build-preflight.log"))
+        assert "payload_optional_write_with_notify=present" in (
+            nbi_write_notify_preflight.read_text(encoding="utf-8"))
+        assert "hcomm-custom-op-direct-build-preflight" in nbi_write_notify_build.stdout
 
         fake_cann_no_hcomm_header = write_fake_cann_root(
             tmp, "fake-cann-no-hcomm-header", hccl_header=False,
