@@ -471,10 +471,13 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "missing";
 #endif
   const char* write_notify_backend =
-      write_with_notify ? available_write_notify_backend : "none";
+      write_with_notify ?
+          (send_role ? available_write_notify_backend : "peer") :
+          "none";
   const bool require_channel_fence =
       force_channel_fence ||
-      (write_with_notify && std::string(write_notify_backend) == "nbi");
+      (write_with_notify &&
+       std::string(available_write_notify_backend) == "nbi");
   const char* completion_mode =
       require_channel_fence ? "channel-fence" : "ordered-notify";
   std::vector<std::string> markers = {

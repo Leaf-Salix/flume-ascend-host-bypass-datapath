@@ -2331,8 +2331,8 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     write_notify_backend_ok = True
     if rank0_transfer_mode == "write-with-notify":
         write_notify_backend_ok = (
-            rank0_write_notify_backend == rank1_write_notify_backend and
-            rank0_write_notify_backend in ("blocking", "nbi"))
+            rank0_write_notify_backend in ("blocking", "nbi") and
+            rank1_write_notify_backend == "peer")
         if rank0_write_notify_backend == "nbi":
             write_notify_backend_ok = (
                 write_notify_backend_ok and

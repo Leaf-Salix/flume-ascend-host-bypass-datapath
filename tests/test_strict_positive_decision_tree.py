@@ -231,7 +231,9 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
     text = text.replace("payload_trace_transfer_mode=read",
                         "payload_trace_transfer_mode=write-with-notify")
     text = text.replace("payload_trace_write_notify_backend=none",
-                        "payload_trace_write_notify_backend=blocking")
+                        "payload_trace_write_notify_backend=blocking", 1)
+    text = text.replace("payload_trace_write_notify_backend=none",
+                        "payload_trace_write_notify_backend=peer", 1)
     text = text.replace(
         "payload_trace_primitive_path=send-local-copy",
         "payload_trace_primitive_path=send-write-with-notify")
@@ -245,6 +247,12 @@ def strict_write_with_notify_trace_mismatch_log() -> str:
     text = strict_write_with_notify_path_log(True)
     return text.replace("payload_trace_primitive_path=send-write-with-notify",
                         "payload_trace_primitive_path=send-write", 1)
+
+
+def strict_write_with_notify_recv_backend_mismatch_log() -> str:
+    text = strict_write_with_notify_path_log(True)
+    return text.replace("payload_trace_write_notify_backend=peer",
+                        "payload_trace_write_notify_backend=blocking", 1)
 
 
 def strict_write_with_notify_remote_write_failure_log() -> str:
@@ -1244,6 +1252,8 @@ def main() -> int:
             strict_write_with_notify)[0]
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_write_with_notify_trace_mismatch_log())[0]
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_write_with_notify_recv_backend_mismatch_log())[0]
         strict_write_with_notify_nbi = strict_write_with_notify_nbi_log(True)
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_write_with_notify_nbi)[0]

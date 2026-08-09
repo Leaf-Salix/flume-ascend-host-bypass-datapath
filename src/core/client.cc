@@ -3092,6 +3092,9 @@ std::string PayloadTraceWriteNotifyBackend(const uint32_t* trace_words) {
   if (!write_with_notify) {
     return "none";
   }
+  if (trace_words[5] == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    return "peer";
+  }
   if (PayloadTraceUsesWriteNotifyNbi(trace_words)) {
     return "nbi";
   }
