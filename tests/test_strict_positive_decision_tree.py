@@ -39,6 +39,41 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
+def _replace_trace_counts(text: str, rank0: int, rank1: int) -> str:
+    marker = "payload_trace_count="
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing payload trace counts")
+
+    def replace_at(source: str, pos: int, value: int) -> str:
+        end = pos + len(marker)
+        while end < len(source) and source[end].isdigit():
+            end += 1
+        return source[:pos] + marker + str(value) + source[end:]
+
+    text = replace_at(text, second, rank1)
+    return replace_at(text, first, rank0)
+
+
+def _adjust_trace_counts(text: str, rank0_delta: int,
+                         rank1_delta: int) -> str:
+    marker = "payload_trace_count="
+    first = text.find(marker)
+    second = text.find(marker, first + len(marker))
+    if first == -1 or second == -1:
+        raise AssertionError("synthetic log missing payload trace counts")
+    first_end = first + len(marker)
+    while first_end < len(text) and text[first_end].isdigit():
+        first_end += 1
+    second_end = second + len(marker)
+    while second_end < len(text) and text[second_end].isdigit():
+        second_end += 1
+    rank0 = int(text[first + len(marker):first_end]) + rank0_delta
+    rank1 = int(text[second + len(marker):second_end]) + rank1_delta
+    return _replace_trace_counts(text, rank0, rank1)
+
+
 def strict_log(include_verify: bool) -> str:
     verify = " payload_verify=passed payload_checksum=1234" if include_verify else ""
     desc = (" payload_desc_role=0 payload_desc_local_rank=0 "
@@ -119,6 +154,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
+        "payload_trace_count=16 "
         "payload_trace_primitive_path=send-local-copy "
         "payload_trace_bytes=4096 "
         "payload_trace_batch_mode=0 "
@@ -161,6 +197,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
+        "payload_trace_count=18 "
         "payload_trace_primitive_path=recv-read-local-copy "
         "payload_trace_bytes=4096 "
         "payload_trace_batch_mode=0 "
@@ -256,7 +293,7 @@ def strict_write_path_log(include_verify: bool) -> str:
         raise AssertionError("synthetic log missing local-entry markers")
     text = text[:second] + text[second:].replace(
         marker, "payload_data_local_entry_fingerprint=222", 1)
-    return text
+    return _replace_trace_counts(text, 18, 16)
 
 
 def strict_write_with_notify_path_log(include_verify: bool) -> str:
@@ -286,7 +323,7 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
         raise AssertionError("synthetic log missing local-entry markers")
     text = text[:second] + text[second:].replace(
         marker, "payload_data_local_entry_fingerprint=222", 1)
-    return text
+    return _replace_trace_counts(text, 16, 16)
 
 
 def strict_write_with_notify_trace_mismatch_log() -> str:
@@ -340,13 +377,14 @@ def strict_write_with_notify_remote_write_failure_log() -> str:
 
 
 def strict_log_with_channel_handle_binding(text: str) -> str:
-    return text.replace(
+    text = text.replace(
         "payload_comm_acquire=default payload_comm_binding=comm-name",
         "payload_comm_acquire=skipped payload_comm_binding=channel-handle"
     ).replace(
         "payload_trace_comm_acquire=default payload_trace_comm_binding=comm-name",
         "payload_trace_comm_acquire=skipped "
         "payload_trace_comm_binding=channel-handle")
+    return _adjust_trace_counts(text, -4, -4)
 
 
 def strict_log_with_no_batch(text: str) -> str:
@@ -360,7 +398,7 @@ def strict_log_with_no_batch(text: str) -> str:
                             "payload_layout=official-p2p")
         text = text.replace("payload_resolved_engine=aicpu-ts",
                             "payload_resolved_engine=aicpu")
-    return text
+    return _adjust_trace_counts(text, -4, -4)
 
 
 def strict_write_path_with_direct_output_log() -> str:
@@ -402,6 +440,10 @@ def strict_log_with_trace_transfer_mismatch() -> str:
     return strict_log(True).replace(
         "payload_trace_transfer_mode=read", "payload_trace_transfer_mode=write",
         1)
+
+
+def strict_log_with_trace_count_mismatch() -> str:
+    return _replace_trace_counts(strict_log(True), 16, 17)
 
 
 def strict_log_with_missing_layout() -> str:
@@ -646,15 +688,19 @@ def strict_log_with_recv_direct_output() -> str:
                         "payload_layout=read-direct-output")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-read-direct-output")
-    return text.replace("payload_trace_recv_path=0",
+    text = text.replace("payload_trace_recv_path=0",
                         "payload_trace_recv_path=1")
+    return _adjust_trace_counts(text, 0, -2)
 
 
 def strict_log_with_channel_fence(text: str) -> str:
     text = text.replace("payload_desc_completion_mode=0",
                         "payload_desc_completion_mode=1")
-    return text.replace("payload_completion_mode=ordered-notify",
+    text = text.replace("payload_completion_mode=ordered-notify",
                         "payload_completion_mode=channel-fence")
+    if "payload_transfer_mode=write" in text:
+        return _adjust_trace_counts(text, 2, 0)
+    return _adjust_trace_counts(text, 0, 2)
 
 
 def strict_write_with_notify_nbi_log(include_verify: bool) -> str:
@@ -1318,6 +1364,21 @@ def main() -> int:
         assert "transfer=rank0:write/rank1:read" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_trace_transfer_mismatch())[0]
+        strict_trace_count_mismatch = write(
+            tmp / "strict-trace-count-mismatch.log",
+            strict_log_with_trace_count_mismatch())
+        trace_count_mismatch_dir = tmp / "trace-count-mismatch"
+        trace_count_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            trace_count_mismatch_dir, smoke, strict_trace_count_mismatch,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert ("| payload trace count match | "
+                "rank1-trace-count-mismatch:observed=17:expected=18 |"
+                in text)
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_log_with_trace_count_mismatch())[0]
         strict_missing_layout = write(
             tmp / "strict-missing-layout.log",
             strict_log_with_missing_layout())

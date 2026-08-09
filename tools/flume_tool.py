@@ -2108,6 +2108,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
+    "payload_trace_count=",
     "payload_trace_primitive_path=",
     "payload_trace_bytes=",
     "payload_trace_batch_mode=",
@@ -2375,6 +2376,95 @@ def StrictPayloadTraceDescriptorPassed(
     return True, "passed"
 
 
+def _ExpectedStrictPayloadTraceCount(line: str) -> tuple[Optional[int], str]:
+    role = MarkerValueFromLine(line, "payload_role")
+    transfer = MarkerValueFromLine(line, "payload_transfer_mode")
+    batch = MarkerValueFromLine(line, "payload_batch_mode")
+    acquire = MarkerValueFromLine(line, "payload_comm_acquire")
+    recv_path = MarkerValueFromLine(line, "payload_recv_path")
+    completion = MarkerValueFromLine(line, "payload_completion_mode")
+    thread_notify = MarkerValueFromLine(
+        line, "payload_trace_expected_thread_notify")
+    write_notify_backend = MarkerValueFromLine(
+        line, "payload_trace_write_notify_backend")
+
+    values = (role, transfer, batch, acquire, recv_path, completion,
+              thread_notify, write_notify_backend)
+    if any(value == "missing" for value in values):
+        return None, "missing-trace-count-input"
+    if role not in ("send", "recv"):
+        return None, "invalid-role"
+    if transfer not in ("read", "write", "write-with-notify"):
+        return None, "invalid-transfer"
+    if batch not in ("on", "off"):
+        return None, "invalid-batch"
+    if acquire not in ("default", "skipped"):
+        return None, "invalid-comm-acquire"
+    if recv_path not in ("local-buffer", "direct-output"):
+        return None, "invalid-recv-path"
+    if completion not in ("ordered-notify", "channel-fence"):
+        return None, "invalid-completion"
+    if thread_notify not in ("on", "off"):
+        return None, "invalid-thread-notify"
+    if transfer == "write-with-notify":
+        if role == "send" and write_notify_backend not in ("blocking", "nbi"):
+            return None, "invalid-write-notify-backend"
+        if role == "recv" and write_notify_backend != "peer":
+            return None, "invalid-write-notify-backend"
+
+    count = 2  # kernel-enter + kernel-exit
+    if acquire == "default":
+        count += 4  # comm acquire/release enter+done
+    if batch == "on":
+        count += 4  # batch start/end enter+done
+    if thread_notify == "on":
+        count += 4  # host thread wait/record enter+done
+
+    if role == "send":
+        count += 2  # local copy
+        if transfer in ("write", "write-with-notify"):
+            count += 2  # remote write or write-with-notify
+            if completion == "channel-fence":
+                count += 2
+        if transfer != "write-with-notify":
+            count += 2  # ready notify record
+        count += 2  # done notify wait
+    else:
+        count += 2  # ready notify wait
+        if transfer == "read":
+            count += 2  # remote read
+            if completion == "channel-fence":
+                count += 2
+        if transfer in ("write", "write-with-notify") or (
+                recv_path != "direct-output"):
+            count += 2  # output/local copy
+        count += 2  # done notify record
+    return count, "passed"
+
+
+def StrictPayloadTraceCountPassed(
+        rank_lines: dict[int, str]) -> tuple[bool, str]:
+    for rank in (0, 1):
+        line = rank_lines.get(rank, "")
+        if not line:
+            return False, "missing-rank-line"
+        observed = MarkerValueFromLine(line, "payload_trace_count")
+        if observed == "missing":
+            return False, f"rank{rank}-missing-trace-count"
+        try:
+            observed_count = int(observed, 10)
+        except ValueError:
+            return False, f"rank{rank}-invalid-trace-count"
+        expected_count, reason = _ExpectedStrictPayloadTraceCount(line)
+        if expected_count is None:
+            return False, f"rank{rank}-{reason}"
+        if observed_count != expected_count:
+            return False, (
+                f"rank{rank}-trace-count-mismatch:"
+                f"observed={observed_count}:expected={expected_count}")
+    return True, "passed"
+
+
 def StrictPayloadResourceLayoutPassed(
         rank_lines: dict[int, str]) -> tuple[bool, str]:
     rank0_line = rank_lines.get(0, "")
@@ -2506,12 +2596,14 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
     trace_desc_ok, _trace_desc_reason = StrictPayloadTraceDescriptorPassed(
         rank_lines)
+    trace_count_ok, _trace_count_reason = StrictPayloadTraceCountPassed(
+        rank_lines)
     resource_layout_ok, _resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(rank_lines))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
             checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok and
-            resource_layout_ok,
+            trace_count_ok and resource_layout_ok,
             rank0_ok, rank1_ok)
 
 
@@ -5571,6 +5663,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                                              "payload_recv_path")
     strict_trace_descriptor_ok, strict_trace_descriptor_reason = (
         StrictPayloadTraceDescriptorPassed(strict_rank_lines))
+    strict_trace_count_ok, strict_trace_count_reason = (
+        StrictPayloadTraceCountPassed(strict_rank_lines))
     strict_resource_layout_ok, strict_resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(strict_rank_lines))
     no_batch_ok, no_batch_rank0_ok, no_batch_rank1_ok = (
@@ -5783,6 +5877,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload data flow | {'passed' if strict_data_flow_ok else strict_data_flow_reason} | source fingerprint must propagate from rank0 user HBM into rank0 local HCCL Buffer and then into rank1 output HBM through the selected read/write/direct-output path |",
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload trace descriptor match | {'passed' if strict_trace_descriptor_ok else strict_trace_descriptor_reason} | trace bytes/batch/recv/comm/transfer fields and `payload_layout` must match the host descriptor on both ranks |",
+            f"| payload trace count match | {'passed' if strict_trace_count_ok else strict_trace_count_reason} | `payload_trace_count` must equal the expected kernel event count derived from role, transfer mode, batch mode, comm binding, recv path, completion mode, and thread-notify mode |",
             f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success. NBI write-with-notify evidence also requires channel-fence completion. |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
