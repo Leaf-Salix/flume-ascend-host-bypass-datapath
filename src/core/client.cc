@@ -3672,6 +3672,137 @@ std::string PayloadTraceOperandLayout(const uint32_t* trace_words) {
   return "unknown";
 }
 
+struct PayloadTracePrimitiveCounts {
+  uint32_t local_copy = 0;
+  uint32_t read = 0;
+  uint32_t write = 0;
+  uint32_t write_notify = 0;
+  uint32_t notify_record = 0;
+  uint32_t notify_wait = 0;
+  uint32_t channel_fence = 0;
+  uint32_t comm_acquire = 0;
+  uint32_t comm_release = 0;
+  uint32_t batch = 0;
+  uint32_t thread_notify = 0;
+};
+
+uint32_t CountPayloadTraceEvent(const std::vector<uint32_t>& events,
+                                uint32_t event) {
+  return static_cast<uint32_t>(
+      std::count(events.begin(), events.end(), event));
+}
+
+PayloadTracePrimitiveCounts CountPayloadTracePrimitives(
+    const std::vector<uint32_t>& events) {
+  PayloadTracePrimitiveCounts counts;
+  counts.local_copy =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_OUTPUT_COPY_DONE);
+  counts.read = CountPayloadTraceEvent(
+      events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_REMOTE_READ_DONE);
+  counts.write = CountPayloadTraceEvent(
+      events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_DONE);
+  counts.write_notify =
+      CountPayloadTraceEvent(
+          events,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE) +
+      CountPayloadTraceEvent(
+          events,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_DONE);
+  counts.notify_record =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_DONE_RECORD_DONE);
+  counts.notify_wait =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_DONE);
+  counts.channel_fence =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE);
+  counts.comm_acquire = CountPayloadTraceEvent(
+      events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_ACQUIRE_DONE);
+  counts.comm_release = CountPayloadTraceEvent(
+      events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_COMM_RELEASE_DONE);
+  counts.batch =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_START_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_BATCH_END_DONE);
+  counts.thread_notify =
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_DONE) +
+      CountPayloadTraceEvent(
+          events, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_DONE);
+  return counts;
+}
+
+bool PayloadTracePrimitiveCountsEqual(
+    const PayloadTracePrimitiveCounts& lhs,
+    const PayloadTracePrimitiveCounts& rhs) {
+  return lhs.local_copy == rhs.local_copy &&
+         lhs.read == rhs.read &&
+         lhs.write == rhs.write &&
+         lhs.write_notify == rhs.write_notify &&
+         lhs.notify_record == rhs.notify_record &&
+         lhs.notify_wait == rhs.notify_wait &&
+         lhs.channel_fence == rhs.channel_fence &&
+         lhs.comm_acquire == rhs.comm_acquire &&
+         lhs.comm_release == rhs.comm_release &&
+         lhs.batch == rhs.batch &&
+         lhs.thread_notify == rhs.thread_notify;
+}
+
+std::string PayloadTracePrimitiveCountsDetail(
+    const uint32_t* trace_words,
+    const std::vector<uint32_t>& events) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return " payload_trace_primitive_counts=missing";
+  }
+  const PayloadTracePrimitiveCounts observed =
+      CountPayloadTracePrimitives(events);
+  const bool include_thread_notify =
+      observed.thread_notify != 0 ||
+      PayloadTraceContainsEvent(
+          trace_words,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_WAIT_ENTER) ||
+      PayloadTraceContainsEvent(
+          trace_words,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_THREAD_NOTIFY_RECORD_ENTER);
+  const PayloadTracePrimitiveCounts expected = CountPayloadTracePrimitives(
+      ExpectedPayloadTraceEvents(trace_words, include_thread_notify));
+  return std::string(" payload_trace_primitive_counts=") +
+         (PayloadTracePrimitiveCountsEqual(observed, expected) ?
+              "passed" : "observed") +
+         " payload_trace_local_copy_count=" +
+         std::to_string(observed.local_copy) +
+         " payload_trace_read_count=" + std::to_string(observed.read) +
+         " payload_trace_write_count=" + std::to_string(observed.write) +
+         " payload_trace_write_notify_count=" +
+         std::to_string(observed.write_notify) +
+         " payload_trace_notify_record_count=" +
+         std::to_string(observed.notify_record) +
+         " payload_trace_notify_wait_count=" +
+         std::to_string(observed.notify_wait) +
+         " payload_trace_channel_fence_count=" +
+         std::to_string(observed.channel_fence) +
+         " payload_trace_comm_acquire_count=" +
+         std::to_string(observed.comm_acquire) +
+         " payload_trace_comm_release_count=" +
+         std::to_string(observed.comm_release) +
+         " payload_trace_batch_count=" + std::to_string(observed.batch) +
+         " payload_trace_thread_notify_count=" +
+         std::to_string(observed.thread_notify);
+}
+
 std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
                                     aclError read_status = ACL_SUCCESS) {
   if (trace_words == nullptr) {
@@ -3740,6 +3871,7 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_order=" + PayloadTraceOrderState(trace_words, events) +
          " payload_trace_ret_order=" +
          PayloadTraceReturnOrderState(trace_words, events, returns) +
+         PayloadTracePrimitiveCountsDetail(trace_words, events) +
          " payload_trace_primitive_path=" +
          PayloadTracePrimitivePath(trace_words) +
          " payload_trace_operand_layout=" +

@@ -593,7 +593,8 @@ def MaybeAutoBuildPayloadPackage(
         "The run is only a true HCOMM payload-copy success when the strict "
         "decision tree reports both ranks passed with fallback=none, "
         "stage3b3e_payload_copy=passed, payload_semantic_v11=present, and "
-        "payload_trace_order=passed plus payload_trace_ret_order=passed.\n",
+        "payload_trace_order=passed plus payload_trace_ret_order=passed plus "
+        "payload_trace_primitive_counts=passed.\n",
         encoding="utf-8",
     )
     print(f"[ok] payload auto package -> {note}")
@@ -2260,6 +2261,14 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
+    "payload_trace_primitive_counts=passed",
+    "payload_trace_local_copy_count=",
+    "payload_trace_read_count=",
+    "payload_trace_write_count=",
+    "payload_trace_write_notify_count=",
+    "payload_trace_notify_record_count=",
+    "payload_trace_notify_wait_count=",
+    "payload_trace_channel_fence_count=",
     "payload_trace_count=",
     "payload_trace_primitive_path=",
     "payload_trace_operand_layout=",
@@ -2867,6 +2876,9 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         rank_lines)
     trace_count_ok, _trace_count_reason = StrictPayloadTraceCountPassed(
         rank_lines)
+    trace_primitive_counts_ok = all(
+        "payload_trace_primitive_counts=passed" in rank_lines[rank]
+        for rank in (0, 1))
     resource_layout_ok, _resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(rank_lines))
     official_p2p_shape_ok, _official_p2p_shape_reason = (
@@ -2874,8 +2886,8 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
             checksum_ok and data_flow_ok and device_side_ok and host_data_ok and
-            trace_desc_ok and trace_count_ok and resource_layout_ok and
-            official_p2p_shape_ok,
+            trace_desc_ok and trace_count_ok and trace_primitive_counts_ok and
+            resource_layout_ok and official_p2p_shape_ok,
             rank0_ok, rank1_ok)
 
 
@@ -6020,6 +6032,13 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         StrictPayloadTraceDescriptorPassed(strict_rank_lines))
     strict_trace_count_ok, strict_trace_count_reason = (
         StrictPayloadTraceCountPassed(strict_rank_lines))
+    strict_trace_primitive_counts_ok = all(
+        "payload_trace_primitive_counts=passed" in strict_rank_lines[rank]
+        for rank in (0, 1))
+    strict_rank0_primitive_counts = marker_value_from_line(
+        strict_rank_lines[0], "payload_trace_primitive_counts")
+    strict_rank1_primitive_counts = marker_value_from_line(
+        strict_rank_lines[1], "payload_trace_primitive_counts")
     strict_resource_layout_ok, strict_resource_layout_reason = (
         StrictPayloadResourceLayoutPassed(strict_rank_lines))
     strict_official_p2p_shape_ok, strict_official_p2p_shape_reason = (
@@ -6164,6 +6183,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         "`payload_host_data=passed` + "
         "`payload_trace=passed` + "
         "`payload_trace_ret_order=passed` + "
+        "`payload_trace_primitive_counts=passed` + "
         "`payload_trace_primitive_path=send-local-copy|recv-read-*|"
         "send-write|recv-write-local-copy|send-write-with-notify|"
         "recv-write-notify-local-copy` + "
@@ -6241,6 +6261,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload trace descriptor match | {'passed' if strict_trace_descriptor_ok else strict_trace_descriptor_reason} | trace bytes/batch/recv/comm/transfer fields and `payload_layout` must match the host descriptor on both ranks |",
             f"| payload trace count match | {'passed' if strict_trace_count_ok else strict_trace_count_reason} | `payload_trace_count` must equal the expected kernel event count derived from role, transfer mode, batch mode, comm binding, recv path, completion mode, and thread-notify mode |",
+            f"| payload primitive-count evidence | {'passed' if strict_trace_primitive_counts_ok else 'missing-or-observed'} | rank0={strict_rank0_primitive_counts}, rank1={strict_rank1_primitive_counts}; derived from kernel trace DONE events, not host-side intent |",
             f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, operands=rank0:{strict_rank0_trace_operand_layout}/rank1:{strict_rank1_trace_operand_layout}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path, operand layout, and success. NBI write-with-notify evidence also requires channel-fence completion. |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
@@ -6789,6 +6810,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_event=kernel-exit",
             "payload_trace_order=passed",
             "payload_trace_ret_order=passed",
+            "payload_trace_primitive_counts=passed",
             "payload_trace_result=success",
             "payload_trace_first_error_event=none",
             "payload_trace_first_error_ret=0",
@@ -6833,6 +6855,14 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_schema=v3,payload_trace_word_count=82,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
             "payload_trace_ret_order=passed,"
+            "payload_trace_primitive_counts=passed,"
+            "payload_trace_local_copy_count=,"
+            "payload_trace_read_count=,"
+            "payload_trace_write_count=,"
+            "payload_trace_write_notify_count=,"
+            "payload_trace_notify_record_count=,"
+            "payload_trace_notify_wait_count=,"
+            "payload_trace_channel_fence_count=,"
             "payload_trace_count=,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
             "|send-write|recv-write-local-copy|send-write-with-notify"
@@ -7324,6 +7354,7 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_trace=passed, payload_trace_event=kernel-exit, "
         "payload_trace_schema=v3, payload_trace_word_count=82, "
         "payload_trace_order=passed, payload_trace_ret_order=passed, "
+        "payload_trace_primitive_counts=passed, "
         "payload_trace_primitive_path=send-local-copy|recv-read-* or "
         "send-write|recv-write-local-copy or "
         "send-write-with-notify|recv-write-notify-local-copy, "

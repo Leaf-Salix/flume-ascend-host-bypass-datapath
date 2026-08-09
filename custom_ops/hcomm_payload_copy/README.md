@@ -360,6 +360,7 @@ Strict-positive success must include
 `payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`, `payload_data_remote_entry_fingerprint=...`, `payload_data_transfer_exit_fingerprint=...`, `payload_data_flow=passed`, `payload_host_data=passed`, `payload_primitive_state=completed`,
 `payload_trace=passed`, `payload_trace_schema=v3`, `payload_trace_word_count=82`, `payload_trace_status_word=0`, `payload_trace_hcomm_ret=0`, `payload_trace_event=kernel-exit`,
 `payload_trace_order=passed`, `payload_trace_ret_order=passed`,
+`payload_trace_primitive_counts=passed`,
 `payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`,
 `payload_trace_operand_layout=...`,
 `payload_desc_primitive_path=...`,
