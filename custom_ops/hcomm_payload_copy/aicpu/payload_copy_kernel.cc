@@ -791,3 +791,15 @@ extern "C" unsigned int FlumeHcommPayloadTraceSchemaVersion() {
 extern "C" unsigned int FlumeHcommPayloadTraceWordCount() {
   return FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT;
 }
+
+extern "C" unsigned int FlumeHcommPayloadPrimitiveDeps() {
+  return 1U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadNoHcclSendRecvDeps() {
+  return 1U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadNoHcclPayloadApiDeps() {
+  return 1U;
+}

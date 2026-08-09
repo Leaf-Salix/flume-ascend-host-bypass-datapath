@@ -139,6 +139,27 @@
       "functionName": "FlumeHcommPayloadTraceWordCount"
     }
   },
+  "FlumeHcommPayloadPrimitiveDeps": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadPrimitiveDeps"
+    }
+  },
+  "FlumeHcommPayloadNoHcclSendRecvDeps": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadNoHcclSendRecvDeps"
+    }
+  },
+  "FlumeHcommPayloadNoHcclPayloadApiDeps": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadNoHcclPayloadApiDeps"
+    }
+  },
   "FlumeHcommPayloadBuildModeInternalPayload": {
     "opInfo": {
       "opKernelLib": "AICPUKernel",

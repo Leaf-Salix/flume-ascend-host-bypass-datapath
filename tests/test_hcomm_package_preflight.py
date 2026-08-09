@@ -798,6 +798,15 @@ def main() -> int:
             flume_tool.HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
         assert refs["HcclSend"] == [str(forbidden_source)]
         assert refs["HcclRecv"] == [str(forbidden_source)]
+        allowed_marker = tmp / "allowed_payload_marker.cc"
+        allowed_marker.write_text(
+            "extern \"C\" unsigned int FlumeHcommPayloadNoHcclSendRecvDeps() "
+            "{ return 1U; }\n",
+            encoding="utf-8")
+        refs = flume_tool.FindForbiddenTokenRefsInFiles(
+            [allowed_marker],
+            flume_tool.HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+        assert refs == {}
         local_hcomm_refer = (
             repo / "refer" / "cann-src" / "hcomm" / "include")
         if (local_hcomm_refer / "hcomm_primitives.h").exists():

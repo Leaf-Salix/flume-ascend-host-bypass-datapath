@@ -464,6 +464,12 @@ Comm Acquire/Release 等 primitive 依赖；只导出 Flume marker 但没有引�
 HCOMM primitive 的 marker-only 包会被拒绝。preflight 会同时打印旧兼容 marker `payload_no_hccl_sendrecv_deps`
 和广义 marker `payload_no_hccl_payload_api_deps`；后者覆盖 HCCL
 Send/Recv、collective 和 one-sided payload API，必须为 `passed`。
+当前 C++ direct ACL runtime loader 也会在 launch 前要求 payload 包 JSON/SO
+同时暴露 `FlumeHcommPayloadPrimitiveDeps`、
+`FlumeHcommPayloadNoHcclSendRecvDeps` 和
+`FlumeHcommPayloadNoHcclPayloadApiDeps`。因此即使绕过 Python preflight，
+旧包或 marker 不完整的包也会在 `stage3b3e_direct_aclrt_payload_loader`
+阶段被清晰拒绝，不会进入真正 payload kernel launch。
 本地 CTest 还包含 `hcomm_payload_source_gate`，会扫描
 `custom_ops/hcomm_payload_copy/`、`src/hcomm_payload/` 下的 C/C++ 源码，
 以及 `src/core/client.cc` 中 HCOMM payload host scheduler 相关函数范围；

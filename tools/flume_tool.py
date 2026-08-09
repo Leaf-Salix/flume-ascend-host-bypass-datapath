@@ -60,6 +60,9 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
     "payload_trace_schema": "FlumeHcommPayloadTraceSchemaVersion",
     "payload_trace_word_count": "FlumeHcommPayloadTraceWordCount",
+    "payload_primitive_deps": "FlumeHcommPayloadPrimitiveDeps",
+    "payload_no_hccl_sendrecv_deps": "FlumeHcommPayloadNoHcclSendRecvDeps",
+    "payload_no_hccl_payload_api_deps": "FlumeHcommPayloadNoHcclPayloadApiDeps",
     "build_mode_internal": "FlumeHcommPayloadBuildModeInternalPayload",
 }
 HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT = "FlumeHcommPayloadCopyDirectAclrtKernel"
@@ -92,6 +95,9 @@ HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
 HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION = "FlumeHcommPayloadTraceSchemaVersion"
 HCOMM_PAYLOAD_TRACE_WORD_COUNT = "FlumeHcommPayloadTraceWordCount"
+HCOMM_PAYLOAD_PRIMITIVE_DEPS = "FlumeHcommPayloadPrimitiveDeps"
+HCOMM_PAYLOAD_NO_HCCL_SENDRECV_DEPS = "FlumeHcommPayloadNoHcclSendRecvDeps"
+HCOMM_PAYLOAD_NO_HCCL_PAYLOAD_API_DEPS = "FlumeHcommPayloadNoHcclPayloadApiDeps"
 HCOMM_PAYLOAD_READY_FUNCTION_LABELS = (
     "payload_direct_aclrt",
     "payload_abi_v4",
@@ -413,7 +419,10 @@ def FindForbiddenTokenRefsInBytes(
 ) -> dict[str, list[str]]:
     refs: dict[str, list[str]] = {}
     for token in tokens:
-        if token.encode("utf-8") in data:
+        pattern = re.compile(
+            rb"(?<![A-Za-z0-9_])" + re.escape(token.encode("utf-8")) +
+            rb"(?![A-Za-z0-9_])")
+        if pattern.search(data):
             refs.setdefault(token, []).append(label)
     return refs
 

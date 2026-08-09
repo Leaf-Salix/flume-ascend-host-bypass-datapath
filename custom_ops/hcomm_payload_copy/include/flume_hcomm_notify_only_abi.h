@@ -88,6 +88,12 @@ extern "C" {
   "FlumeHcommPayloadTraceSchemaVersion"
 #define FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC \
   "FlumeHcommPayloadTraceWordCount"
+#define FLUME_HCOMM_PAYLOAD_PRIMITIVE_DEPS_FUNC \
+  "FlumeHcommPayloadPrimitiveDeps"
+#define FLUME_HCOMM_PAYLOAD_NO_HCCL_SENDRECV_DEPS_FUNC \
+  "FlumeHcommPayloadNoHcclSendRecvDeps"
+#define FLUME_HCOMM_PAYLOAD_NO_HCCL_PAYLOAD_API_DEPS_FUNC \
+  "FlumeHcommPayloadNoHcclPayloadApiDeps"
 #define FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES 48U
 #define FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG "flume_hcomm_payload"
 #define FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES 128U
