@@ -910,6 +910,7 @@ def main() -> int:
         finally:
             sys.argv = old_argv
         assert matrix_args.auto_run_hcomm_payload_channel_handle_candidate
+        assert matrix_args.auto_run_hcomm_payload_official_p2p_candidate
         assert matrix_args.auto_run_hcomm_payload_write_path_candidate
         assert matrix_args.auto_run_hcomm_payload_write_with_notify_candidate
         assert matrix_args.auto_run_hcomm_payload_channel_fence_diagnostic
@@ -920,6 +921,7 @@ def main() -> int:
         assert flume_tool.HasAcceptedPayloadCandidate(
             matrix_args, ["flume-hccl-collective-smoke"])
         helper_args = type("Args", (), {
+            "auto_run_hcomm_payload_official_p2p_candidate": False,
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": False,
             "auto_run_hcomm_payload_write_with_notify_candidate": False,
@@ -930,6 +932,7 @@ def main() -> int:
             "auto_run_hcomm_payload_no_comm_acquire_diagnostic": False,
         })()
         flume_tool.EnableHcommPayloadCandidateMatrix(helper_args)
+        assert helper_args.auto_run_hcomm_payload_official_p2p_candidate
         assert helper_args.auto_run_hcomm_payload_channel_handle_candidate
         assert helper_args.auto_run_hcomm_payload_write_path_candidate
         assert helper_args.auto_run_hcomm_payload_write_with_notify_candidate
@@ -939,6 +942,7 @@ def main() -> int:
         assert helper_args.auto_run_hcomm_payload_direct_output_diagnostic
         assert helper_args.auto_run_hcomm_payload_no_comm_acquire_diagnostic
         write_only_args = type("Args", (), {
+            "auto_run_hcomm_payload_official_p2p_candidate": False,
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": True,
             "auto_run_hcomm_payload_write_with_notify_candidate": False,
@@ -953,6 +957,7 @@ def main() -> int:
             write_only_args,
             ["flume-hccl-collective-smoke", "--hcomm-payload-write-path"])
         write_notify_unavailable_args = type("Args", (), {
+            "auto_run_hcomm_payload_official_p2p_candidate": False,
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": False,
             "auto_run_hcomm_payload_write_with_notify_candidate": True,
@@ -965,6 +970,7 @@ def main() -> int:
         assert not flume_tool.HasAcceptedPayloadCandidate(
             write_notify_unavailable_args, ["flume-hccl-collective-smoke"])
         no_comm_only_args = type("Args", (), {
+            "auto_run_hcomm_payload_official_p2p_candidate": False,
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": False,
             "auto_run_hcomm_payload_write_with_notify_candidate": False,
@@ -1170,6 +1176,28 @@ def main() -> int:
             "auto_run_hcomm_payload_direct_output_diagnostic": True,
             "auto_run_hcomm_payload_nobatch_diagnostic": True,
         })()
+        official_runner = FakeCandidateRunner(tmp / "official-p2p-candidate")
+        official_selected = flume_tool.RunHcommPayloadOfficialP2pCandidate(
+            official_runner,
+            ["flume-hccl-collective-smoke",
+             "--hcomm-require-payload-copy",
+             "--hcomm-payload-channel-fence",
+             "--hcomm-payload-write-path"],
+            None,
+            10,
+            channel_log)
+        assert official_selected is None
+        assert official_runner.calls[0][0] == "hcomm-payload-official-p2p-candidate"
+        official_command = official_runner.calls[0][1]
+        assert "--hcomm-payload-comm-binding=channel-handle" in official_command
+        assert "--hcomm-payload-disable-batch" in official_command
+        assert "--hcomm-payload-recv-direct-output" in official_command
+        assert "--hcomm-payload-channel-fence" not in official_command
+        assert "--hcomm-payload-write-path" not in official_command
+        assert flume_tool.CommandUsesOfficialP2pLayout(official_command)
+        official_note = (
+            official_runner.run_dir / "HCOMM_PAYLOAD_OFFICIAL_P2P_CANDIDATE.md")
+        assert official_note.exists()
         fake_runner = FakeCandidateRunner(tmp / "candidate-sequence")
         selected_candidate = (
             flume_tool.RunHcommPayloadChannelHandleFallbackCandidates(

@@ -411,10 +411,13 @@ same isolated package flow before deciding whether strict payload copy is a
 required positive gate, so the full matrix can be the first one-shot attempt on
 shared hosts. It does not install into the system CANN/OPP tree.
 If the default strict gate fails, `--auto-run-hcomm-payload-candidate-matrix`
-tries channel-handle, write-path, write-with-notify, channel-fence, no-batch, tagged-batch,
-direct-output, and no-comm-acquire variants. Only candidates with complete
-checksum/trace/`fallback=none` evidence can satisfy the gate; no-comm-acquire
-remains diagnostic-only. The CANN fixture also adds
+first tries an `official-p2p` layout candidate, then channel-handle, write-path,
+write-with-notify, channel-fence, no-batch, tagged-batch, direct-output, and
+no-comm-acquire variants. The `official-p2p` layout combines channel-handle
+binding, no HCOMM batch mode, and recv-side direct output, matching the public
+custom P2P example shape while still using Flume's strict evidence gate. Only
+candidates with complete checksum/trace/`fallback=none` evidence can satisfy
+the gate; no-comm-acquire remains diagnostic-only. The CANN fixture also adds
 `hcomm-primitive-call-shape-probe.txt` so the same log bundle can distinguish
 ABI call-shape problems, binding choices, batch compatibility, and completion
 ordering problems, and primitive-copy problems. If a no-batch, tagged-batch, or
@@ -512,9 +515,9 @@ with `--hcomm-payload-comm-binding=channel-handle`; that path can satisfy the
 final gate only if both ranks pass with checksum match and `fallback=none`.
 For one-shot remote collection, add
 `--auto-run-hcomm-payload-candidate-matrix`; if the default `comm-name` run
-fails, the tool reruns the same strict smoke across ChannelHandle, write-path, write-with-notify,
-channel-fence, no-batch, tagged-batch, direct-output, and no-comm-acquire
-variants.
+fails, the tool reruns the same strict smoke across the official-p2p layout,
+ChannelHandle, write-path, write-with-notify, channel-fence, no-batch,
+tagged-batch, direct-output, and no-comm-acquire variants.
 
 Before running strict smoke against an existing package, inspect it:
 

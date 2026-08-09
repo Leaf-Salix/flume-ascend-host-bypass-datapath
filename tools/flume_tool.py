@@ -2810,11 +2810,21 @@ def CommandUsesWriteWithNotify(command: list[str]) -> bool:
     return "--hcomm-payload-write-with-notify" in command
 
 
+def CommandUsesOfficialP2pLayout(command: list[str]) -> bool:
+    return (
+        CommandUsesChannelHandleBinding(command) and
+        CommandUsesNoBatch(command) and
+        CommandUsesDirectOutputRecv(command) and
+        not CommandUsesWritePath(command) and
+        not CommandUsesWriteWithNotify(command))
+
+
 def WriteWithNotifyCandidatesEnabled(args: argparse.Namespace) -> bool:
     return getattr(args, "hcomm_payload_write_with_notify_available", True)
 
 
 def EnableHcommPayloadCandidateMatrix(args: argparse.Namespace) -> None:
+    args.auto_run_hcomm_payload_official_p2p_candidate = True
     args.auto_run_hcomm_payload_channel_handle_candidate = True
     args.auto_run_hcomm_payload_write_path_candidate = True
     args.auto_run_hcomm_payload_write_with_notify_candidate = True
@@ -2827,6 +2837,9 @@ def EnableHcommPayloadCandidateMatrix(args: argparse.Namespace) -> None:
 
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
                                 command: list[str]) -> bool:
+    if (getattr(args, "auto_run_hcomm_payload_official_p2p_candidate", False) and
+            not CommandUsesOfficialP2pLayout(command)):
+        return True
     if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
             not CommandUsesChannelHandleBinding(command)):
         return True
@@ -2865,6 +2878,12 @@ def RunHcommPayloadStrictFailureFollowups(
     if not package_payload_ready:
         return None
     selected_log: Optional[Path] = None
+    if (getattr(args, "auto_run_hcomm_payload_official_p2p_candidate", False) and
+            not CommandUsesOfficialP2pLayout(base_command)):
+        official_log = RunHcommPayloadOfficialP2pCandidate(
+            runner, base_command, env_updates, timeout_seconds, default_log)
+        if official_log is not None:
+            selected_log = official_log
     if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
             not CommandUsesChannelHandleBinding(base_command)):
         candidate_log = RunHcommPayloadChannelHandleFallbackCandidates(
@@ -4134,6 +4153,44 @@ def RunHcommPayloadChannelHandleCandidate(
     WriteHcommPayloadChannelHandleCandidate(
         runner.run_dir, default_log, result.log_path)
     return result
+
+
+def RunHcommPayloadOfficialP2pCandidate(
+        runner: Runner,
+        base_command: list[str],
+        env_updates: Optional[dict[str, str]],
+        timeout_seconds: int,
+        default_log: Optional[Path]) -> Optional[Path]:
+    command = PayloadCommandWithoutCommBinding(base_command)
+    command = [
+        item for item in command
+        if item not in (
+            "--hcomm-payload-disable-batch",
+            "--hcomm-payload-recv-direct-output",
+            "--hcomm-payload-channel-fence",
+            "--hcomm-payload-write-path",
+            "--hcomm-payload-write-with-notify",
+        )
+    ]
+    command.append("--hcomm-payload-disable-batch")
+    command.append("--hcomm-payload-recv-direct-output")
+    command.append("--hcomm-payload-comm-binding=channel-handle")
+    result = runner.run(
+        "hcomm-payload-official-p2p-candidate",
+        command,
+        required=False,
+        timeout_seconds=timeout_seconds,
+        env_updates=env_updates,
+    )
+    if result.returncode != 0:
+        WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
+    WriteHcommPayloadChannelHandleCandidate(
+        runner.run_dir,
+        default_log,
+        result.log_path,
+        note_name="HCOMM_PAYLOAD_OFFICIAL_P2P_CANDIDATE.md",
+        title="HCOMM Payload Official P2P Layout Candidate")
+    return result.log_path if StrictPayloadLogPassed(result.log_path) else None
 
 
 def RunHcommPayloadChannelHandleDirectOutputCandidate(
@@ -5694,6 +5751,7 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-direct-output-diagnostic",
     "hcomm-payload-channel-fence-diagnostic",
     "hcomm-payload-tagged-diagnostic",
+    "hcomm-payload-official-p2p-candidate",
     "hcomm-payload-write-path-candidate",
     "hcomm-payload-write-path-channel-fence-candidate",
     "hcomm-payload-write-path-nobatch-candidate",
@@ -6188,7 +6246,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "expected negative while the package is not ready. When the package "
         "is payload-ready, a failed default comm-name strict run "
         "automatically triggers the built-in Stage 3B.3E "
-        "candidate matrix: channel-handle binding, write-path, "
+        "candidate matrix: official-p2p layout, channel-handle binding, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
         "direct-output, and no-comm-acquire isolation. Channel-handle, "
         "write-path, write-with-notify, channel-fence, no-batch, "
@@ -8221,10 +8279,20 @@ def parse_args() -> argparse.Namespace:
                               "candidate/diagnostic variants that can help "
                               "identify a passing primitive path or isolate "
                               "the first failing HCOMM primitive. This expands "
-                              "to channel-handle, write-path, "
+                              "to official-p2p layout, channel-handle, write-path, "
                               "write-with-notify, channel-fence, no-batch, "
                               "tagged-batch, direct-output, and "
                               "no-comm-acquire runs; it does not weaken the "
+                              "strict-positive evidence gate."))
+    parser.add_argument("--auto-run-hcomm-payload-official-p2p-candidate",
+                        action="store_true",
+                        help=("When a payload-ready package is present and "
+                              "the strict payload gate fails, automatically "
+                              "rerun the HCOMM payload kernel in the layout "
+                              "used by the public custom P2P example: "
+                              "channel-handle binding, no HcommBatchModeStart/"
+                              "End, and recv HcommReadOnThread directly into "
+                              "output HBM. A complete run can satisfy the "
                               "strict-positive evidence gate."))
     parser.add_argument("--auto-run-hcomm-payload-nobatch-diagnostic",
                         action="store_true",
