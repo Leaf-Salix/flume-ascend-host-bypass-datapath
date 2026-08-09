@@ -136,6 +136,14 @@ HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
 HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS = (
     "HcclSend",
     "HcclRecv",
+    "HcclBatchSendRecv",
+    "HcclAllReduce",
+    "HcclAllGather",
+    "HcclReduceScatter",
+    "HcclBroadcast",
+    "HcclReduce",
+    "HcclGather",
+    "HcclScatter",
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
@@ -729,7 +737,7 @@ def PackageTextReason(package_text: str) -> str:
         if re.search(r"^payload_no_hccl_sendrecv_deps=failed$",
                      package_text, re.MULTILINE):
             return ("payload kernel package references forbidden HCCL "
-                    "Send/Recv symbols")
+                    "payload or collective symbols")
     return reason
 
 
@@ -755,10 +763,10 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package does not reference "
                 "the required HCOMM primitive APIs")
-    if "forbidden HCCL Send/Recv" in reason:
+    if "forbidden HCCL" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from the HCOMM primitive scheduler; strict payload packages "
-                "must not reference HcclSend/HcclRecv")
+                "must not reference HCCL payload or collective APIs")
     if "metadata function returned unexpected value" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package exports stale ABI, "
@@ -7907,9 +7915,9 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
             setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
             lines = [
                 "payload direct custom-op source references forbidden HCCL "
-                "P2P APIs",
+                "payload or collective APIs",
                 "Strict HCOMM payload packages must use HCOMM primitives, not "
-                "HcclSend/HcclRecv fallback.",
+                "HCCL payload/collective fallback.",
             ]
             for token, paths in sorted(forbidden_refs.items()):
                 lines.append(f"{token}:")
@@ -9154,10 +9162,10 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_primitive_deps_marker and
                   not found_payload_no_hccl_sendrecv_deps_marker):
                 print("reason=payload kernel package references forbidden "
-                      "HCCL Send/Recv symbols")
+                      "HCCL payload or collective symbols")
                 print("action=rebuild package with the HCOMM primitive "
                       "payload kernel; strict payload packages must not "
-                      "reference HcclSend/HcclRecv")
+                      "reference HCCL payload or collective APIs")
             else:
                 print("reason=payload kernel package is missing or incomplete")
         else:

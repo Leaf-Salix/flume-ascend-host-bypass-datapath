@@ -312,9 +312,10 @@ to reference the HCOMM primitive symbols used by the payload path, including
 `HcommLocalCopyOnThread`, `HcommReadOnThread`, `HcommWriteOnThread`, HCOMM
 Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
 therefore not accepted as a real payload package. It also rejects packages that
-reference `HcclSend` or `HcclRecv`, both through exported/undefined symbols and
+reference HCCL payload or collective entrypoints, including `HcclSend`,
+`HcclRecv`, and collective APIs, both through exported/undefined symbols and
 through raw JSON/tar-contained strings, so strict-positive cannot be satisfied
-by a hidden HCCL P2P fallback. When the target host can load
+by a hidden HCCL fallback. When the target host can load
 the tar-contained SO, preflight also calls the exported metadata functions and
 requires the current values: payload ABI v4, semantic v17, status schema v7,
 status word count 17, trace schema v3, trace word count 82, comm-acquire

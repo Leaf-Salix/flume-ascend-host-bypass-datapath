@@ -2562,8 +2562,8 @@ def main() -> int:
         assert not flume_tool.PackageTextPayloadReady(
             forbidden_hccl_p2p_package_log())
         assert ("| HCOMM custom-op package reason | payload kernel package "
-                "references forbidden HCCL Send/Recv symbols |") in text
-        assert "must not reference HcclSend/HcclRecv" in text
+                "references forbidden HCCL payload or collective symbols |") in text
+        assert "must not reference HCCL payload or collective APIs" in text
 
         multi_payload_package = write(
             tmp / "package-multi-candidate-payload.log",
