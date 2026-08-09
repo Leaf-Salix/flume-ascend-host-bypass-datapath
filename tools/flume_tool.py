@@ -2819,6 +2819,31 @@ def CommandUsesOfficialP2pLayout(command: list[str]) -> bool:
         not CommandUsesWriteWithNotify(command))
 
 
+def ApplyOfficialP2pLayoutArgs(parser: argparse.ArgumentParser,
+                               args: argparse.Namespace) -> None:
+    if not getattr(args, "hcomm_payload_official_p2p_layout", False):
+        return
+    if args.hcomm_payload_write_path or args.hcomm_payload_write_with_notify:
+        parser.error("--hcomm-payload-official-p2p-layout is a read-path "
+                     "layout; do not combine it with "
+                     "--hcomm-payload-write-path or "
+                     "--hcomm-payload-write-with-notify")
+    if args.hcomm_payload_channel_fence:
+        parser.error("--hcomm-payload-official-p2p-layout follows the public "
+                     "custom P2P example shape and does not use "
+                     "--hcomm-payload-channel-fence")
+    if args.hcomm_payload_batch_tag:
+        parser.error("--hcomm-payload-official-p2p-layout disables HCOMM "
+                     "batch mode; remove --hcomm-payload-batch-tag")
+    if (args.hcomm_payload_comm_binding and
+            args.hcomm_payload_comm_binding != "channel-handle"):
+        parser.error("--hcomm-payload-official-p2p-layout requires "
+                     "--hcomm-payload-comm-binding=channel-handle")
+    args.hcomm_payload_disable_batch = True
+    args.hcomm_payload_recv_direct_output = True
+    args.hcomm_payload_comm_binding = "channel-handle"
+
+
 def WriteWithNotifyCandidatesEnabled(args: argparse.Namespace) -> bool:
     return getattr(args, "hcomm_payload_write_with_notify_available", True)
 
@@ -8271,6 +8296,16 @@ def parse_args() -> argparse.Namespace:
                               "batch tag; non-empty tags test alternate CANN "
                               "tag caching compatibility without disabling "
                               "batch mode."))
+    parser.add_argument("--hcomm-payload-official-p2p-layout",
+                        action="store_true",
+                        help=("Focused Stage 3B payload-copy layout matching "
+                              "the public HCOMM custom P2P example shape: "
+                              "channel-handle binding, no HCOMM batch mode, "
+                              "and recv HcommReadOnThread directly into "
+                              "output HBM. This is equivalent to explicitly "
+                              "passing --hcomm-payload-comm-binding="
+                              "channel-handle, --hcomm-payload-disable-batch, "
+                              "and --hcomm-payload-recv-direct-output."))
     parser.add_argument("--auto-run-hcomm-payload-candidate-matrix",
                         action="store_true",
                         help=("Shortcut for the focused strict-positive "
@@ -8558,6 +8593,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.auto_run_hcomm_payload_candidate_matrix:
         EnableHcommPayloadCandidateMatrix(args)
+    ApplyOfficialP2pLayoutArgs(parser, args)
     args.hccl_host_ifname = args.hccl_host_ifname.strip()
     args.hccl_host_ip = args.hccl_host_ip.strip()
     if args.hccl_smoke_timeout_sec < 0:

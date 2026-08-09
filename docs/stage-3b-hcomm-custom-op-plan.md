@@ -657,6 +657,9 @@ recv descriptor to `HcommReadOnThread(remote_hccl_buffer -> output)`. Its marker
 is `payload_recv_path=direct-output`; the default marker is
 `payload_recv_path=local-buffer`. This diagnostic is useful when the default
 path reaches `HcommReadOnThread` but fails at the final output local-copy.
+Use `--hcomm-payload-official-p2p-layout` to run the focused public custom P2P
+shape directly. It expands to channel-handle binding, no HCOMM batch mode, and
+recv direct-output while rejecting write-path and channel-fence combinations.
 
 Success changes backend capability semantics from:
 

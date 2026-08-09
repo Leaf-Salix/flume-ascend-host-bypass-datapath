@@ -860,6 +860,24 @@ def main() -> int:
     assert ("--hcomm-payload-recv-direct-output only applies to the read path"
             in direct_output_write_conflict.stderr)
 
+    official_p2p_write_conflict = subprocess.run(
+        [
+            sys.executable,
+            str(repo / "tools" / "flume_tool.py"),
+            "--hcomm-payload-official-p2p-layout",
+            "--hcomm-payload-write-path",
+            "local",
+        ],
+        cwd=repo,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert official_p2p_write_conflict.returncode == 2
+    assert ("--hcomm-payload-official-p2p-layout is a read-path layout"
+            in official_p2p_write_conflict.stderr)
+
     with tempfile.TemporaryDirectory(prefix="flume-strict-tree-") as tmp_text:
         tmp = Path(tmp_text)
         smoke = write(
@@ -897,6 +915,38 @@ def main() -> int:
         assert "--storage-hbm-smoke" in smoke_command
         assert "--hcomm-require-payload-copy" in smoke_command
         assert "--hcomm-payload-batch-tag=flume-payload-v1" in smoke_command
+
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "build-official-p2p"),
+                "--hccl-devices", "0,1",
+                "--run-hcomm-payload-smoke",
+                "--hcomm-require-payload-copy",
+                "--hcomm-payload-official-p2p-layout",
+                "ascend-probe",
+            ]
+            official_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert official_args.hcomm_payload_disable_batch
+        assert official_args.hcomm_payload_recv_direct_output
+        assert official_args.hcomm_payload_comm_binding == "channel-handle"
+        assert not official_args.hcomm_payload_write_path
+        assert not official_args.hcomm_payload_channel_fence
+        official_commands = flume_tool.build_commands(
+            official_args, enable_hccl=True,
+            run_dir=tmp / "official-p2p-command-run")
+        official_smoke_command = next(
+            spec.command for spec in official_commands
+            if spec.name == "hccl-collective-smoke")
+        assert "--hcomm-payload-disable-batch" in official_smoke_command
+        assert "--hcomm-payload-recv-direct-output" in official_smoke_command
+        assert "--hcomm-payload-comm-binding=channel-handle" in official_smoke_command
+        assert "--hcomm-payload-write-path" not in official_smoke_command
+        assert "--hcomm-payload-channel-fence" not in official_smoke_command
+        assert flume_tool.CommandUsesOfficialP2pLayout(official_smoke_command)
 
         old_argv = sys.argv[:]
         try:
