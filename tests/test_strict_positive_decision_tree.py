@@ -188,7 +188,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_transfer_mode=read "
         "payload_trace_write_notify_backend=none "
         "payload_trace_ready_notify_idx=0 "
-        "payload_trace_done_notify_idx=1 "
+        "payload_trace_done_notify_idx=1 payload_trace_role=0 payload_trace_local_rank=0 payload_trace_peer_rank=1 "
         "payload_trace_result=success payload_trace_status_word=0 payload_trace_hcomm_ret=0 "
         "payload_trace_first_error_event=none "
         "payload_trace_first_error_ret=0 "
@@ -239,7 +239,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_transfer_mode=read "
         "payload_trace_write_notify_backend=none "
         "payload_trace_ready_notify_idx=0 "
-        "payload_trace_done_notify_idx=1 "
+        "payload_trace_done_notify_idx=1 payload_trace_role=1 payload_trace_local_rank=1 payload_trace_peer_rank=0 "
         "payload_trace_result=success payload_trace_status_word=0 payload_trace_hcomm_ret=0 "
         "payload_trace_first_error_event=none "
         "payload_trace_first_error_ret=0 "
@@ -284,7 +284,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
         "payload_trace_ready_notify_idx=0 "
-        "payload_trace_done_notify_idx=1 "
+        "payload_trace_done_notify_idx=1 payload_trace_role=0 payload_trace_local_rank=0 payload_trace_peer_rank=1 "
         "payload_trace_result=success payload_trace_status_word=0 payload_trace_hcomm_ret=0 "
         "payload_batch_mode=on payload_comm_acquire=default "
         "payload_comm_binding=comm-name "
@@ -2412,6 +2412,29 @@ def main() -> int:
         assert "| rank1 strict evidence | missing |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_without_trace_header.read_text(encoding="utf-8"))[0]
+
+        strict_trace_rank_mismatch = write(
+            tmp / "strict-trace-rank-mismatch.log",
+            strict_log(True).replace(
+                "payload_trace_role=1 payload_trace_local_rank=1 "
+                "payload_trace_peer_rank=0",
+                "payload_trace_role=1 payload_trace_local_rank=0 "
+                "payload_trace_peer_rank=0", 1))
+        trace_rank_mismatch_dir = tmp / "trace-rank-mismatch"
+        trace_rank_mismatch_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            trace_rank_mismatch_dir, smoke, strict_trace_rank_mismatch,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        trace_desc_ok, trace_desc_reason = (
+            flume_tool.StrictPayloadTraceDescriptorPassed(
+                flume_tool.ExtractStrictPayloadRankLines(
+                    strict_trace_rank_mismatch.read_text(encoding="utf-8"))))
+        assert not trace_desc_ok
+        assert trace_desc_reason == "rank1-trace-local-rank-mismatch"
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_trace_rank_mismatch.read_text(encoding="utf-8"))[0]
 
         strict_missing_trace_first_error = write(
             tmp / "strict-missing-trace-first-error.log",

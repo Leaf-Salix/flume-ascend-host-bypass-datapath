@@ -2302,6 +2302,9 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_write_notify_backend=",
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
+    "payload_trace_role=",
+    "payload_trace_local_rank=",
+    "payload_trace_peer_rank=",
     "payload_trace_result=success",
     "payload_trace_status_word=0",
     "payload_trace_hcomm_ret=0",
@@ -2527,6 +2530,12 @@ def StrictPayloadTraceDescriptorPassed(
         line = rank_lines.get(rank, "")
         if not line:
             return False, "missing-rank-line"
+        desc_role = MarkerValueFromLine(line, "payload_desc_role")
+        trace_role = MarkerValueFromLine(line, "payload_trace_role")
+        desc_local_rank = MarkerValueFromLine(line, "payload_desc_local_rank")
+        trace_local_rank = MarkerValueFromLine(line, "payload_trace_local_rank")
+        desc_peer_rank = MarkerValueFromLine(line, "payload_desc_peer_rank")
+        trace_peer_rank = MarkerValueFromLine(line, "payload_trace_peer_rank")
         desc_bytes = MarkerValueFromLine(line, "payload_desc_bytes")
         trace_bytes = MarkerValueFromLine(line, "payload_trace_bytes")
         desc_ready = MarkerValueFromLine(line, "payload_desc_ready_notify_idx")
@@ -2551,6 +2560,8 @@ def StrictPayloadTraceDescriptorPassed(
         trace_operand = MarkerValueFromLine(
             line, "payload_trace_operand_layout")
         values = (
+            desc_role, trace_role, desc_local_rank, trace_local_rank,
+            desc_peer_rank, trace_peer_rank,
             desc_bytes, trace_bytes, desc_ready, trace_ready, desc_done,
             trace_done, payload_batch, trace_batch, payload_recv, trace_recv,
             payload_binding, trace_binding, payload_acquire, trace_acquire,
@@ -2558,6 +2569,17 @@ def StrictPayloadTraceDescriptorPassed(
             desc_operand, trace_path, trace_operand)
         if any(value == "missing" for value in values):
             return False, f"rank{rank}-missing-trace-descriptor-field"
+        if desc_role != trace_role:
+            return False, f"rank{rank}-trace-role-mismatch"
+        if desc_local_rank != trace_local_rank:
+            return False, f"rank{rank}-trace-local-rank-mismatch"
+        if desc_peer_rank != trace_peer_rank:
+            return False, f"rank{rank}-trace-peer-rank-mismatch"
+        if desc_local_rank != str(rank):
+            return False, f"rank{rank}-descriptor-local-rank-mismatch"
+        expected_peer_rank = "1" if rank == 0 else "0"
+        if desc_peer_rank != expected_peer_rank:
+            return False, f"rank{rank}-descriptor-peer-rank-mismatch"
         if desc_bytes != trace_bytes:
             return False, f"rank{rank}-trace-bytes-mismatch"
         if desc_ready != trace_ready:
