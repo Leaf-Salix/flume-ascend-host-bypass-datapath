@@ -57,6 +57,7 @@ REQUIRED_MARKERS = (
 STALE_MARKERS = (
     "payload_status_schema=v3",
     "payload_status_word_count=10",
+    "HCOMM payload no-batch diagnostic completed but cannot",
 )
 
 RUNTIME_PACKAGE_READY_MARKERS = (
