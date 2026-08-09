@@ -2417,6 +2417,23 @@ def StrictPayloadDataFlowPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     return True, "passed"
 
 
+def StrictPayloadDeviceDataSidePassed(
+        rank_lines: dict[int, str]) -> tuple[bool, str]:
+    for rank in (0, 1):
+        line = rank_lines.get(rank, "")
+        if not line:
+            return False, "missing-rank-line"
+        side = MarkerValueFromLine(line, "payload_device_data_side")
+        reason = MarkerValueFromLine(line, "payload_device_data_side_reason")
+        if side == "missing":
+            return False, f"rank{rank}-missing-device-data-side"
+        if side != "passed":
+            if reason == "missing":
+                reason = "unknown"
+            return False, f"rank{rank}-{side}:{reason}"
+    return True, "passed"
+
+
 def StrictPayloadHostDataPassed(rank_lines: dict[int, str]) -> tuple[bool, str]:
     rank0_line = rank_lines.get(0, "")
     rank1_line = rank_lines.get(1, "")
@@ -2793,6 +2810,8 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         expected_match is not None and source_match.group(1) ==
         payload_match.group(1) == expected_match.group(1))
     data_flow_ok, _data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
+    device_side_ok, _device_side_reason = (
+        StrictPayloadDeviceDataSidePassed(rank_lines))
     host_data_ok, _host_data_reason = StrictPayloadHostDataPassed(rank_lines)
     trace_desc_ok, _trace_desc_reason = StrictPayloadTraceDescriptorPassed(
         rank_lines)
@@ -2804,8 +2823,9 @@ def StrictPayloadRankEvidencePassed(strict: str) -> tuple[bool, bool, bool]:
         StrictPayloadOfficialP2pShapePassed(rank_lines))
     return (rank0_ok and rank1_ok and binding_ok and batch_mode_ok and
             transfer_ok and trace_transfer_ok and recv_path_ok and
-            checksum_ok and data_flow_ok and host_data_ok and trace_desc_ok and
-            trace_count_ok and resource_layout_ok and official_p2p_shape_ok,
+            checksum_ok and data_flow_ok and device_side_ok and host_data_ok and
+            trace_desc_ok and trace_count_ok and resource_layout_ok and
+            official_p2p_shape_ok,
             rank0_ok, rank1_ok)
 
 
@@ -3436,6 +3456,14 @@ def _PayloadCandidateScore(text: str, returncode: int) -> int:
         score += 800
     else:
         score += _PayloadCandidateDataFlowProgressScore(data_flow_reason)
+    device_side_ok, device_side_reason = StrictPayloadDeviceDataSidePassed(
+        ExtractStrictPayloadRankLines(text))
+    if device_side_ok:
+        score += 300
+    elif device_side_reason not in (
+            "missing-rank-line", "rank0-missing-device-data-side",
+            "rank1-missing-device-data-side"):
+        score += 50
     host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
         ExtractStrictPayloadRankLines(text))
     if host_data_ok:

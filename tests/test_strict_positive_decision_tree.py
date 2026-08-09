@@ -1394,6 +1394,34 @@ def main() -> int:
         assert "| payload data flow | recv-output-copy-mismatch |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_data_flow_mismatch())[0]
+        strict_device_side_lines = flume_tool.ExtractStrictPayloadRankLines(
+            strict_log(True))
+        assert flume_tool.StrictPayloadDeviceDataSidePassed(
+            strict_device_side_lines) == (True, "passed")
+        strict_device_side_fail = write(
+            tmp / "strict-device-side-fail.log",
+            strict_log(True).replace(
+                "payload_device_data_side=passed "
+                "payload_device_data_side_reason="
+                "recv-read-local-buffer-side",
+                "payload_device_data_side=failed "
+                "payload_device_data_side_reason=recv-user-exit-mismatch"))
+        device_side_fail_dir = tmp / "device-side-fail"
+        device_side_fail_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            device_side_fail_dir, smoke, strict_device_side_fail, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert ("| payload device-side self-check | "
+                "rank0=passed/send-read-side, "
+                "rank1=failed/recv-user-exit-mismatch |") in text
+        device_side_fail_lines = flume_tool.ExtractStrictPayloadRankLines(
+            strict_device_side_fail.read_text(encoding="utf-8"))
+        assert flume_tool.StrictPayloadDeviceDataSidePassed(
+            device_side_fail_lines) == (
+                False, "rank1-failed:recv-user-exit-mismatch")
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_device_side_fail.read_text(encoding="utf-8"))[0]
         strict_local_entry_match = write(
             tmp / "strict-local-entry-match.log",
             strict_log_with_recv_local_entry_already_matched())
