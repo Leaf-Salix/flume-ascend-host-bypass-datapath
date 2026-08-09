@@ -1050,6 +1050,8 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
         assert "| payload data flow | recv-remote-entry-mismatch |" in text
+        assert ("next action: recv rank did not observe source data in the "
+                "remote HCCL Buffer before the primitive") in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_recv_remote_entry_mismatch())[0]
         strict_transfer_exit_mismatch = write(
@@ -1063,6 +1065,9 @@ def main() -> int:
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
         assert "| payload data flow | recv-transfer-exit-mismatch |" in text
+        assert ("next action: primitive returned success but recv-side "
+                "transfer-exit fingerprint did not match") in text
+        assert "--auto-run-hcomm-payload-candidate-matrix" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_recv_transfer_exit_mismatch())[0]
         strict_host_mismatch = write(tmp / "strict-host-mismatch.log",

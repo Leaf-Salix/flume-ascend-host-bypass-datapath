@@ -5513,6 +5513,46 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = (
                 "inspect in-kernel HCOMM primitive return code: "
                 f"{strict_hcomm_ret}")
+        elif not strict_data_flow_ok:
+            if strict_data_flow_reason == "recv-transfer-exit-mismatch":
+                next_action = (
+                    "primitive returned success but recv-side transfer-exit "
+                    "fingerprint did not match; rerun with "
+                    "--auto-run-hcomm-payload-candidate-matrix to compare "
+                    "channel-fence, write-path, direct-output, no-batch, and "
+                    "channel-handle variants, then inspect HCOMM completion "
+                    "semantics for the selected primitive")
+            elif strict_data_flow_reason == "recv-remote-entry-mismatch":
+                next_action = (
+                    "recv rank did not observe source data in the remote HCCL "
+                    "Buffer before the primitive; inspect HCOMM channel "
+                    "descriptor, peer HCCL Buffer binding, and rerun the "
+                    "candidate matrix with channel-handle/write-path variants")
+            elif strict_data_flow_reason == "recv-local-buffer-mismatch":
+                next_action = (
+                    "recv rank remote buffer looked correct but local HCCL "
+                    "Buffer did not update; rerun with --hcomm-payload-"
+                    "channel-fence and --hcomm-payload-recv-direct-output to "
+                    "separate HcommRead completion from local output copy")
+            elif strict_data_flow_reason == "recv-output-copy-mismatch":
+                next_action = (
+                    "recv local HCCL Buffer contains payload but output HBM "
+                    "does not; rerun with --hcomm-payload-recv-direct-output "
+                    "or inspect HcommLocalCopyOnThread output-copy semantics")
+            elif strict_data_flow_reason == "recv-direct-output-mismatch":
+                next_action = (
+                    "direct-output HcommRead returned success but output HBM "
+                    "did not update; rerun with channel-fence and inspect "
+                    "direct ACL stream synchronization/completion semantics")
+            elif strict_data_flow_reason == "send-local-copy-mismatch":
+                next_action = (
+                    "send-side HcommLocalCopyOnThread did not move user HBM "
+                    "into the local HCCL Buffer; inspect local copy primitive "
+                    "arguments, buffer size, and stream completion")
+            else:
+                next_action = (
+                    "inspect HCOMM payload data-flow fingerprints: "
+                    f"{strict_data_flow_reason}")
         elif strict_verify not in ("passed", "missing"):
             next_action = "inspect rank1 payload verification mismatch"
         elif strict_checksum_match not in ("yes", "missing"):
