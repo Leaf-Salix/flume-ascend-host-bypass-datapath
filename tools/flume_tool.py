@@ -3121,6 +3121,7 @@ def _PayloadCandidateDataFlowProgressScore(reason: str) -> int:
         "sample-size-mismatch": 25,
         "empty-sample": 25,
         "send-local-copy-mismatch": 100,
+        "send-transfer-exit-mismatch": 350,
         "recv-local-entry-already-matched": 150,
         "recv-remote-entry-mismatch": 250,
         "send-remote-entry-already-matched": 250,
@@ -3133,24 +3134,83 @@ def _PayloadCandidateDataFlowProgressScore(reason: str) -> int:
     return progress.get(reason, 75)
 
 
-def _PayloadCandidateDataFlowAction(reason: str) -> str:
+def _PayloadCandidateDataFlowAction(reason: str,
+                                    transfer_mode: str = "missing",
+                                    recv_path: str = "missing") -> str:
     if reason == "passed":
         return "payload device data flow passed; inspect checksum or final gate"
+    if reason == "send-transfer-exit-mismatch":
+        if transfer_mode == "write-with-notify":
+            return (
+                "HcommWriteWithNotifyOnThread returned success but send-side "
+                "transfer-exit fingerprint did not match; inspect fused write "
+                "+ notify completion, channel-handle binding, no-batch mode, "
+                "and channel-fence candidates")
+        if transfer_mode == "write":
+            return (
+                "HcommWriteOnThread returned success but send-side "
+                "transfer-exit fingerprint did not match; inspect remote "
+                "write completion, channel-handle binding, no-batch mode, "
+                "and channel-fence candidates")
+        return (
+            "HcommReadOnThread returned success but send-side transfer-exit "
+            "fingerprint did not match; inspect read primitive completion, "
+            "channel-fence, no-batch, and channel-handle candidates")
     if reason == "recv-transfer-exit-mismatch":
+        if transfer_mode == "write-with-notify":
+            return (
+                "HcommWriteWithNotifyOnThread returned success but recv-side "
+                "local HCCL Buffer did not show payload; inspect fused write "
+                "+ notify completion, channel-handle binding, no-batch mode, "
+                "and channel-fence candidates")
+        if transfer_mode == "write":
+            return (
+                "HcommWriteOnThread returned success but recv-side local HCCL "
+                "Buffer did not show payload; inspect remote write direction, "
+                "channel-handle binding, no-batch mode, and channel-fence "
+                "candidates")
         return (
-            "HCOMM primitive returned success but recv transfer-exit "
-            "fingerprint did not change; compare channel-fence, write-path, "
-            "direct-output, no-batch, and channel-handle candidates")
+            "primitive returned success but recv-side transfer-exit "
+            "fingerprint did not match; HCOMM primitive returned success but "
+            "recv transfer-exit fingerprint did not change; rerun with "
+            "--auto-run-hcomm-payload-candidate-matrix to compare "
+            "channel-fence, write-path, direct-output, no-batch, and "
+            "channel-handle variants, then inspect HCOMM completion "
+            "semantics for the selected primitive")
     if reason == "recv-remote-entry-mismatch":
+        if transfer_mode in ("write", "write-with-notify"):
+            return (
+                "recv rank did not observe source data in the peer HCCL "
+                "Buffer before the remote-write primitive; inspect HCOMM "
+                "channel descriptor, endpoint direction, and channel-handle "
+                "binding")
         return (
-            "recv rank did not observe source data in the remote HCCL Buffer; "
-            "inspect channel descriptor, peer buffer binding, and "
+            "recv rank did not observe source data in the remote HCCL Buffer "
+            "before the primitive; inspect channel descriptor, peer buffer "
+            "binding, and "
             "channel-handle/write-path candidates")
     if reason == "recv-local-buffer-mismatch":
+        if transfer_mode == "write-with-notify":
+            return (
+                "remote HCCL Buffer has source data but fused write + notify "
+                "did not populate recv local HCCL Buffer; inspect "
+                "HcommWriteWithNotifyOnThread direction, completion backend, "
+                "and channel-fence/no-batch candidates")
+        if transfer_mode == "write":
+            return (
+                "remote HCCL Buffer has source data but HcommWriteOnThread "
+                "did not populate recv local HCCL Buffer; inspect write "
+                "source/destination endpoints, channel-handle binding, and "
+                "channel-fence/no-batch candidates")
         return (
             "remote buffer has source data but recv local HCCL Buffer did not "
             "update; compare channel-fence and direct-output candidates")
     if reason == "recv-output-copy-mismatch":
+        if transfer_mode in ("write", "write-with-notify"):
+            return (
+                "recv local HCCL Buffer contains payload but output HBM did "
+                "not; inspect recv-side HcommLocalCopyOnThread output-copy "
+                f"semantics for recv_path={recv_path}")
         return (
             "recv local HCCL Buffer updated but output HBM did not; inspect "
             "HcommLocalCopyOnThread output-copy semantics")
@@ -3162,6 +3222,11 @@ def _PayloadCandidateDataFlowAction(reason: str) -> str:
         return (
             "send-side local copy did not move user HBM into the local HCCL "
             "Buffer; inspect local copy primitive arguments")
+    if (reason == "unsupported-transfer-or-recv-path" and
+            transfer_mode in ("write", "write-with-notify")):
+        return (
+            "write-path payload copies require recv_path=local-buffer; remove "
+            "direct-output from write/write-with-notify candidates and rerun")
     if reason not in (
             "missing-rank-line", "missing-data-fingerprint", "missing"):
         return f"inspect HCOMM payload data-flow reason `{reason}`"
@@ -3194,10 +3259,14 @@ def _PayloadCandidateNextAction(text: str) -> str:
         return "fix direct ACL payload launch boundary"
     if MarkerValue(text, "stage3b3e_payload_sync") != "passed":
         return "inspect stream sync, timeout, and device status words"
-    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
-        ExtractStrictPayloadRankLines(text))
+    rank_lines = ExtractStrictPayloadRankLines(text)
+    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
     if not data_flow_ok:
-        data_flow_action = _PayloadCandidateDataFlowAction(data_flow_reason)
+        data_flow_action = _PayloadCandidateDataFlowAction(
+            data_flow_reason,
+            MarkerValueFromLine(rank_lines.get(0, ""),
+                                "payload_transfer_mode"),
+            MarkerValueFromLine(rank_lines.get(1, ""), "payload_recv_path"))
         if data_flow_action:
             return data_flow_action
     host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
@@ -5854,45 +5923,18 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
                 "--hcomm-channel-engine=aicpu, channel-handle binding, "
                 "no-batch mode, and direct-output recv")
         elif not strict_data_flow_ok:
-            if strict_data_flow_reason == "recv-transfer-exit-mismatch":
+            next_action = _PayloadCandidateDataFlowAction(
+                strict_data_flow_reason, strict_transfer_mode,
+                strict_recv_path)
+            if ("--auto-run-hcomm-payload-candidate-matrix" not in
+                    next_action and strict_data_flow_reason in (
+                    "recv-transfer-exit-mismatch",
+                    "recv-remote-entry-mismatch",
+                    "recv-local-buffer-mismatch")):
                 next_action = (
-                    "primitive returned success but recv-side transfer-exit "
-                    "fingerprint did not match; rerun with "
-                    "--auto-run-hcomm-payload-candidate-matrix to compare "
-                    "channel-fence, write-path, direct-output, no-batch, and "
-                    "channel-handle variants, then inspect HCOMM completion "
-                    "semantics for the selected primitive")
-            elif strict_data_flow_reason == "recv-remote-entry-mismatch":
-                next_action = (
-                    "recv rank did not observe source data in the remote HCCL "
-                    "Buffer before the primitive; inspect HCOMM channel "
-                    "descriptor, peer HCCL Buffer binding, and rerun the "
-                    "candidate matrix with channel-handle/write-path variants")
-            elif strict_data_flow_reason == "recv-local-buffer-mismatch":
-                next_action = (
-                    "recv rank remote buffer looked correct but local HCCL "
-                    "Buffer did not update; rerun with --hcomm-payload-"
-                    "channel-fence and --hcomm-payload-recv-direct-output to "
-                    "separate HcommRead completion from local output copy")
-            elif strict_data_flow_reason == "recv-output-copy-mismatch":
-                next_action = (
-                    "recv local HCCL Buffer contains payload but output HBM "
-                    "does not; rerun with --hcomm-payload-recv-direct-output "
-                    "or inspect HcommLocalCopyOnThread output-copy semantics")
-            elif strict_data_flow_reason == "recv-direct-output-mismatch":
-                next_action = (
-                    "direct-output HcommRead returned success but output HBM "
-                    "did not update; rerun with channel-fence and inspect "
-                    "direct ACL stream synchronization/completion semantics")
-            elif strict_data_flow_reason == "send-local-copy-mismatch":
-                next_action = (
-                    "send-side HcommLocalCopyOnThread did not move user HBM "
-                    "into the local HCCL Buffer; inspect local copy primitive "
-                    "arguments, buffer size, and stream completion")
-            else:
-                next_action = (
-                    "inspect HCOMM payload data-flow fingerprints: "
-                    f"{strict_data_flow_reason}")
+                    f"{next_action}; rerun with "
+                    "--auto-run-hcomm-payload-candidate-matrix if this was "
+                    "not already a focused candidate")
         elif strict_verify not in ("passed", "missing"):
             next_action = "inspect rank1 payload verification mismatch"
         elif strict_checksum_match not in ("yes", "missing"):

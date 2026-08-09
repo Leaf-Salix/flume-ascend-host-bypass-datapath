@@ -609,6 +609,27 @@ def strict_log_with_recv_transfer_exit_mismatch() -> str:
         marker, "payload_data_transfer_exit_fingerprint=111", 1)
 
 
+def strict_write_path_with_recv_local_buffer_mismatch() -> str:
+    text = strict_write_path_log(True)
+    marker = "payload_data_local_entry_fingerprint=222"
+    pos = text.find(marker)
+    if pos == -1:
+        raise AssertionError("synthetic write log missing recv local-entry")
+    return text[:pos] + text[pos:].replace(
+        marker, "payload_data_local_entry_fingerprint=111", 1)
+
+
+def strict_write_with_notify_with_recv_local_buffer_mismatch() -> str:
+    text = strict_write_with_notify_path_log(True)
+    marker = "payload_data_local_entry_fingerprint=222"
+    pos = text.find(marker)
+    if pos == -1:
+        raise AssertionError(
+            "synthetic write-with-notify log missing recv local-entry")
+    return text[:pos] + text[pos:].replace(
+        marker, "payload_data_local_entry_fingerprint=111", 1)
+
+
 def strict_log_with_host_data_mismatch() -> str:
     return strict_log(True).replace(
         "payload_host_received_fingerprint=222",
@@ -1218,6 +1239,30 @@ def main() -> int:
             write_entry_match_lines) == (True, "passed")
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_write_entry_match)[0]
+        strict_write_local_mismatch_text = (
+            strict_write_path_with_recv_local_buffer_mismatch())
+        strict_write_local_mismatch_lines = (
+            flume_tool.ExtractStrictPayloadRankLines(
+                strict_write_local_mismatch_text))
+        assert flume_tool.StrictPayloadDataFlowPassed(
+            strict_write_local_mismatch_lines) == (
+                False, "recv-local-buffer-mismatch")
+        write_local_action = flume_tool._PayloadCandidateNextAction(
+            strict_write_local_mismatch_text)
+        assert "HcommWriteOnThread" in write_local_action
+        assert "direct-output" not in write_local_action
+        strict_write_notify_local_mismatch_text = (
+            strict_write_with_notify_with_recv_local_buffer_mismatch())
+        strict_write_notify_local_mismatch_lines = (
+            flume_tool.ExtractStrictPayloadRankLines(
+                strict_write_notify_local_mismatch_text))
+        assert flume_tool.StrictPayloadDataFlowPassed(
+            strict_write_notify_local_mismatch_lines) == (
+                False, "recv-local-buffer-mismatch")
+        write_notify_local_action = flume_tool._PayloadCandidateNextAction(
+            strict_write_notify_local_mismatch_text)
+        assert "HcommWriteWithNotifyOnThread" in write_notify_local_action
+        assert "direct-output" not in write_notify_local_action
         strict_remote_entry_mismatch = write(
             tmp / "strict-remote-entry-mismatch.log",
             strict_log_with_recv_remote_entry_mismatch())
