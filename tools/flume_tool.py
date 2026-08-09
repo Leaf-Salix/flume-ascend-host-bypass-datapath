@@ -226,6 +226,11 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 17),
     "payload_trace_schema": (HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, 3),
     "payload_trace_word_count": (HCOMM_PAYLOAD_TRACE_WORD_COUNT, 82),
+    "payload_primitive_deps": (HCOMM_PAYLOAD_PRIMITIVE_DEPS, 1),
+    "payload_no_hccl_sendrecv_deps": (
+        HCOMM_PAYLOAD_NO_HCCL_SENDRECV_DEPS, 1),
+    "payload_no_hccl_payload_api_deps": (
+        HCOMM_PAYLOAD_NO_HCCL_PAYLOAD_API_DEPS, 1),
 }
 
 
@@ -9882,6 +9887,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_status_word_count_marker and
                   found_payload_trace_schema_marker and
                   found_payload_trace_word_count_marker and
+                  found_payload_primitive_deps_marker and
                   found_payload_no_hccl_sendrecv_deps_marker and
                   found_payload_metadata_value_mismatch and
                   not found_payload_metadata_values_valid):

@@ -335,6 +335,20 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "unsigned int FlumeHcommPayloadTraceWordCount(void) "
             "{ return 82; }"
         )
+    if mode not in ("legacy", "stale_v2", "stale_v3", "canary",
+                    "v4_marker_only"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadPrimitiveDeps(void) "
+            "{ return 1; }"
+        )
+        lines.append(
+            "unsigned int FlumeHcommPayloadNoHcclSendRecvDeps(void) "
+            "{ return 1; }"
+        )
+        lines.append(
+            "unsigned int FlumeHcommPayloadNoHcclPayloadApiDeps(void) "
+            "{ return 1; }"
+        )
     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
     output = tmp / f"kernel_{mode}.so"
     if platform.system() == "Darwin":
@@ -645,6 +659,29 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadTraceWordCount",
+            }
+        }
+    if mode not in ("legacy", "stale_v2", "stale_v3", "canary",
+                    "v4_marker_only"):
+        payload["FlumeHcommPayloadPrimitiveDeps"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadPrimitiveDeps",
+            }
+        }
+        payload["FlumeHcommPayloadNoHcclSendRecvDeps"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadNoHcclSendRecvDeps",
+            }
+        }
+        payload["FlumeHcommPayloadNoHcclPayloadApiDeps"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "FlumeHcommPayloadNoHcclPayloadApiDeps",
             }
         }
     if mode != "canary":
@@ -1358,11 +1395,20 @@ def main() -> int:
         assert "function_so.payload_trace_schema.FlumeHcommPayloadTraceSchemaVersion=present" in v4.stdout
         assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
+        assert "function.payload_primitive_deps.FlumeHcommPayloadPrimitiveDeps=present" in v4.stdout
+        assert "function_so.payload_primitive_deps.FlumeHcommPayloadPrimitiveDeps=present" in v4.stdout
+        assert "function.payload_no_hccl_sendrecv_deps.FlumeHcommPayloadNoHcclSendRecvDeps=present" in v4.stdout
+        assert "function_so.payload_no_hccl_sendrecv_deps.FlumeHcommPayloadNoHcclSendRecvDeps=present" in v4.stdout
+        assert "function.payload_no_hccl_payload_api_deps.FlumeHcommPayloadNoHcclPayloadApiDeps=present" in v4.stdout
+        assert "function_so.payload_no_hccl_payload_api_deps.FlumeHcommPayloadNoHcclPayloadApiDeps=present" in v4.stdout
         if ctypes_available():
             assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=19 expected=19 status=match" in v4.stdout
             assert "function_value.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=1 expected=1 status=match" in v4.stdout
             assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=7 expected=7 status=match" in v4.stdout
             assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=17 expected=17 status=match" in v4.stdout
+            assert "function_value.payload_primitive_deps.FlumeHcommPayloadPrimitiveDeps=1 expected=1 status=match" in v4.stdout
+            assert "function_value.payload_no_hccl_sendrecv_deps.FlumeHcommPayloadNoHcclSendRecvDeps=1 expected=1 status=match" in v4.stdout
+            assert "function_value.payload_no_hccl_payload_api_deps.FlumeHcommPayloadNoHcclPayloadApiDeps=1 expected=1 status=match" in v4.stdout
             assert "payload_metadata_values=match" in v4.stdout
         else:
             assert "aicpu_tar_so_function_values=not-checked" in v4.stdout
