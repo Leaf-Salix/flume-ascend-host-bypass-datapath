@@ -3606,6 +3606,60 @@ def RunHcommPayloadWriteWithNotifyCandidate(
     return result
 
 
+def _PayloadCandidateMatrixRow(
+        result: StepResult,
+        selected_log: Optional[Path]) -> dict[str, str]:
+    try:
+        text = result.log_path.read_text(encoding="utf-8",
+                                         errors="replace")
+    except OSError as exc:
+        text = f"failed to read log: {exc}"
+    passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
+        ExtractStrictPayloadRankLines(text))
+    host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
+        ExtractStrictPayloadRankLines(text))
+    return {
+        "step": result.name,
+        "returncode": str(result.returncode),
+        "selected": "yes" if selected_log == result.log_path else "no",
+        "evidence": "passed" if passed else "not-passed",
+        "rank0": "passed" if rank0_ok else "missing",
+        "rank1": "passed" if rank1_ok else "missing",
+        "score": str(_PayloadCandidateScore(text, result.returncode)),
+        "failure": _CandidateMarker(text, "payload_failure_step"),
+        "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+        "trace_error": _CandidateMarker(
+            text, "payload_trace_first_error_event"),
+        "trace_error_ret": _CandidateMarker(
+            text, "payload_trace_first_error_ret"),
+        "binding": _CandidateMarker(text, "payload_comm_binding"),
+        "batch": _CandidateMarker(text, "payload_batch_mode"),
+        "recv": _CandidateMarker(text, "payload_recv_path"),
+        "completion": _CandidateMarker(text, "payload_completion_mode"),
+        "transfer": _CandidateMarker(text, "payload_transfer_mode"),
+        "trace_transfer": _CandidateMarker(
+            text, "payload_trace_transfer_mode"),
+        "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+        "backend": _CandidateMarker(
+            text, "payload_trace_write_notify_backend"),
+        "fallback": _CandidateMarker(text, "fallback"),
+        "data_flow": "passed" if data_flow_ok else data_flow_reason,
+        "host_data": "passed" if host_data_ok else host_data_reason,
+        "next": _PayloadCandidateNextAction(text),
+        "focus_flags": _PayloadCandidateFocusFlags(result.command),
+        "command": ShellCommand(result.command),
+        "log": result.log_path.name,
+    }
+
+
+def _PayloadCandidateBestRow(
+        rows: list[dict[str, str]]) -> Optional[dict[str, str]]:
+    if not rows:
+        return None
+    return sorted(rows, key=lambda row: int(row["score"]), reverse=True)[0]
+
+
 def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         run_dir: Path,
         default_log: Optional[Path],
@@ -3617,37 +3671,11 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
          if selected_log == result.log_path),
         None,
     )
-    rows = []
-    for result in candidate_results:
-        try:
-            text = result.log_path.read_text(encoding="utf-8",
-                                             errors="replace")
-        except OSError as exc:
-            text = f"failed to read log: {exc}"
-        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
-        rows.append({
-            "step": result.name,
-            "returncode": str(result.returncode),
-            "selected": "yes" if selected_log == result.log_path else "no",
-            "evidence": "passed" if passed else "not-passed",
-            "rank0": "passed" if rank0_ok else "missing",
-            "rank1": "passed" if rank1_ok else "missing",
-            "failure": _CandidateMarker(text, "payload_failure_step"),
-            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
-            "trace_error": _CandidateMarker(
-                text, "payload_trace_first_error_event"),
-            "trace_error_ret": _CandidateMarker(
-                text, "payload_trace_first_error_ret"),
-            "binding": _CandidateMarker(text, "payload_comm_binding"),
-            "batch": _CandidateMarker(text, "payload_batch_mode"),
-            "completion": _CandidateMarker(text, "payload_completion_mode"),
-            "transfer": _CandidateMarker(text, "payload_transfer_mode"),
-            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
-            "backend": _CandidateMarker(
-                text, "payload_trace_write_notify_backend"),
-            "fallback": _CandidateMarker(text, "fallback"),
-            "log": result.log_path.name,
-        })
+    rows = [
+        _PayloadCandidateMatrixRow(result, selected_log)
+        for result in candidate_results
+    ]
+    best = _PayloadCandidateBestRow(rows)
 
     if selected_log is not None:
         decision = (
@@ -3667,11 +3695,16 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
         f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
+        f"- best_candidate: `{best['step'] if best else '<none>'}`",
+        f"- best_candidate_score: `{best['score'] if best else '0'}`",
+        f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
+        f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
+        f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | backend | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | backend | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -3682,7 +3715,9 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
             f"{row['binding']} | {row['batch']} | "
             f"{row['completion']} | {row['transfer']} | "
             f"{row['trace']} | {row['backend']} | "
-            f"{row['fallback']} | {row['log']} |")
+            f"{row['fallback']} | {row['log']} | {row['score']} | "
+            f"{row['data_flow']} | {row['host_data']} | "
+            f"{row['focus_flags']} | {row['next']} |")
     lines.extend([
         "",
         "A write-with-notify candidate can satisfy the strict-positive gate "
@@ -3881,35 +3916,11 @@ def WriteHcommPayloadWritePathCandidateMatrix(
          if selected_log == result.log_path),
         None,
     )
-    rows = []
-    for result in candidate_results:
-        try:
-            text = result.log_path.read_text(encoding="utf-8",
-                                             errors="replace")
-        except OSError as exc:
-            text = f"failed to read log: {exc}"
-        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
-        rows.append({
-            "step": result.name,
-            "returncode": str(result.returncode),
-            "selected": "yes" if selected_log == result.log_path else "no",
-            "evidence": "passed" if passed else "not-passed",
-            "rank0": "passed" if rank0_ok else "missing",
-            "rank1": "passed" if rank1_ok else "missing",
-            "failure": _CandidateMarker(text, "payload_failure_step"),
-            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
-            "trace_error": _CandidateMarker(
-                text, "payload_trace_first_error_event"),
-            "trace_error_ret": _CandidateMarker(
-                text, "payload_trace_first_error_ret"),
-            "binding": _CandidateMarker(text, "payload_comm_binding"),
-            "batch": _CandidateMarker(text, "payload_batch_mode"),
-            "completion": _CandidateMarker(text, "payload_completion_mode"),
-            "transfer": _CandidateMarker(text, "payload_transfer_mode"),
-            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
-            "fallback": _CandidateMarker(text, "fallback"),
-            "log": result.log_path.name,
-        })
+    rows = [
+        _PayloadCandidateMatrixRow(result, selected_log)
+        for result in candidate_results
+    ]
+    best = _PayloadCandidateBestRow(rows)
 
     if selected_log is not None:
         decision = (
@@ -3929,11 +3940,16 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
         f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
+        f"- best_candidate: `{best['step'] if best else '<none>'}`",
+        f"- best_candidate_score: `{best['score'] if best else '0'}`",
+        f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
+        f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
+        f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -3943,7 +3959,9 @@ def WriteHcommPayloadWritePathCandidateMatrix(
             f"{row['trace_error']} | {row['trace_error_ret']} | "
             f"{row['binding']} | {row['batch']} | "
             f"{row['completion']} | {row['transfer']} | "
-            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+            f"{row['trace']} | {row['fallback']} | {row['log']} | "
+            f"{row['score']} | {row['data_flow']} | {row['host_data']} | "
+            f"{row['focus_flags']} | {row['next']} |")
     lines.extend([
         "",
         "A write-path candidate can satisfy the strict-positive gate only "
@@ -4403,35 +4421,11 @@ def WriteHcommPayloadCandidateMatrix(
          if selected_log == result.log_path),
         None,
     )
-    rows = []
-    for result in candidate_results:
-        try:
-            text = result.log_path.read_text(encoding="utf-8",
-                                             errors="replace")
-        except OSError as exc:
-            text = f"failed to read log: {exc}"
-        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
-        rows.append({
-            "step": result.name,
-            "returncode": str(result.returncode),
-            "selected": "yes" if selected_log == result.log_path else "no",
-            "evidence": "passed" if passed else "not-passed",
-            "rank0": "passed" if rank0_ok else "missing",
-            "rank1": "passed" if rank1_ok else "missing",
-            "failure": _CandidateMarker(text, "payload_failure_step"),
-            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
-            "trace_error": _CandidateMarker(
-                text, "payload_trace_first_error_event"),
-            "trace_error_ret": _CandidateMarker(
-                text, "payload_trace_first_error_ret"),
-            "binding": _CandidateMarker(text, "payload_comm_binding"),
-            "batch": _CandidateMarker(text, "payload_batch_mode"),
-            "recv": _CandidateMarker(text, "payload_recv_path"),
-            "completion": _CandidateMarker(text, "payload_completion_mode"),
-            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
-            "fallback": _CandidateMarker(text, "fallback"),
-            "log": result.log_path.name,
-        })
+    rows = [
+        _PayloadCandidateMatrixRow(result, selected_log)
+        for result in candidate_results
+    ]
+    best = _PayloadCandidateBestRow(rows)
 
     if selected_log is not None:
         decision = (
@@ -4451,11 +4445,16 @@ def WriteHcommPayloadCandidateMatrix(
         f"- selected_candidate_log: `{selected_log if selected_log else '<none>'}`",
         f"- selected_candidate_command: `{ShellCommand(selected_result.command) if selected_result else '<none>'}`",
         f"- candidates_run: `{len(candidate_results)}`",
+        f"- best_candidate: `{best['step'] if best else '<none>'}`",
+        f"- best_candidate_score: `{best['score'] if best else '0'}`",
+        f"- best_candidate_command: `{best['command'] if best else '<none>'}`",
+        f"- best_candidate_focus_flags: `{best['focus_flags'] if best else '<none>'}`",
+        f"- best_candidate_next_action: `{best['next'] if best else 'no candidates executed'}`",
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | recv_path | completion | trace_path | fallback | log |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | recv_path | completion | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -4465,7 +4464,9 @@ def WriteHcommPayloadCandidateMatrix(
             f"{row['trace_error']} | {row['trace_error_ret']} | "
             f"{row['binding']} | {row['batch']} | {row['recv']} | "
             f"{row['completion']} | "
-            f"{row['trace']} | {row['fallback']} | {row['log']} |")
+            f"{row['trace']} | {row['fallback']} | {row['log']} | "
+            f"{row['score']} | {row['data_flow']} | {row['host_data']} | "
+            f"{row['focus_flags']} | {row['next']} |")
     lines.extend([
         "",
         "A candidate can satisfy the strict-positive gate only when both ranks "

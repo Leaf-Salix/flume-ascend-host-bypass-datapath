@@ -1384,6 +1384,12 @@ def main() -> int:
         assert candidate_matrix.exists()
         candidate_matrix_text = candidate_matrix.read_text(encoding="utf-8")
         assert "candidates_run: `8`" in candidate_matrix_text
+        assert ("best_candidate: `hcomm-payload-channel-handle-nobatch-"
+                "direct-output-channel-fence-candidate`"
+                in candidate_matrix_text)
+        assert "best_candidate_score: `" in candidate_matrix_text
+        assert "best_candidate_next_action: `" in candidate_matrix_text
+        assert "| score | data_flow | host_data | focus_flags | next_action |" in candidate_matrix_text
         assert ("hcomm-payload-channel-handle-nobatch-direct-output-"
                 "channel-fence-candidate | 0 | yes | passed"
                 in candidate_matrix_text)
@@ -1516,6 +1522,12 @@ def main() -> int:
         write_candidate_matrix_text = write_candidate_matrix.read_text(
             encoding="utf-8")
         assert "candidates_run: `8`" in write_candidate_matrix_text
+        assert ("best_candidate: `hcomm-payload-write-path-channel-handle-"
+                "nobatch-channel-fence-candidate`"
+                in write_candidate_matrix_text)
+        assert "best_candidate_score: `" in write_candidate_matrix_text
+        assert "best_candidate_next_action: `" in write_candidate_matrix_text
+        assert "| score | data_flow | host_data | focus_flags | next_action |" in write_candidate_matrix_text
         assert ("hcomm-payload-write-path-nobatch-channel-fence-candidate"
                 in write_candidate_matrix_text)
         assert ("hcomm-payload-write-path-channel-handle-nobatch-"
@@ -1636,6 +1648,12 @@ def main() -> int:
         write_notify_matrix_text = write_notify_matrix.read_text(
             encoding="utf-8")
         assert "candidates_run: `8`" in write_notify_matrix_text
+        assert ("best_candidate: `hcomm-payload-write-with-notify-"
+                "channel-handle-nobatch-channel-fence-candidate`"
+                in write_notify_matrix_text)
+        assert "best_candidate_score: `" in write_notify_matrix_text
+        assert "best_candidate_next_action: `" in write_notify_matrix_text
+        assert "| score | data_flow | host_data | focus_flags | next_action |" in write_notify_matrix_text
         assert ("hcomm-payload-write-with-notify-nobatch-"
                 "channel-fence-candidate" in write_notify_matrix_text)
         assert ("hcomm-payload-write-with-notify-channel-handle-nobatch-"
