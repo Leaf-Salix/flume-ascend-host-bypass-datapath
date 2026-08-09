@@ -3029,6 +3029,116 @@ std::string PayloadValidationReasonDetail(const uint32_t* status_words) {
          std::to_string(status_words[1]);
 }
 
+bool PayloadDescHasString(const char* data, size_t len) {
+  for (size_t i = 0; i < len; ++i) {
+    if (data[i] == '\0') {
+      return i != 0;
+    }
+  }
+  return false;
+}
+
+uint32_t HostPayloadDescValidationReason(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  if (desc.magic != FLUME_HCOMM_PAYLOAD_COPY_MAGIC ||
+      desc.version != FLUME_HCOMM_PAYLOAD_COPY_VERSION ||
+      desc.size != sizeof(flume_hcomm_payload_copy_desc_v1)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_HEADER;
+  }
+  if (desc.rank_size != 2) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_SIZE;
+  }
+  if (desc.role != FLUME_HCOMM_NOTIFY_ROLE_SEND &&
+      desc.role != FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_ROLE;
+  }
+  if (desc.local_rank >= desc.rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_RANK;
+  }
+  if (desc.peer_rank >= desc.rank_size) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_PEER_RANK;
+  }
+  if (desc.local_rank == desc.peer_rank) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_RANK_PAIR;
+  }
+  if (desc.ready_notify_idx == desc.done_notify_idx) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_NOTIFY_INDEX;
+  }
+  if (desc.bytes == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_BYTES;
+  }
+  if (desc.thread_notify_mode != FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE &&
+      desc.thread_notify_mode != FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_THREAD_NOTIFY_MODE;
+  }
+  const uint32_t completion_mode =
+      desc.completion_mode & FLUME_HCOMM_PAYLOAD_COMPLETION_MODE_MASK;
+  if (completion_mode != FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY &&
+      completion_mode != FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_COMPLETION_MODE;
+  }
+  if (desc.aicpu_thread == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_AICPU_THREAD;
+  }
+  if (desc.channel_handle == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CHANNEL_HANDLE;
+  }
+  if (desc.user_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_USER_BUFFER;
+  }
+  if (desc.local_hccl_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER;
+  }
+  if (desc.remote_hccl_buffer == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER;
+  }
+  if (desc.bytes > desc.local_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_LOCAL_HCCL_BUFFER_BYTES;
+  }
+  if (desc.bytes > desc.remote_hccl_buffer_bytes) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_REMOTE_HCCL_BUFFER_BYTES;
+  }
+  if (desc.status_word == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD;
+  }
+  if (desc.status_word_count < FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_WORD_COUNT;
+  }
+  if (desc.status_schema_version != FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_STATUS_SCHEMA;
+  }
+  const bool skip_comm_acquire =
+      (desc.completion_mode &
+       (FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_SKIP_COMM_ACQUIRE |
+        FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_CHANNEL_HANDLE_BINDING)) != 0;
+  if (!skip_comm_acquire &&
+      !PayloadDescHasString(desc.comm_name,
+                            FLUME_HCOMM_PAYLOAD_COMM_NAME_BYTES)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_COMM_NAME;
+  }
+  const bool batch_enabled =
+      desc.reserved2[0] != FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  if (batch_enabled &&
+      !PayloadDescHasString(desc.batch_tag,
+                            FLUME_HCOMM_PAYLOAD_BATCH_TAG_BYTES)) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_BATCH_TAG;
+  }
+  if (desc.thread_notify_mode == FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_HOST_AICPU &&
+      desc.cpu_thread_on_aicpu == 0) {
+    return FLUME_HCOMM_PAYLOAD_VALIDATE_CPU_THREAD_ON_AICPU;
+  }
+  return FLUME_HCOMM_PAYLOAD_VALIDATE_OK;
+}
+
+std::string HostPayloadValidationDetail(uint32_t reason) {
+  return std::string(" payload_host_descriptor_validation=") +
+         (reason == FLUME_HCOMM_PAYLOAD_VALIDATE_OK ? "passed" : "failed") +
+         " payload_host_validation_reason=" +
+         PayloadValidationReasonName(reason) +
+         " payload_host_validation_reason_code=" +
+         std::to_string(reason);
+}
+
 std::string PayloadDescriptorDetail(
     const flume_hcomm_payload_copy_desc_v1& desc) {
   const bool batch_disabled =
@@ -4092,6 +4202,7 @@ std::string HcommPayloadRuntimeDetail(
     const HcommChannelResourceInfo& resource_info,
     const HcommLauncherDecision& decision) {
   return PayloadDescriptorDetail(desc) +
+         HostPayloadValidationDetail(HostPayloadDescValidationReason(desc)) +
          HcommPayloadCompletionDetail(desc, resource_info) +
          " payload_semantic=present payload_semantic_v5=present "
          "payload_semantic_v6=present payload_semantic_v7=present "
@@ -4313,6 +4424,25 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
   desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
   desc.status_schema_version = FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
+  const uint32_t host_validation_reason =
+      HostPayloadDescValidationReason(desc);
+  if (host_validation_reason != FLUME_HCOMM_PAYLOAD_VALIDATE_OK) {
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_INVALID_ARGUMENT;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=blocked "
+                       "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+                       "payload_kernel_status=not-run "
+                       "payload_failure_step=host-validate-descriptor") +
+           HostPayloadValidationDetail(host_validation_reason) +
+           " payload_validation_reason=" +
+           PayloadValidationReasonName(host_validation_reason) +
+           " payload_validation_reason_code=" +
+           std::to_string(host_validation_reason) +
+           PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
   acl_ret = PrimeHcommPayloadLocalBuffer(role, state, peer_rank,
                                          resource_info, bytes);
   if (acl_ret != ACL_SUCCESS) {
