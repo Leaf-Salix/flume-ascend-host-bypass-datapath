@@ -21,6 +21,18 @@ def load_flume_tool(repo: Path):
     return module
 
 
+def load_flume_multiproc(repo: Path):
+    spec = importlib.util.spec_from_file_location(
+        "flume_multiproc_under_test",
+        repo / "tools" / "flume_hccl_multiproc.py")
+    if spec is None or spec.loader is None:
+        raise AssertionError("failed to load tools/flume_hccl_multiproc.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -842,6 +854,7 @@ def main() -> int:
         return 2
     repo = Path(sys.argv[1]).resolve()
     flume_tool = load_flume_tool(repo)
+    flume_multiproc = load_flume_multiproc(repo)
     direct_output_write_conflict = subprocess.run(
         [
             sys.executable,
@@ -947,6 +960,32 @@ def main() -> int:
         assert "--hcomm-payload-write-path" not in official_smoke_command
         assert "--hcomm-payload-channel-fence" not in official_smoke_command
         assert flume_tool.CommandUsesOfficialP2pLayout(official_smoke_command)
+
+        fake_binary = write(tmp / "flume-hccl-collective-smoke", "")
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_hccl_multiproc.py",
+                "--binary", str(fake_binary),
+                "--devices", "0,1",
+                "--init", "root-info",
+                "--hcomm-payload-smoke",
+                "--hcomm-require-payload-copy",
+                "--hcomm-payload-official-p2p-layout",
+            ]
+            multiproc_args = flume_multiproc.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert multiproc_args.hcomm_payload_disable_batch
+        assert multiproc_args.hcomm_payload_recv_direct_output
+        assert multiproc_args.hcomm_payload_comm_binding == "channel-handle"
+        multiproc_rank_command = flume_multiproc.build_rank_command(
+            multiproc_args, 1, "1", 2, tmp / "root-info.bin")
+        assert "--hcomm-payload-disable-batch" in multiproc_rank_command
+        assert "--hcomm-payload-recv-direct-output" in multiproc_rank_command
+        assert "--hcomm-payload-comm-binding=channel-handle" in multiproc_rank_command
+        assert "--hcomm-payload-write-path" not in multiproc_rank_command
+        assert "--hcomm-payload-channel-fence" not in multiproc_rank_command
 
         old_argv = sys.argv[:]
         try:

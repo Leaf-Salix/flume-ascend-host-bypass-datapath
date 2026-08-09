@@ -87,6 +87,12 @@ def parse_args() -> argparse.Namespace:
                               "send kernel writes local HCCL Buffer into the "
                               "remote HCCL Buffer with HcommWriteOnThread; "
                               "recv waits ready then local-copies output"))
+    parser.add_argument("--hcomm-payload-write-with-notify",
+                        action="store_true",
+                        help=("Run the Stage 3B write-with-notify candidate: "
+                              "send kernel uses HcommWriteWithNotifyOnThread "
+                              "to combine remote write and ready notify when "
+                              "the payload package exposes it"))
     parser.add_argument("--hcomm-payload-skip-comm-acquire",
                         action="store_true",
                         help=("Diagnostic only: skip in-kernel "
@@ -98,6 +104,12 @@ def parse_args() -> argparse.Namespace:
                         help=("Optional HCOMM batch tag for direct ACL payload "
                               "kernel experiments; empty uses Flume's stable "
                               "default batch tag"))
+    parser.add_argument("--hcomm-payload-official-p2p-layout",
+                        action="store_true",
+                        help=("Focused Stage 3B payload layout matching the "
+                              "public custom P2P example shape: channel-handle "
+                              "binding, no HCOMM batch mode, and recv direct "
+                              "output"))
     parser.add_argument("--sym-win-gb", type=int, default=1)
     parser.add_argument("--timeout-sec", type=int, default=0,
                         help="Overall timeout for all rank processes; 0 disables it")
@@ -131,6 +143,32 @@ def parse_args() -> argparse.Namespace:
     if (args.hcomm_require_payload_copy and
             not (args.hcomm_payload_smoke or args.storage_hbm_smoke)):
         parser.error("--hcomm-require-payload-copy requires --hcomm-payload-smoke or --storage-hbm-smoke")
+    if args.hcomm_payload_official_p2p_layout:
+        if args.hcomm_payload_write_path or args.hcomm_payload_write_with_notify:
+            parser.error("--hcomm-payload-official-p2p-layout is a read-path "
+                         "layout; do not combine it with "
+                         "--hcomm-payload-write-path or "
+                         "--hcomm-payload-write-with-notify")
+        if args.hcomm_payload_channel_fence:
+            parser.error("--hcomm-payload-official-p2p-layout follows the "
+                         "public custom P2P example shape and does not use "
+                         "--hcomm-payload-channel-fence")
+        if args.hcomm_payload_batch_tag:
+            parser.error("--hcomm-payload-official-p2p-layout disables HCOMM "
+                         "batch mode; remove --hcomm-payload-batch-tag")
+        if (args.hcomm_payload_comm_binding and
+                args.hcomm_payload_comm_binding != "channel-handle"):
+            parser.error("--hcomm-payload-official-p2p-layout requires "
+                         "--hcomm-payload-comm-binding=channel-handle")
+        args.hcomm_payload_disable_batch = True
+        args.hcomm_payload_recv_direct_output = True
+        args.hcomm_payload_comm_binding = "channel-handle"
+    if (args.hcomm_payload_recv_direct_output and
+            (args.hcomm_payload_write_path or args.hcomm_payload_write_with_notify)):
+        parser.error("--hcomm-payload-recv-direct-output only applies to the "
+                     "read path; do not combine it with "
+                     "--hcomm-payload-write-path or "
+                     "--hcomm-payload-write-with-notify")
     if not Path(args.binary).exists():
         parser.error(f"--binary does not exist: {args.binary}")
     if args.init == "rank-table" and not args.rank_table:
@@ -200,6 +238,8 @@ def build_rank_command(args: argparse.Namespace, rank: int, device: str,
             command.append("--hcomm-payload-channel-fence")
         if args.hcomm_payload_write_path:
             command.append("--hcomm-payload-write-path")
+        if args.hcomm_payload_write_with_notify:
+            command.append("--hcomm-payload-write-with-notify")
         if args.hcomm_payload_skip_comm_acquire:
             command.append("--hcomm-payload-skip-comm-acquire")
         if args.hcomm_payload_comm_binding:
