@@ -2244,6 +2244,29 @@ def main() -> int:
         assert storage_strict_log is not None
         assert storage_passed
         assert flume_tool.DecisionTreeHcommStoragePassed(analyzed_tree)
+        storage_runner = flume_tool.Runner(tmp / "storage-runner-pass")
+        flume_tool.RecordHcommStorageEvidenceGate(
+            storage_runner, analyzed_tree, storage_passed,
+            evidence_log=storage_strict_log)
+        assert storage_runner.write_summary() == 0
+        storage_evidence_logs = sorted(storage_runner.run_dir.glob(
+            "*-hcomm-storage-strict-evidence.log"))
+        assert storage_evidence_logs
+        storage_evidence_text = storage_evidence_logs[-1].read_text(
+            encoding="utf-8")
+        assert "hcomm_storage_evidence=passed" in storage_evidence_text
+        assert "storage_hbm=hcomm-payload-staging" in storage_evidence_text
+        assert "storage_hbm_fallback=none" in storage_evidence_text
+        assert ("selected_storage_evidence_log="
+                "01-hcomm-storage-strict-positive.log"
+                in storage_evidence_text)
+        assert ("selected_storage_command=flume-hccl-collective-smoke "
+                "--hcomm-require-payload-copy" in storage_evidence_text)
+        assert "selected_storage_focus_flags=<default-read-path>" in storage_evidence_text
+        assert "selected_storage_rank1_path=hcomm-payload-staging" in storage_evidence_text
+        assert "selected_storage_rank1_bytes=4096" in storage_evidence_text
+        assert "selected_storage_rank1_checksum=7" in storage_evidence_text
+        assert "selected_storage_hcomm_path=passed" in storage_evidence_text
 
         channel_fallback_log_dir = tmp / "flume-check-channel-fallback"
         channel_fallback_log_dir.mkdir()

@@ -2487,6 +2487,13 @@ def StorageHbmRank1Path(text: str) -> str:
     return "missing"
 
 
+def StorageHbmRank1Line(text: str) -> str:
+    for line in text.splitlines():
+        if re.search(r"\brank 1 storage HBM smoke passed\b", line):
+            return line
+    return ""
+
+
 def StorageHbmHcommPathPassed(text: str) -> bool:
     for line in text.splitlines():
         if (re.search(r"\brank 1 storage HBM smoke passed\b", line) and
@@ -6008,6 +6015,33 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
     return summary
 
 
+def HcommStorageEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]:
+    if evidence_log is None:
+        return []
+    try:
+        text = evidence_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [f"selected_storage_evidence_log={evidence_log.name}"]
+    command = _CommandFromLogText(text)
+    command_detail = ShellCommand(command) if command else "<unknown>"
+    focus_flags = (_PayloadCandidateFocusFlags(command) if command else
+                   "<unknown>")
+    rank1_line = StorageHbmRank1Line(text)
+    return [
+        f"selected_storage_evidence_log={evidence_log.name}",
+        f"selected_storage_command={command_detail}",
+        f"selected_storage_focus_flags={focus_flags}",
+        "selected_storage_rank1_path=" +
+        MarkerValueFromLine(rank1_line, "storage_hbm"),
+        "selected_storage_rank1_bytes=" +
+        MarkerValueFromLine(rank1_line, "bytes"),
+        "selected_storage_rank1_checksum=" +
+        MarkerValueFromLine(rank1_line, "checksum"),
+        "selected_storage_hcomm_path=" +
+        ("passed" if StorageHbmHcommPathPassed(text) else "failed"),
+    ]
+
+
 def AnalyzeHcommPayloadStrictPositiveLogs(
         run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
                                 Optional[Path]]:
@@ -6165,13 +6199,21 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
                                 required=required)
 
 
-def RecordHcommStorageEvidenceGate(runner: Runner, tree: Path,
-                                   passed: bool) -> StepResult:
+def RecordHcommStorageEvidenceGate(runner: Runner, tree: Path, passed: bool,
+                                   *,
+                                   evidence_log: Optional[Path] = None
+                                   ) -> StepResult:
     lines = [
         f"decision_tree={tree}",
         f"hcomm_storage_evidence={'passed' if passed else 'failed'}",
     ]
-    if not passed:
+    if passed:
+        lines.extend([
+            "storage_hbm=hcomm-payload-staging",
+            "storage_hbm_fallback=none",
+        ])
+        lines.extend(HcommStorageEvidenceSummaryLines(evidence_log))
+    else:
         lines.append(
             "reason=missing Stage 3B.4 HCOMM storage evidence")
         lines.append(
@@ -6743,7 +6785,8 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     RecordStrictPositiveEvidenceGate(runner, tree, strict_passed,
                                      required=True,
                                      evidence_log=selected_evidence_log)
-    RecordHcommStorageEvidenceGate(runner, tree, storage_passed)
+    RecordHcommStorageEvidenceGate(runner, tree, storage_passed,
+                                   evidence_log=selected_evidence_log)
     note = runner.run_dir / "HCOMM_STORAGE_STRICT_POSITIVE_SCOPE.txt"
     note.write_text(
         "hcomm-storage-strict-positive is the focused Stage 3B.4 gate. It "
