@@ -544,6 +544,9 @@ def main() -> int:
             include_flags = flume_tool.HcommPrimitiveIncludeFlags(
                 missing_toolkit_root)
             assert f"-I{local_hcomm_refer}" in include_flags
+            assert any(
+                flag.endswith("refer/cann-src/hcomm/test/stub/depends/include")
+                for flag in include_flags)
             explicit_missing = tmp / "explicit-missing-hcomm-header"
             explicit_missing.mkdir()
             explicit_candidates = flume_tool.HcommPrimitivesHeaderCandidates(
@@ -1318,6 +1321,38 @@ def main() -> int:
             raise AssertionError(
                 "direct custom-op build with include/hcomm header did not pass")
         assert "hcomm-custom-op-direct-build-preflight" in direct_hcomm_only.stdout
+
+        fake_cann_no_hcomm_header = write_fake_cann_root(
+            tmp, "fake-cann-no-hcomm-header", hccl_header=False,
+            hcomm_header=False)
+        local_refer_log_root = tmp / "local-refer-direct-build-logs"
+        local_refer_build = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_no_hcomm_header}",
+                f"--build-dir={tmp / 'direct-build-local-refer-hcomm'}",
+                f"--log-root={local_refer_log_root}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if local_refer_build.returncode != 0:
+            print(local_refer_build.stdout)
+            print(local_refer_build.stderr, file=sys.stderr)
+            raise AssertionError(
+                "direct custom-op build with local-refer HCOMM header did not pass")
+        local_refer_artifacts = next(
+            local_refer_log_root.glob(
+                "flume-check-*/HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"))
+        local_refer_artifact_text = local_refer_artifacts.read_text(
+            encoding="utf-8")
+        assert "hcomm_primitives_header_source: local-refer" in local_refer_artifact_text
+        assert "hcomm-custom-op-direct-build-preflight" in local_refer_build.stdout
 
         fake_cann_minimal = tmp / "fake-cann-minimal"
         (fake_cann_minimal / "aarch64-linux" / "include").mkdir(parents=True)

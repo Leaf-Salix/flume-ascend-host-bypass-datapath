@@ -96,6 +96,11 @@ HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
     REPO_ROOT / "refer" / "cann-src" / "hcomm" / "include")
+LOCAL_HCOMM_PRIMITIVES_SUPPORT_INCLUDE_ROOTS = (
+    REPO_ROOT / "refer" / "cann-src" / "runtime" / "include" / "external",
+    REPO_ROOT / "refer" / "cann-src" / "hcomm" / "test" / "stub" /
+    "depends" / "include",
+)
 HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_abi_version": (HCOMM_PAYLOAD_COPY_ABI_VERSION, 4),
     "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
@@ -805,6 +810,12 @@ def HcommPrimitiveIncludeRoots(cann_binary_root: Path,
         local_refer = LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT
         if _RootHasHcommPrimitivesHeader(local_refer):
             roots.append(local_refer)
+    using_local_refer = any(
+        root.resolve() == LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT.resolve()
+        for root in roots)
+    if using_local_refer:
+        roots.extend(root for root in LOCAL_HCOMM_PRIMITIVES_SUPPORT_INCLUDE_ROOTS
+                     if root.exists())
     seen: set[str] = set()
     out: list[Path] = []
     for root in roots:
