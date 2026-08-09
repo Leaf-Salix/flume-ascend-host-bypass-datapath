@@ -526,6 +526,26 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
         flume_tool = load_flume_tool(repo)
+        local_hcomm_refer = (
+            repo / "refer" / "cann-src" / "hcomm" / "include")
+        if (local_hcomm_refer / "hcomm_primitives.h").exists():
+            missing_toolkit_root = tmp / "missing-hcomm-header-toolkit"
+            (missing_toolkit_root / "include").mkdir(parents=True)
+            (missing_toolkit_root / "lib64").mkdir()
+            candidates = flume_tool.HcommPrimitivesHeaderCandidates(
+                missing_toolkit_root)
+            assert local_hcomm_refer / "hcomm_primitives.h" in candidates
+            assert (flume_tool.FindHcommPrimitivesHeader(
+                missing_toolkit_root) ==
+                    local_hcomm_refer / "hcomm_primitives.h")
+            include_flags = flume_tool.HcommPrimitiveIncludeFlags(
+                missing_toolkit_root)
+            assert f"-I{local_hcomm_refer}" in include_flags
+            explicit_missing = tmp / "explicit-missing-hcomm-header"
+            explicit_missing.mkdir()
+            explicit_candidates = flume_tool.HcommPrimitivesHeaderCandidates(
+                missing_toolkit_root, str(explicit_missing))
+            assert local_hcomm_refer / "hcomm_primitives.h" not in explicit_candidates
         static_json_path = (
             repo / "custom_ops" / "hcomm_payload_copy" / "aicpu" /
             KERNEL_JSON

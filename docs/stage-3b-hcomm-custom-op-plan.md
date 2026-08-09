@@ -381,7 +381,10 @@ add `--hcomm-primitives-include-root <hcomm-include-root>`. If `libhcomm.so`
 is outside the selected CANN binary root, add
 `--hcomm-primitives-lib-root <hcomm-lib-root>`. These overrides are only used by
 the direct-build compile/link step; runtime smokes still load the exported
-JSON/tar via `--custom-op-root <temporary-custom-op-root>`.
+JSON/tar via `--custom-op-root <temporary-custom-op-root>`. If no explicit
+include override is supplied and the toolkit header is missing, Flume also
+tries the local `refer/cann-src/hcomm/include` checkout as a header-only
+fallback while still linking the selected CANN toolkit's `libhcomm.so`.
 
 Then pass `--custom-op-root <temporary-custom-op-root>` to
 `hcomm-payload-strict-positive` or `ascend-full-matrix`.

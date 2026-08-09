@@ -298,7 +298,11 @@ payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符�
 `--hcomm-primitives-include-root <hcomm-include-root>`；如果 `libhcomm.so`
 不在所选 CANN binary root 的 `lib64` 下，可以传
 `--hcomm-primitives-lib-root <hcomm-lib-root>`。这两个参数只影响 direct-build
-的编译/链接搜索路径，不会修改系统 CANN/OPP 安装。
+的编译/链接搜索路径，不会修改系统 CANN/OPP 安装。若未显式传
+`--hcomm-primitives-include-root` 且 toolkit include tree 缺
+`hcomm_primitives.h`，direct-build 会保守尝试本地
+`refer/cann-src/hcomm/include` 作为 header fallback；运行时仍链接目标
+CANN toolkit 的 `libhcomm.so`。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`，生成 Stage 3B.3E 所需的

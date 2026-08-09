@@ -94,6 +94,8 @@ HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
+LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
+    REPO_ROOT / "refer" / "cann-src" / "hcomm" / "include")
 HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_abi_version": (HCOMM_PAYLOAD_COPY_ABI_VERSION, 4),
     "payload_abi_version_v2": (HCOMM_PAYLOAD_COPY_ABI_VERSION_V2, 1),
@@ -778,22 +780,48 @@ def _ExpandedLibraryRoots(root: Path) -> list[Path]:
     return [root, root / "lib64"]
 
 
-def HcommPrimitivesHeaderCandidates(
-        cann_binary_root: Path,
-        extra_include_root: str = "") -> list[Path]:
-    include = cann_binary_root / "include"
+def _HcommPrimitivesHeaderPaths(root: Path) -> list[Path]:
+    return [
+        root / "hccl" / "hcomm_primitives.h",
+        root / "hcomm" / "hcomm_primitives.h",
+        root / "hcomm_primitives.h",
+    ]
+
+
+def _RootHasHcommPrimitivesHeader(root: Path) -> bool:
+    return any(candidate.exists()
+               for candidate in _HcommPrimitivesHeaderPaths(root))
+
+
+def HcommPrimitiveIncludeRoots(cann_binary_root: Path,
+                               extra_include_root: str = "") -> list[Path]:
     roots: list[Path] = []
     if extra_include_root:
         roots.extend(_ExpandedIncludeRoots(
             Path(extra_include_root).expanduser()))
-    roots.append(include)
-    candidates: list[Path] = []
+    roots.append(cann_binary_root / "include")
+    if (not extra_include_root and
+            not any(_RootHasHcommPrimitivesHeader(root) for root in roots)):
+        local_refer = LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT
+        if _RootHasHcommPrimitivesHeader(local_refer):
+            roots.append(local_refer)
+    seen: set[str] = set()
+    out: list[Path] = []
     for root in roots:
-        candidates.extend([
-            root / "hccl" / "hcomm_primitives.h",
-            root / "hcomm" / "hcomm_primitives.h",
-            root / "hcomm_primitives.h",
-        ])
+        text = str(root)
+        if text not in seen:
+            seen.add(text)
+            out.append(root)
+    return out
+
+
+def HcommPrimitivesHeaderCandidates(
+        cann_binary_root: Path,
+        extra_include_root: str = "") -> list[Path]:
+    candidates: list[Path] = []
+    for root in HcommPrimitiveIncludeRoots(cann_binary_root,
+                                           extra_include_root):
+        candidates.extend(_HcommPrimitivesHeaderPaths(root))
     return candidates
 
 
@@ -845,15 +873,10 @@ def FindLibraryDir(lib_dirs: Iterable[Path], name: str) -> Optional[Path]:
 
 def HcommPrimitiveIncludeFlags(cann_binary_root: Path,
                                extra_include_root: str = "") -> list[str]:
-    include = cann_binary_root / "include"
-    roots: list[Path] = []
-    if extra_include_root:
-        roots.extend(_ExpandedIncludeRoots(
-            Path(extra_include_root).expanduser()))
-    roots.append(include)
     seen: set[str] = set()
     flags: list[str] = []
-    for root in roots:
+    for root in HcommPrimitiveIncludeRoots(cann_binary_root,
+                                           extra_include_root):
         for item in (root, root / "hccl", root / "hcomm"):
             text = str(item)
             if text not in seen:
