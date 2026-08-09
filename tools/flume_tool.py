@@ -51,6 +51,8 @@ HCOMM_CUSTOM_OP_FUNCTIONS = {
     "payload_semantic_v14": "FlumeHcommPayloadCopySemanticVersion14",
     "payload_semantic_v15": "FlumeHcommPayloadCopySemanticVersion15",
     "payload_requires_comm_acquire": "FlumeHcommPayloadCopyRequiresCommAcquire",
+    "payload_official_p2p_layout": (
+        "FlumeHcommPayloadCopySupportsOfficialP2pLayout"),
     "payload_status_schema": "FlumeHcommPayloadStatusSchemaVersion",
     "payload_status_word_count": "FlumeHcommPayloadStatusWordCount",
     "payload_trace_schema": "FlumeHcommPayloadTraceSchemaVersion",
@@ -77,6 +79,8 @@ HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13 = "FlumeHcommPayloadCopySemanticVersion1
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14 = "FlumeHcommPayloadCopySemanticVersion14"
 HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15 = "FlumeHcommPayloadCopySemanticVersion15"
 HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE = "FlumeHcommPayloadCopyRequiresCommAcquire"
+HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT = (
+    "FlumeHcommPayloadCopySupportsOfficialP2pLayout")
 HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION = "FlumeHcommPayloadStatusSchemaVersion"
 HCOMM_PAYLOAD_STATUS_WORD_COUNT = "FlumeHcommPayloadStatusWordCount"
 HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION = "FlumeHcommPayloadTraceSchemaVersion"
@@ -126,6 +130,8 @@ HCOMM_PAYLOAD_METADATA_EXPECTED = {
     "payload_semantic_version_v14": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14, 1),
     "payload_semantic_version_v15": (HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15, 1),
     "payload_requires_comm_acquire": (HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, 1),
+    "payload_official_p2p_layout": (
+        HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT, 1),
     "payload_status_schema": (HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, 7),
     "payload_status_word_count": (HCOMM_PAYLOAD_STATUS_WORD_COUNT, 17),
     "payload_trace_schema": (HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, 2),
@@ -7365,6 +7371,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_semantic_v14")
         required_functions.append("payload_semantic_v15")
         required_functions.append("payload_requires_comm_acquire")
+        required_functions.append("payload_official_p2p_layout")
         required_functions.append("payload_status_schema")
         required_functions.append("payload_status_word_count")
         required_functions.append("payload_trace_schema")
@@ -7393,6 +7400,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_semantic_v14_marker = False
     found_payload_semantic_v15_marker = False
     found_payload_requires_comm_acquire_marker = False
+    found_payload_official_p2p_layout_marker = False
     found_payload_status_schema_marker = False
     found_payload_status_word_count_marker = False
     found_payload_trace_schema_marker = False
@@ -7533,6 +7541,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             found_payload_requires_comm_acquire_marker = (
                 found_payload_requires_comm_acquire_marker or
                 functions_present.get("payload_requires_comm_acquire", False))
+            found_payload_official_p2p_layout_marker = (
+                found_payload_official_p2p_layout_marker or
+                functions_present.get("payload_official_p2p_layout", False))
             found_payload_status_schema_marker = (
                 found_payload_status_schema_marker or
                 functions_present.get("payload_status_schema", False))
@@ -7623,6 +7634,11 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     found_payload_requires_comm_acquire_marker or
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE,
                                         False))
+                found_payload_official_p2p_layout_marker = (
+                    found_payload_official_p2p_layout_marker or
+                    symbols_present.get(
+                        HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT,
+                        False))
                 found_payload_status_schema_marker = (
                     found_payload_status_schema_marker or
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION,
@@ -7699,6 +7715,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_requires_comm_acquire."
                       f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) else 'missing'}")
+                print("function_so.payload_official_p2p_layout."
+                      f"{HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT}="
+                      f"{'present' if symbols_present.get(HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT, False) else 'missing'}")
                 print("function_so.payload_status_schema."
                       f"{HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) else 'missing'}")
@@ -7796,6 +7815,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15, False) and
                     symbols_present.get(HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE, False) and
+                    symbols_present.get(
+                        HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT,
+                        False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
                     symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, False) and
@@ -7834,6 +7856,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   f"{HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15}")
             print("required_payload_comm_acquire_symbol="
                   f"{HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE}")
+            print("required_payload_official_p2p_layout_symbol="
+                  f"{HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT}")
             print("required_payload_status_schema_symbol="
                   f"{HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION}")
             print("required_payload_status_word_count_symbol="
@@ -8064,6 +8088,27 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_semantic_v14_marker and
                   found_payload_semantic_v15_marker and
                   found_payload_requires_comm_acquire_marker and
+                  not found_payload_official_p2p_layout_marker):
+                print("reason=payload kernel package is missing the "
+                      "official-p2p layout capability marker")
+                print("action=rebuild package with current Flume "
+                      "official-p2p-layout-capable payload kernel")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
+                  found_payload_semantic_v14_marker and
+                  found_payload_semantic_v15_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  found_payload_official_p2p_layout_marker and
                   (not found_payload_status_schema_marker or
                    not found_payload_status_word_count_marker)):
                 print("reason=payload kernel package is missing the payload "

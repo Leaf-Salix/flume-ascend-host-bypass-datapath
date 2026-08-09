@@ -753,6 +753,10 @@ extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
   return 1U;
 }
 
+extern "C" unsigned int FlumeHcommPayloadCopySupportsOfficialP2pLayout() {
+  return 1U;
+}
+
 extern "C" unsigned int FlumeHcommPayloadStatusSchemaVersion() {
   return FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
 }

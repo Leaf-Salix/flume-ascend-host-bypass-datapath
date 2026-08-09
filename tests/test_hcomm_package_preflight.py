@@ -226,6 +226,13 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "{ return 1; }"
         )
     if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v15_no_official_p2p",
+                    "canary"):
+        lines.append(
+            "unsigned int FlumeHcommPayloadCopySupportsOfficialP2pLayout(void) "
+            "{ return 1; }"
+        )
+    if mode not in ("legacy", "stale_v2", "stale_v3",
                     "stale_v4_no_status_schema"):
         lines.append(
             "unsigned int FlumeHcommPayloadStatusSchemaVersion(void) "
@@ -454,6 +461,17 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadCopyRequiresCommAcquire",
+            }
+        }
+    if mode not in ("legacy", "stale_v2", "stale_v3",
+                    "stale_v15_no_official_p2p",
+                    "canary"):
+        payload["FlumeHcommPayloadCopySupportsOfficialP2pLayout"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": (
+                    "FlumeHcommPayloadCopySupportsOfficialP2pLayout"),
             }
         }
     if mode not in ("legacy", "stale_v2", "stale_v3",
@@ -951,6 +969,19 @@ def main() -> int:
         assert "reason=payload kernel package has a stale payload semantic marker" in stale_semantic_v14.stdout
         assert "current Flume semantic v15 transfer-exit data-probe-capable payload kernel" in stale_semantic_v14.stdout
 
+        stale_official_json, stale_official_tar = write_package(
+            tmp, mode="stale_v15_no_official_p2p")
+        stale_official = run_preflight(
+            repo, stale_official_json, stale_official_tar)
+        if stale_official.returncode == 0:
+            print(stale_official.stdout)
+            print(stale_official.stderr, file=sys.stderr)
+            raise AssertionError(
+                "stale package without official-p2p marker passed")
+        assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=missing" in stale_official.stdout
+        assert "function_so.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=missing" in stale_official.stdout
+        assert "reason=payload kernel package is missing the official-p2p layout capability marker" in stale_official.stdout
+
         stale_schema_json, stale_schema_tar = write_package(
             tmp, mode="stale_v4_no_status_schema")
         stale_schema = run_preflight(repo, stale_schema_json, stale_schema_tar)
@@ -993,6 +1024,7 @@ def main() -> int:
         assert "function.payload_semantic_v13.FlumeHcommPayloadCopySemanticVersion13=present" in marker_only.stdout
         assert "function.payload_semantic_v14.FlumeHcommPayloadCopySemanticVersion14=present" in marker_only.stdout
         assert "function.payload_semantic_v15.FlumeHcommPayloadCopySemanticVersion15=present" in marker_only.stdout
+        assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in marker_only.stdout
         assert "payload_primitive_deps=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
@@ -1038,6 +1070,8 @@ def main() -> int:
         assert "function_so.payload_semantic_version_v15.FlumeHcommPayloadCopySemanticVersion15=present" in v4.stdout
         assert "function.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
         assert "function_so.payload_requires_comm_acquire.FlumeHcommPayloadCopyRequiresCommAcquire=present" in v4.stdout
+        assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in v4.stdout
+        assert "function_so.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in v4.stdout
         assert "function.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
         assert "function_so.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=present" in v4.stdout
         assert "function.payload_status_word_count.FlumeHcommPayloadStatusWordCount=present" in v4.stdout
@@ -1047,6 +1081,7 @@ def main() -> int:
         assert "function.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_so.payload_trace_word_count.FlumeHcommPayloadTraceWordCount=present" in v4.stdout
         assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=15 expected=15 status=match" in v4.stdout
+        assert "function_value.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=1 expected=1 status=match" in v4.stdout
         assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=7 expected=7 status=match" in v4.stdout
         assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=17 expected=17 status=match" in v4.stdout
         assert "payload_metadata_values=match" in v4.stdout
@@ -1116,6 +1151,8 @@ def main() -> int:
         assert "function_so.payload_semantic_version_v14.FlumeHcommPayloadCopySemanticVersion14=present" in wrong_values.stdout
         assert "function.payload_semantic_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
         assert "function_so.payload_semantic_version_v15.FlumeHcommPayloadCopySemanticVersion15=present" in wrong_values.stdout
+        assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
+        assert "function_so.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in wrong_values.stdout
         assert "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=12 expected=15 status=mismatch" in wrong_values.stdout
         assert "function_value.payload_status_schema.FlumeHcommPayloadStatusSchemaVersion=3 expected=7 status=mismatch" in wrong_values.stdout
         assert "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=17 status=mismatch" in wrong_values.stdout

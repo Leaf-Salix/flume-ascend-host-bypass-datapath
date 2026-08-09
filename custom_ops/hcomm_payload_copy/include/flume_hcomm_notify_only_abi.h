@@ -70,6 +70,8 @@ extern "C" {
   "FlumeHcommPayloadCopySemanticVersion15"
 #define FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC \
   "FlumeHcommPayloadCopyRequiresCommAcquire"
+#define FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC \
+  "FlumeHcommPayloadCopySupportsOfficialP2pLayout"
 #define FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC \
   "FlumeHcommPayloadStatusSchemaVersion"
 #define FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC \

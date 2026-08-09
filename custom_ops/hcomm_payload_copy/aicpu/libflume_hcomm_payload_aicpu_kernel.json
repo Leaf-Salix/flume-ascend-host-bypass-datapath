@@ -194,5 +194,12 @@
       "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
       "functionName": "FlumeHcommPayloadCopySemanticVersion15"
     }
+  },
+  "FlumeHcommPayloadCopySupportsOfficialP2pLayout": {
+    "opInfo": {
+      "opKernelLib": "AICPUKernel",
+      "kernelSo": "libflume_hcomm_payload_aicpu_kernel.so",
+      "functionName": "FlumeHcommPayloadCopySupportsOfficialP2pLayout"
+    }
   }
 }
