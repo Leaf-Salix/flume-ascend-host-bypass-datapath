@@ -526,6 +526,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_data_local_exit_fingerprint=",
       "payload_data_user_exit_fingerprint=",
       "payload_data_sample_bytes=",
+      "payload_device_data_side=passed",
+      "payload_device_data_side_reason=",
       "payload_primitive_state=completed",
       "payload_trace=passed",
       "payload_trace_schema=v3",

@@ -2238,6 +2238,8 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_data_local_exit_fingerprint=",
     "payload_data_user_exit_fingerprint=",
     "payload_data_sample_bytes=",
+    "payload_device_data_side=passed",
+    "payload_device_data_side_reason=",
     "payload_primitive_state=completed",
     "payload_trace=passed",
     "payload_trace_schema=v3",
@@ -6517,6 +6519,8 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
             "payload_trace_result",
             "payload_trace_first_error_event",
             "payload_verify",
+            "payload_device_data_side",
+            "payload_device_data_side_reason",
             "fallback",
         ]
         return [
@@ -6650,6 +6654,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_echo=passed",
             "payload_descriptor_fingerprint=passed",
             "payload_data_probe=observed",
+            "payload_device_data_side=passed",
             "payload_data_flow=passed",
             "payload_host_data=passed",
             "payload_primitive_state=completed",
@@ -6690,6 +6695,8 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_data_local_exit_fingerprint=,"
             "payload_data_user_exit_fingerprint=,"
             "payload_data_sample_bytes=,"
+            "payload_device_data_side=passed,"
+            "payload_device_data_side_reason=,"
             "payload_host_source_fingerprint=,"
             "payload_host_received_fingerprint=,"
             "payload_host_expected_fingerprint=,"

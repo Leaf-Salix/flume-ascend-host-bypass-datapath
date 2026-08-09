@@ -3026,6 +3026,71 @@ std::string PayloadDataProbeDetail(const uint32_t* status_words) {
          fingerprint(status_words[16]);
 }
 
+std::string PayloadDeviceDataSideDetail(
+    const flume_hcomm_payload_copy_desc_v1& desc,
+    const uint32_t* status_words) {
+  if (status_words == nullptr) {
+    return " payload_device_data_side=missing"
+           " payload_device_data_side_reason=missing-status";
+  }
+  const uint32_t missing = 0xFFFFFFFFU;
+  for (uint32_t index = 10; index <= 16; ++index) {
+    if (status_words[index] == missing) {
+      return " payload_device_data_side=missing"
+             " payload_device_data_side_reason=missing-fingerprint";
+    }
+  }
+  const uint32_t user_entry = status_words[10];
+  const uint32_t remote_entry = status_words[15];
+  const uint32_t transfer_exit = status_words[16];
+  const uint32_t local_exit = status_words[12];
+  const uint32_t user_exit = status_words[13];
+  const bool write_path =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
+  const bool recv_direct_output =
+      desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  auto result = [](const char* state, const char* reason) {
+    return std::string(" payload_device_data_side=") + state +
+           " payload_device_data_side_reason=" + reason;
+  };
+  if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND) {
+    if (user_entry != local_exit) {
+      return result("failed", "send-user-local-mismatch");
+    }
+    if (user_entry != user_exit) {
+      return result("failed", "send-user-exit-mismatch");
+    }
+    if (write_path && transfer_exit !=
+                          FLUME_HCOMM_PAYLOAD_DATA_FINGERPRINT_NOT_SAMPLED &&
+        transfer_exit != user_entry) {
+      return result("failed", "send-transfer-exit-mismatch");
+    }
+    return result("passed", write_path ? "send-write-side" :
+                                       "send-read-side");
+  }
+  if (desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV) {
+    if (remote_entry != transfer_exit) {
+      return result("failed", "recv-transfer-exit-mismatch");
+    }
+    if (recv_direct_output && !write_path) {
+      if (remote_entry != user_exit) {
+        return result("failed", "recv-direct-output-mismatch");
+      }
+      return result("passed", "recv-read-direct-output-side");
+    }
+    if (remote_entry != local_exit) {
+      return result("failed", "recv-local-exit-mismatch");
+    }
+    if (remote_entry != user_exit) {
+      return result("failed", "recv-user-exit-mismatch");
+    }
+    return result("passed", write_path ? "recv-write-side" :
+                                       "recv-read-local-buffer-side");
+  }
+  return result("missing", "unknown-role");
+}
+
 void InitPayloadTraceWords(uint32_t* trace_words) {
   if (trace_words == nullptr) {
     return;
@@ -4406,6 +4471,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
+           PayloadDeviceDataSideDetail(desc, kernel_status_words) +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
@@ -4429,6 +4495,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
+           PayloadDeviceDataSideDetail(desc, kernel_status_words) +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
@@ -4466,6 +4533,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
+           PayloadDeviceDataSideDetail(desc, kernel_status_words) +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " expected_role=" + std::to_string(expected_role) +
            " expected_peer_rank=" + std::to_string(peer_rank) +
@@ -4501,6 +4569,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
            PayloadDataProbeDetail(kernel_status_words) +
+           PayloadDeviceDataSideDetail(desc, kernel_status_words) +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
@@ -4529,6 +4598,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
          PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) +
          PayloadDataProbeDetail(kernel_status_words) +
+         PayloadDeviceDataSideDetail(desc, kernel_status_words) +
          PayloadTraceWordsDetail(kernel_trace_words, trace_ret) + " " +
          "kernel_func=" +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +

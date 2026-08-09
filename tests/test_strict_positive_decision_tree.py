@@ -122,7 +122,9 @@ def strict_log(include_verify: bool) -> str:
                        "payload_data_transfer_exit_fingerprint=not-sampled "
                        "payload_data_local_exit_fingerprint=222 "
                        "payload_data_user_exit_fingerprint=222 "
-                       "payload_data_sample_bytes=4096 ")
+                       "payload_data_sample_bytes=4096 "
+                       "payload_device_data_side=passed "
+                       "payload_device_data_side_reason=send-read-side ")
     recv_data_probe = (" payload_data_probe=observed "
                        "payload_data_user_entry_fingerprint=111 "
                        "payload_data_local_entry_fingerprint=111 "
@@ -130,7 +132,9 @@ def strict_log(include_verify: bool) -> str:
                        "payload_data_transfer_exit_fingerprint=222 "
                        "payload_data_local_exit_fingerprint=222 "
                        "payload_data_user_exit_fingerprint=222 "
-                       "payload_data_sample_bytes=4096 ")
+                       "payload_data_sample_bytes=4096 "
+                       "payload_device_data_side=passed "
+                       "payload_device_data_side_reason=recv-read-local-buffer-side ")
     recv_desc = desc.replace("payload_desc_role=0", "payload_desc_role=1")
     recv_desc = recv_desc.replace("payload_desc_local_rank=0",
                                   "payload_desc_local_rank=1")
