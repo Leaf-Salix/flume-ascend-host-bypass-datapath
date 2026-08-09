@@ -286,12 +286,18 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion9`,
 `FlumeHcommPayloadCopySemanticVersion10`,
 `FlumeHcommPayloadCopySemanticVersion11`,
+`FlumeHcommPayloadCopySemanticVersion12`,
+`FlumeHcommPayloadCopySemanticVersion13`,
+`FlumeHcommPayloadCopySemanticVersion14`,
+`FlumeHcommPayloadCopySemanticVersion15`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
+`FlumeHcommPayloadCopySupportsOfficialP2pLayout`,
 `FlumeHcommPayloadStatusSchemaVersion`, and
 `FlumeHcommPayloadStatusWordCount`,
 `FlumeHcommPayloadTraceSchemaVersion`, and
 `FlumeHcommPayloadTraceWordCount`. These mark the descriptor ABI with HCCL
 comm-name handoff, descriptor echo words, device-side primitive trace layout,
+official public-P2P layout support,
 and the success-status schema where the
 second status word is written as `payload_kernel_hcomm_ret=0`, the expected
 status word count, and the requirement that the kernel acquires/releases the
@@ -301,9 +307,9 @@ to reference the HCOMM primitive symbols used by the payload path, including
 Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
 therefore not accepted as a real payload package. When the target host can load
 the tar-contained SO, preflight also calls the exported metadata functions and
-requires the current values: payload ABI v4, semantic v12, status schema v4,
-status word count 14, trace schema v2, trace word count 80, and
-comm-acquire marker 1.
+requires the current values: payload ABI v4, semantic v15, status schema v7,
+status word count 17, trace schema v2, trace word count 80, comm-acquire
+marker 1, and official-p2p layout marker 1.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
 payload builds use `libflume_hcomm_payload_aicpu_kernel_payload.json` and

@@ -240,6 +240,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion14() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion15() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySupportsOfficialP2pLayout() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
                    FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusWordCount() ==

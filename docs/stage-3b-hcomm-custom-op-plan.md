@@ -581,6 +581,9 @@ kernel descriptor gained `comm_name` for `HcommAcquireComm` /
 `HcommReleaseComm`. The preflight also requires
 `FlumeHcommPayloadCopyRequiresCommAcquire` so a package built before the
 communicator acquire/release handoff cannot be misclassified as payload-ready.
+It also requires `FlumeHcommPayloadCopySupportsOfficialP2pLayout` so a package
+that predates the focused channel-handle, no-batch, direct-output public P2P
+layout cannot be misclassified as the current strict-positive candidate.
 It also requires `FlumeHcommPayloadStatusSchemaVersion` and
 `FlumeHcommPayloadStatusWordCount`, in both JSON and the tar-contained SO, so
 the host can reject packages that predate the current device-visible status
@@ -599,6 +602,10 @@ Flume headers before running strict smoke.
 When `FlumeHcommPayloadCopyRequiresCommAcquire` is missing, rebuild from the
 current Flume tree before running strict smoke; that package predates the
 HCOMM communicator acquire/release contract.
+When `FlumeHcommPayloadCopySupportsOfficialP2pLayout` is missing, rebuild from
+the current Flume tree before running strict smoke; that package predates the
+focused official-p2p layout gate and should not be used for the current
+`--hcomm-payload-official-p2p-layout` run.
 When `FlumeHcommPayloadStatusSchemaVersion` or
 `FlumeHcommPayloadStatusWordCount` is missing, rebuild from the current tree;
 that package predates the current success-status schema and cannot prove

@@ -211,6 +211,9 @@ int main() {
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);
   FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
+      "FlumeHcommPayloadCopySupportsOfficialP2pLayout") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
       "FlumeHcommPayloadStatusSchemaVersion") == 0);
   FLUME_TEST_CHECK(std::strcmp(
