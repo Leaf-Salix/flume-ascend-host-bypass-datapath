@@ -13,8 +13,14 @@ int main() {
   using flume::hcomm_payload::DescribePlan;
   using flume::hcomm_payload::DescribeResourceDescriptor;
   using flume::hcomm_payload::PayloadPlan;
+  using flume::hcomm_payload::PayloadPlanOptions;
   using flume::hcomm_payload::PayloadRole;
+  using flume::hcomm_payload::PayloadTransferMode;
+  using flume::hcomm_payload::PayloadRecvPath;
+  using flume::hcomm_payload::PayloadCommBinding;
+  using flume::hcomm_payload::PayloadCompletionMode;
   using flume::hcomm_payload::PayloadStep;
+  using flume::hcomm_payload::BuildPairCopyPlanWithOptions;
   using flume::hcomm_payload::BuildResourceDescriptor;
   using flume::hcomm_payload::BuildNotifyOnlyPlan;
   using flume::hcomm_payload::ResourceDescriptor;
@@ -45,6 +51,14 @@ int main() {
   FLUME_TEST_CHECK(send_desc.find("role=send") != std::string::npos);
   FLUME_TEST_CHECK(send_desc.find("HcommLocalCopyOnThread") !=
                    std::string::npos);
+  FLUME_TEST_CHECK(send_desc.find("transfer_mode=read") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(send_desc.find("recv_path=local-buffer") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(send_desc.find("comm_binding=comm-name") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(send_desc.find("completion_mode=ordered-notify") !=
+                   std::string::npos);
 
   PayloadPlan recv;
   FLUME_TEST_CHECK(BuildPairCopyPlan(PayloadRole::kRecv, 1, 0, 2, 4096,
@@ -63,6 +77,83 @@ int main() {
   FLUME_TEST_CHECK(recv_desc.find("HcommReadOnThread") != std::string::npos);
   FLUME_TEST_CHECK(recv_desc.find("local_hccl_buffer->output") !=
                    std::string::npos);
+
+  PayloadPlanOptions direct_read_options;
+  direct_read_options.recv_path = PayloadRecvPath::kDirectOutput;
+  PayloadPlan direct_recv;
+  FLUME_TEST_CHECK(BuildPairCopyPlanWithOptions(
+      PayloadRole::kRecv, 1, 0, 2, 4096, direct_read_options, &direct_recv,
+      &error));
+  FLUME_TEST_CHECK(direct_recv.steps.size() == 3);
+  FLUME_TEST_CHECK(direct_recv.steps[1] ==
+                   PayloadStep::kChannelReadRemoteToOutput);
+  std::string direct_recv_desc = DescribePlan(direct_recv);
+  FLUME_TEST_CHECK(direct_recv_desc.find("recv_path=direct-output") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(direct_recv_desc.find("remote_hccl_buffer->output") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(direct_recv_desc.find("local_hccl_buffer->output") ==
+                   std::string::npos);
+
+  PayloadPlanOptions write_options;
+  write_options.transfer_mode = PayloadTransferMode::kWrite;
+  write_options.comm_binding = PayloadCommBinding::kChannelHandle;
+  write_options.completion_mode = PayloadCompletionMode::kChannelFence;
+  write_options.batch_enabled = false;
+  PayloadPlan write_send;
+  FLUME_TEST_CHECK(BuildPairCopyPlanWithOptions(
+      PayloadRole::kSend, 0, 1, 2, 4096, write_options, &write_send,
+      &error));
+  FLUME_TEST_CHECK(write_send.steps.size() == 5);
+  FLUME_TEST_CHECK(write_send.steps[1] ==
+                   PayloadStep::kChannelWriteLocalToRemoteHcclBuffer);
+  FLUME_TEST_CHECK(write_send.steps[2] == PayloadStep::kChannelFence);
+  FLUME_TEST_CHECK(write_send.steps[3] ==
+                   PayloadStep::kChannelNotifyRecordReady);
+  std::string write_send_desc = DescribePlan(write_send);
+  FLUME_TEST_CHECK(write_send_desc.find("transfer_mode=write") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(write_send_desc.find("comm_binding=channel-handle") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(write_send_desc.find("completion_mode=channel-fence") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(write_send_desc.find("batch_mode=off") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(write_send_desc.find("HcommWriteOnThread") !=
+                   std::string::npos);
+
+  PayloadPlan write_recv;
+  FLUME_TEST_CHECK(BuildPairCopyPlanWithOptions(
+      PayloadRole::kRecv, 1, 0, 2, 4096, write_options, &write_recv,
+      &error));
+  FLUME_TEST_CHECK(write_recv.steps.size() == 3);
+  FLUME_TEST_CHECK(write_recv.steps[0] ==
+                   PayloadStep::kChannelNotifyWaitReady);
+  FLUME_TEST_CHECK(write_recv.steps[1] ==
+                   PayloadStep::kLocalCopyLocalHcclBufferToOutput);
+  FLUME_TEST_CHECK(write_recv.steps[2] ==
+                   PayloadStep::kChannelNotifyRecordDone);
+
+  PayloadPlanOptions write_notify_options;
+  write_notify_options.transfer_mode = PayloadTransferMode::kWriteWithNotify;
+  PayloadPlan write_notify_send;
+  FLUME_TEST_CHECK(BuildPairCopyPlanWithOptions(
+      PayloadRole::kSend, 0, 1, 2, 4096, write_notify_options,
+      &write_notify_send, &error));
+  FLUME_TEST_CHECK(write_notify_send.steps.size() == 3);
+  FLUME_TEST_CHECK(write_notify_send.steps[1] ==
+                   PayloadStep::kChannelWriteWithNotifyLocalToRemoteHcclBuffer);
+  std::string write_notify_desc = DescribePlan(write_notify_send);
+  FLUME_TEST_CHECK(write_notify_desc.find("transfer_mode=write-with-notify") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(write_notify_desc.find("HcommWriteWithNotifyOnThread") !=
+                   std::string::npos);
+
+  direct_read_options.transfer_mode = PayloadTransferMode::kWrite;
+  FLUME_TEST_CHECK(!BuildPairCopyPlanWithOptions(
+      PayloadRole::kRecv, 1, 0, 2, 4096, direct_read_options, &direct_recv,
+      &error));
+  FLUME_TEST_CHECK(error.find("write receive path") != std::string::npos);
 
   PayloadPlan invalid;
   FLUME_TEST_CHECK(!BuildPairCopyPlan(PayloadRole::kSend, 0, 1, 3, 4096,

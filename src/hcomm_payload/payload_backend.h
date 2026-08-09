@@ -29,6 +29,40 @@ enum class PayloadStep {
   kChannelNotifyWaitDone = 4,
   kChannelNotifyRecordDone = 5,
   kLocalCopyLocalHcclBufferToOutput = 6,
+  kChannelReadRemoteToOutput = 7,
+  kChannelWriteLocalToRemoteHcclBuffer = 8,
+  kChannelWriteWithNotifyLocalToRemoteHcclBuffer = 9,
+  kChannelFence = 10,
+};
+
+enum class PayloadTransferMode {
+  kRead = 0,
+  kWrite = 1,
+  kWriteWithNotify = 2,
+};
+
+enum class PayloadRecvPath {
+  kLocalBuffer = 0,
+  kDirectOutput = 1,
+};
+
+enum class PayloadCommBinding {
+  kCommName = 0,
+  kDiagnosticSkip = 1,
+  kChannelHandle = 2,
+};
+
+enum class PayloadCompletionMode {
+  kOrderedNotify = 0,
+  kChannelFence = 1,
+};
+
+struct PayloadPlanOptions {
+  PayloadTransferMode transfer_mode = PayloadTransferMode::kRead;
+  PayloadRecvPath recv_path = PayloadRecvPath::kLocalBuffer;
+  PayloadCommBinding comm_binding = PayloadCommBinding::kCommName;
+  PayloadCompletionMode completion_mode = PayloadCompletionMode::kOrderedNotify;
+  bool batch_enabled = true;
 };
 
 enum class CustomOpLaunchSmokeStep {
@@ -54,6 +88,11 @@ struct PayloadPlan {
   uint64_t bytes = 0;
   uint32_t ready_notify_idx = 0;
   uint32_t done_notify_idx = 1;
+  PayloadTransferMode transfer_mode = PayloadTransferMode::kRead;
+  PayloadRecvPath recv_path = PayloadRecvPath::kLocalBuffer;
+  PayloadCommBinding comm_binding = PayloadCommBinding::kCommName;
+  PayloadCompletionMode completion_mode = PayloadCompletionMode::kOrderedNotify;
+  bool batch_enabled = true;
   std::vector<PayloadStep> steps;
 };
 
@@ -98,6 +137,10 @@ SchedulerStatus CurrentSchedulerStatus();
 const char* SchedulerStatusMessage(SchedulerStatus status);
 const char* PayloadRoleName(PayloadRole role);
 const char* PayloadStepName(PayloadStep step);
+const char* PayloadTransferModeName(PayloadTransferMode mode);
+const char* PayloadRecvPathName(PayloadRecvPath path);
+const char* PayloadCommBindingName(PayloadCommBinding binding);
+const char* PayloadCompletionModeName(PayloadCompletionMode mode);
 const char* CustomOpLaunchSmokeStepName(CustomOpLaunchSmokeStep step);
 const char* NotifyOnlyStepName(NotifyOnlyStep step);
 
@@ -108,6 +151,15 @@ bool BuildPairCopyPlan(PayloadRole role,
                        uint64_t bytes,
                        PayloadPlan* out,
                        std::string* error);
+
+bool BuildPairCopyPlanWithOptions(PayloadRole role,
+                                  uint32_t local_rank,
+                                  uint32_t peer_rank,
+                                  uint32_t rank_size,
+                                  uint64_t bytes,
+                                  const PayloadPlanOptions& options,
+                                  PayloadPlan* out,
+                                  std::string* error);
 
 std::string DescribePlan(const PayloadPlan& plan);
 

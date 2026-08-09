@@ -59,6 +59,58 @@ const char* PayloadStepName(PayloadStep step) {
       return "HcommChannelNotifyRecordOnThread(done)";
     case PayloadStep::kLocalCopyLocalHcclBufferToOutput:
       return "HcommLocalCopyOnThread(local_hccl_buffer->output)";
+    case PayloadStep::kChannelReadRemoteToOutput:
+      return "HcommReadOnThread(remote_hccl_buffer->output)";
+    case PayloadStep::kChannelWriteLocalToRemoteHcclBuffer:
+      return "HcommWriteOnThread(local_hccl_buffer->remote_hccl_buffer)";
+    case PayloadStep::kChannelWriteWithNotifyLocalToRemoteHcclBuffer:
+      return "HcommWriteWithNotifyOnThread(local_hccl_buffer->remote_hccl_buffer,ready)";
+    case PayloadStep::kChannelFence:
+      return "HcommChannelFenceOnThread(channel)";
+  }
+  return "unknown";
+}
+
+const char* PayloadTransferModeName(PayloadTransferMode mode) {
+  switch (mode) {
+    case PayloadTransferMode::kRead:
+      return "read";
+    case PayloadTransferMode::kWrite:
+      return "write";
+    case PayloadTransferMode::kWriteWithNotify:
+      return "write-with-notify";
+  }
+  return "unknown";
+}
+
+const char* PayloadRecvPathName(PayloadRecvPath path) {
+  switch (path) {
+    case PayloadRecvPath::kLocalBuffer:
+      return "local-buffer";
+    case PayloadRecvPath::kDirectOutput:
+      return "direct-output";
+  }
+  return "unknown";
+}
+
+const char* PayloadCommBindingName(PayloadCommBinding binding) {
+  switch (binding) {
+    case PayloadCommBinding::kCommName:
+      return "comm-name";
+    case PayloadCommBinding::kDiagnosticSkip:
+      return "diagnostic-skip";
+    case PayloadCommBinding::kChannelHandle:
+      return "channel-handle";
+  }
+  return "unknown";
+}
+
+const char* PayloadCompletionModeName(PayloadCompletionMode mode) {
+  switch (mode) {
+    case PayloadCompletionMode::kOrderedNotify:
+      return "ordered-notify";
+    case PayloadCompletionMode::kChannelFence:
+      return "channel-fence";
   }
   return "unknown";
 }
@@ -100,6 +152,19 @@ bool BuildPairCopyPlan(PayloadRole role,
                        uint64_t bytes,
                        PayloadPlan* out,
                        std::string* error) {
+  PayloadPlanOptions options;
+  return BuildPairCopyPlanWithOptions(role, local_rank, peer_rank, rank_size,
+                                      bytes, options, out, error);
+}
+
+bool BuildPairCopyPlanWithOptions(PayloadRole role,
+                                  uint32_t local_rank,
+                                  uint32_t peer_rank,
+                                  uint32_t rank_size,
+                                  uint64_t bytes,
+                                  const PayloadPlanOptions& options,
+                                  PayloadPlan* out,
+                                  std::string* error) {
   if (out == nullptr) {
     if (error != nullptr) {
       *error = "payload plan destination is null";
@@ -125,6 +190,22 @@ bool BuildPairCopyPlan(PayloadRole role,
     }
     return false;
   }
+  if (options.transfer_mode == PayloadTransferMode::kWriteWithNotify &&
+      role == PayloadRole::kRecv &&
+      options.recv_path == PayloadRecvPath::kDirectOutput) {
+    if (error != nullptr) {
+      *error = "write-with-notify receive path uses local HCCL Buffer output";
+    }
+    return false;
+  }
+  if (options.transfer_mode == PayloadTransferMode::kWrite &&
+      role == PayloadRole::kRecv &&
+      options.recv_path == PayloadRecvPath::kDirectOutput) {
+    if (error != nullptr) {
+      *error = "write receive path uses local HCCL Buffer output";
+    }
+    return false;
+  }
 
   PayloadPlan plan;
   plan.role = role;
@@ -132,19 +213,46 @@ bool BuildPairCopyPlan(PayloadRole role,
   plan.peer_rank = peer_rank;
   plan.rank_size = rank_size;
   plan.bytes = bytes;
+  plan.transfer_mode = options.transfer_mode;
+  plan.recv_path = options.recv_path;
+  plan.comm_binding = options.comm_binding;
+  plan.completion_mode = options.completion_mode;
+  plan.batch_enabled = options.batch_enabled;
   if (role == PayloadRole::kSend) {
-    plan.steps = {
-        PayloadStep::kLocalCopyInputToHcclBuffer,
-        PayloadStep::kChannelNotifyRecordReady,
-        PayloadStep::kChannelNotifyWaitDone,
-    };
+    plan.steps.push_back(PayloadStep::kLocalCopyInputToHcclBuffer);
+    if (options.transfer_mode == PayloadTransferMode::kWriteWithNotify) {
+      plan.steps.push_back(
+          PayloadStep::kChannelWriteWithNotifyLocalToRemoteHcclBuffer);
+      if (options.completion_mode == PayloadCompletionMode::kChannelFence) {
+        plan.steps.push_back(PayloadStep::kChannelFence);
+      }
+    } else if (options.transfer_mode == PayloadTransferMode::kWrite) {
+      plan.steps.push_back(PayloadStep::kChannelWriteLocalToRemoteHcclBuffer);
+      if (options.completion_mode == PayloadCompletionMode::kChannelFence) {
+        plan.steps.push_back(PayloadStep::kChannelFence);
+      }
+      plan.steps.push_back(PayloadStep::kChannelNotifyRecordReady);
+    } else {
+      plan.steps.push_back(PayloadStep::kChannelNotifyRecordReady);
+    }
+    plan.steps.push_back(PayloadStep::kChannelNotifyWaitDone);
   } else {
-    plan.steps = {
-        PayloadStep::kChannelNotifyWaitReady,
-        PayloadStep::kChannelReadRemoteToLocalHcclBuffer,
-        PayloadStep::kLocalCopyLocalHcclBufferToOutput,
-        PayloadStep::kChannelNotifyRecordDone,
-    };
+    plan.steps.push_back(PayloadStep::kChannelNotifyWaitReady);
+    if (options.transfer_mode == PayloadTransferMode::kRead) {
+      if (options.recv_path == PayloadRecvPath::kDirectOutput) {
+        plan.steps.push_back(PayloadStep::kChannelReadRemoteToOutput);
+      } else {
+        plan.steps.push_back(PayloadStep::kChannelReadRemoteToLocalHcclBuffer);
+      }
+      if (options.completion_mode == PayloadCompletionMode::kChannelFence) {
+        plan.steps.push_back(PayloadStep::kChannelFence);
+      }
+    }
+    if (options.transfer_mode != PayloadTransferMode::kRead ||
+        options.recv_path != PayloadRecvPath::kDirectOutput) {
+      plan.steps.push_back(PayloadStep::kLocalCopyLocalHcclBufferToOutput);
+    }
+    plan.steps.push_back(PayloadStep::kChannelNotifyRecordDone);
   }
   *out = std::move(plan);
   return true;
@@ -159,6 +267,12 @@ std::string DescribePlan(const PayloadPlan& plan) {
       << " bytes=" << plan.bytes
       << " ready_notify_idx=" << plan.ready_notify_idx
       << " done_notify_idx=" << plan.done_notify_idx
+      << " transfer_mode=" << PayloadTransferModeName(plan.transfer_mode)
+      << " recv_path=" << PayloadRecvPathName(plan.recv_path)
+      << " comm_binding=" << PayloadCommBindingName(plan.comm_binding)
+      << " completion_mode="
+      << PayloadCompletionModeName(plan.completion_mode)
+      << " batch_mode=" << (plan.batch_enabled ? "on" : "off")
       << " scheduler=" << SchedulerStatusMessage(CurrentSchedulerStatus())
       << " steps=[";
   for (size_t i = 0; i < plan.steps.size(); ++i) {

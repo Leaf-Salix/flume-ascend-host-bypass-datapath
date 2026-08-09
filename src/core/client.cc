@@ -1959,11 +1959,42 @@ std::string MakeHcommPayloadPlanDetail(
     const CommState& state,
     uint32_t peer_rank,
     uint64_t bytes,
+    const HcommProbeOptions& options,
+    flume_hcomm_protocol_t resolved_protocol,
     const std::string& channel_detail) {
   flume::hcomm_payload::PayloadPlan plan;
+  flume::hcomm_payload::PayloadPlanOptions plan_options;
+  if (options.payload_write_with_notify) {
+    plan_options.transfer_mode =
+        flume::hcomm_payload::PayloadTransferMode::kWriteWithNotify;
+  } else if (options.payload_write_path) {
+    plan_options.transfer_mode =
+        flume::hcomm_payload::PayloadTransferMode::kWrite;
+  }
+  if (options.payload_recv_direct_output && !options.payload_write_path &&
+      !options.payload_write_with_notify) {
+    plan_options.recv_path =
+        flume::hcomm_payload::PayloadRecvPath::kDirectOutput;
+  }
+  if (options.payload_comm_binding ==
+      FLUME_HCOMM_PAYLOAD_COMM_BINDING_CHANNEL_HANDLE) {
+    plan_options.comm_binding =
+        flume::hcomm_payload::PayloadCommBinding::kChannelHandle;
+  } else if (options.payload_comm_binding ==
+             FLUME_HCOMM_PAYLOAD_COMM_BINDING_DIAGNOSTIC_SKIP) {
+    plan_options.comm_binding =
+        flume::hcomm_payload::PayloadCommBinding::kDiagnosticSkip;
+  }
+  if (options.payload_force_channel_fence ||
+      resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE) {
+    plan_options.completion_mode =
+        flume::hcomm_payload::PayloadCompletionMode::kChannelFence;
+  }
+  plan_options.batch_enabled = !options.disable_payload_batch_mode;
   std::string error;
-  if (!flume::hcomm_payload::BuildPairCopyPlan(
-          role, state.rank, peer_rank, state.rank_size, bytes, &plan, &error)) {
+  if (!flume::hcomm_payload::BuildPairCopyPlanWithOptions(
+          role, state.rank, peer_rank, state.rank_size, bytes, plan_options,
+          &plan, &error)) {
     return std::string("stage3b_plan=invalid error=\"") + error +
            "\" channel_detail=\"" + channel_detail + "\"";
   }
@@ -6592,7 +6623,7 @@ int flume_hcomm_payload_send_ex(
   }
   std::string plan_detail = MakeHcommPayloadPlanDetail(
       flume::hcomm_payload::PayloadRole::kSend, state, dest_rank, bytes,
-      detail);
+      options, resource_info.resolved_protocol, detail);
   int launch_status = FLUME_ERR_BACKEND;
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
@@ -6716,7 +6747,7 @@ int flume_hcomm_payload_recv_ex(
   }
   std::string plan_detail = MakeHcommPayloadPlanDetail(
       flume::hcomm_payload::PayloadRole::kRecv, state, src_rank, bytes,
-      detail);
+      options, resource_info.resolved_protocol, detail);
   int launch_status = FLUME_ERR_BACKEND;
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string launch_detail = TryLaunchHcommPayloadCopyDirectAclrt(
