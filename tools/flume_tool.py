@@ -580,6 +580,23 @@ def PackageTextPayloadReady(package_text: str) -> bool:
                    package_text))
 
 
+def PackageTextWriteWithNotifyReady(package_text: str) -> bool:
+    return (
+        re.search(r"^payload_optional_write_with_notify=present$",
+                  package_text, re.MULTILINE) is not None or
+        re.search(
+            r"^function_so\.payload_optional_primitive_dep\."
+            r"HcommWriteWithNotifyOnThread=present$",
+            package_text,
+            re.MULTILINE) is not None)
+
+
+def RecordPackageCapabilityArgs(args: argparse.Namespace,
+                                package_text: str) -> None:
+    setattr(args, "hcomm_payload_write_with_notify_available",
+            PackageTextWriteWithNotifyReady(package_text))
+
+
 def PackageTextLooksPayloadRequired(package_text: str) -> bool:
     return any("payload_direct_aclrt" in required_set
                for required_set, _status in PackageRequirementBlocks(
@@ -1915,6 +1932,7 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
             except OSError:
                 package_text = ""
             package_payload_ready = PackageTextPayloadReady(package_text)
+            RecordPackageCapabilityArgs(args, package_text)
     try:
         command_specs = build_commands(args, enable_hccl=True,
                                        run_dir=runner.run_dir)
@@ -2725,6 +2743,10 @@ def CommandUsesWriteWithNotify(command: list[str]) -> bool:
     return "--hcomm-payload-write-with-notify" in command
 
 
+def WriteWithNotifyCandidatesEnabled(args: argparse.Namespace) -> bool:
+    return getattr(args, "hcomm_payload_write_with_notify_available", True)
+
+
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
                                 command: list[str]) -> bool:
     if (getattr(args, "auto_run_hcomm_payload_channel_handle_candidate", False) and
@@ -2734,6 +2756,7 @@ def HasAcceptedPayloadCandidate(args: argparse.Namespace,
             not CommandUsesWritePath(command)):
         return True
     if (getattr(args, "auto_run_hcomm_payload_write_with_notify_candidate", False) and
+            WriteWithNotifyCandidatesEnabled(args) and
             not CommandUsesWriteWithNotify(command)):
         return True
     if (getattr(args, "auto_run_hcomm_payload_channel_fence_diagnostic", False) and
@@ -3179,6 +3202,30 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
     return note
 
 
+def WriteHcommPayloadWriteWithNotifySkipped(run_dir: Path,
+                                            default_log: Optional[Path]) -> Path:
+    note = run_dir / "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md"
+    lines = [
+        "# HCOMM Payload Write-With-Notify Candidate Matrix",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        "- selected_candidate_log: `<none>`",
+        "- selected_candidate_command: `<none>`",
+        "- candidates_run: `0`",
+        "- skipped_reason: `payload_optional_write_with_notify=missing`",
+        "",
+        "decision: write-with-notify candidates were skipped because the "
+        "payload package does not export `HcommWriteWithNotifyOnThread`.",
+        "",
+        "next_action: use the regular read/write/channel-handle candidate "
+        "matrix for this CANN environment, or rebuild against a target "
+        "`libhcomm.so` that exports the optional fused primitive.",
+    ]
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload write-with-notify candidate matrix -> {note}")
+    return note
+
+
 def RunHcommPayloadWriteWithNotifyFallbackCandidates(
         runner: Runner,
         base_command: list[str],
@@ -3186,6 +3233,9 @@ def RunHcommPayloadWriteWithNotifyFallbackCandidates(
         timeout_seconds: int,
         default_log: Optional[Path],
         args: argparse.Namespace) -> Optional[Path]:
+    if not WriteWithNotifyCandidatesEnabled(args):
+        WriteHcommPayloadWriteWithNotifySkipped(runner.run_dir, default_log)
+        return None
     candidate_results: list[StepResult] = []
     selected_log: Optional[Path] = None
 
@@ -5491,6 +5541,7 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
     except OSError:
         package_text = ""
     package_payload_ready = PackageTextPayloadReady(package_text)
+    RecordPackageCapabilityArgs(args, package_text)
 
     matrix_args = copy.copy(args)
     matrix_args.run_hccl_smoke = False
@@ -5663,6 +5714,13 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         )
         print(f"[ok] strict-positive scope -> {note}")
         return runner.write_summary()
+
+    try:
+        package_text = package_result.log_path.read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        package_text = ""
+    RecordPackageCapabilityArgs(args, package_text)
 
     strict_args = copy.copy(args)
     strict_args.build_hcomm_custom_op = True
@@ -5841,6 +5899,13 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         )
         print(f"[ok] hcomm storage scope -> {note}")
         return runner.write_summary()
+
+    try:
+        package_text = package_result.log_path.read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        package_text = ""
+    RecordPackageCapabilityArgs(args, package_text)
 
     strict_args = copy.copy(args)
     strict_args.build_hcomm_custom_op = True

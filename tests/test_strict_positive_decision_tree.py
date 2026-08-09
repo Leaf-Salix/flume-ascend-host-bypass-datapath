@@ -863,6 +863,18 @@ def main() -> int:
         assert not flume_tool.HasAcceptedPayloadCandidate(
             write_only_args,
             ["flume-hccl-collective-smoke", "--hcomm-payload-write-path"])
+        write_notify_unavailable_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": False,
+            "auto_run_hcomm_payload_write_path_candidate": False,
+            "auto_run_hcomm_payload_write_with_notify_candidate": True,
+            "auto_run_hcomm_payload_channel_fence_diagnostic": False,
+            "auto_run_hcomm_payload_nobatch_diagnostic": False,
+            "auto_run_hcomm_payload_tagged_diagnostic": False,
+            "auto_run_hcomm_payload_direct_output_diagnostic": False,
+            "hcomm_payload_write_with_notify_available": False,
+        })()
+        assert not flume_tool.HasAcceptedPayloadCandidate(
+            write_notify_unavailable_args, ["flume-hccl-collective-smoke"])
         no_comm_only_args = type("Args", (), {
             "auto_run_hcomm_payload_channel_handle_candidate": False,
             "auto_run_hcomm_payload_write_path_candidate": False,
@@ -1302,6 +1314,34 @@ def main() -> int:
         assert "| write-with-notify | recv-write-notify-local-copy |" in write_notify_matrix_text
         assert "selected_candidate_command: `" in write_notify_matrix_text
         assert "--hcomm-payload-write-with-notify" in write_notify_matrix_text
+
+        skip_write_notify_args = type("Args", (), {
+            "auto_run_hcomm_payload_channel_handle_candidate": True,
+            "auto_run_hcomm_payload_channel_fence_diagnostic": True,
+            "auto_run_hcomm_payload_direct_output_diagnostic": True,
+            "auto_run_hcomm_payload_nobatch_diagnostic": True,
+            "hcomm_payload_write_with_notify_available": False,
+        })()
+        skip_write_notify_runner = FakeWriteNotifyCandidateRunner(
+            tmp / "write-with-notify-skipped")
+        skipped_write_notify_candidate = (
+            flume_tool.RunHcommPayloadWriteWithNotifyFallbackCandidates(
+                skip_write_notify_runner,
+                ["flume-hccl-collective-smoke",
+                 "--hcomm-require-payload-copy"],
+                None,
+                10,
+                strict_write_with_notify_path,
+                skip_write_notify_args))
+        assert skipped_write_notify_candidate is None
+        assert skip_write_notify_runner.calls == []
+        skipped_write_notify_matrix = (
+            skip_write_notify_runner.run_dir /
+            "HCOMM_PAYLOAD_WRITE_WITH_NOTIFY_CANDIDATE_MATRIX.md")
+        skipped_write_notify_text = skipped_write_notify_matrix.read_text(
+            encoding="utf-8")
+        assert "candidates_run: `0`" in skipped_write_notify_text
+        assert "payload_optional_write_with_notify=missing" in skipped_write_notify_text
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",

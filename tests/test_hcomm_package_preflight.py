@@ -908,6 +908,7 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in v4.stdout
         assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=present" in v4.stdout
         assert "payload_optional_write_with_notify=present" in v4.stdout
+        assert flume_tool.PackageTextWriteWithNotifyReady(v4.stdout)
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
@@ -927,6 +928,8 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in no_write_notify.stdout
         assert "function_so.payload_optional_primitive_dep.HcommWriteWithNotifyOnThread=missing" in no_write_notify.stdout
         assert "payload_optional_write_with_notify=missing" in no_write_notify.stdout
+        assert not flume_tool.PackageTextWriteWithNotifyReady(
+            no_write_notify.stdout)
         assert "status=PASS" in no_write_notify.stdout
 
         wrong_values_json, wrong_values_tar = write_package(
