@@ -6926,8 +6926,12 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         runner, tree, DecisionTreeStrictPositivePassed(tree), required=True,
         evidence_log=selected_evidence_log)
     note = runner.run_dir / "HCOMM_PAYLOAD_STRICT_POSITIVE_SCOPE.txt"
+    gate_name = (
+        "hcomm-payload-official-p2p-positive"
+        if args.command == "hcomm-payload-official-p2p-positive" else
+        "hcomm-payload-strict-positive")
     note.write_text(
-        "hcomm-payload-strict-positive is the focused Stage 3B.3E gate. It "
+        f"{gate_name} is the focused Stage 3B.3E gate. It "
         "requires a payload-ready Flume custom-op package, configures Flume "
         "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline, and "
         "then requires real HCOMM payload copy. Success requires both ranks "
@@ -6966,6 +6970,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "tagged-batch, direct-output, and no-comm-acquire isolation. "
         "The official-p2p candidate is the public custom P2P shape and "
         "therefore excludes channel-fence, batch mode, and comm-name acquire. "
+        "The hcomm-payload-official-p2p-positive subcommand selects that "
+        "official-p2p shape directly before the first strict run. "
         "Only complete strict-positive "
         "evidence from an accepted candidate can make the required evidence "
         "gate pass; no-comm-acquire remains diagnostic-only. The write-path "
@@ -9171,6 +9177,10 @@ def parse_args() -> argparse.Namespace:
         "hcomm-payload-strict-positive",
         help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
     subparsers.add_parser(
+        "hcomm-payload-official-p2p-positive",
+        help=("Run Stage 3B.3E strict HCOMM payload-copy gate in the public "
+              "custom P2P layout shape"))
+    subparsers.add_parser(
         "hcomm-storage-strict-positive",
         help=("Run the focused Stage 3B.4 storage-over-HCOMM payload gate"))
     verify_logs_parser = subparsers.add_parser(
@@ -9209,6 +9219,8 @@ def parse_args() -> argparse.Namespace:
                                 "and AICPU package"))
 
     args = parser.parse_args()
+    if args.command == "hcomm-payload-official-p2p-positive":
+        args.hcomm_payload_official_p2p_layout = True
     if args.auto_run_hcomm_payload_candidate_matrix:
         EnableHcommPayloadCandidateMatrix(args)
     ApplyOfficialP2pLayoutArgs(parser, args)
@@ -9282,7 +9294,9 @@ def main() -> int:
         return run_ascend_probe(args)
     if args.command == "ascend-full-matrix":
         return run_ascend_full_matrix(args)
-    if args.command == "hcomm-payload-strict-positive":
+    if args.command in (
+            "hcomm-payload-strict-positive",
+            "hcomm-payload-official-p2p-positive"):
         return run_hcomm_payload_strict_positive(args)
     if args.command == "hcomm-storage-strict-positive":
         return run_hcomm_storage_strict_positive(args)

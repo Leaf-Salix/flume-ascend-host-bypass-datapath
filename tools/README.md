@@ -668,6 +668,24 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   hcomm-payload-strict-positive
 ```
 
+当前最贴近 CANN 公开 custom P2P 示例的 focused 入口是：
+
+```bash
+python3 tools/flume_tool.py --build-dir build-hcomm-official-p2p-positive \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --hccl-debug-logs \
+  --auto-build-hcomm-payload-package \
+  hcomm-payload-official-p2p-positive
+```
+
+它等价于 strict-positive 加 `--hcomm-payload-official-p2p-layout`，会强制
+`aicpu + channel-handle + no-batch + direct-output + ordered-notify`。
+成功时 decision tree 应显示 `payload_layout=official-p2p`、
+`payload official-p2p shape match | passed`，并且 rank0/rank1
+`payload_trace_count` 都为 `8`。
+
 这个入口会自动启用 `FLUME_BUILD_HCOMM_CUSTOM_OP=ON`，先 required 检查
 custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 `--hcomm-require-payload-copy`。完整成功必须同时看到 rank0/rank1

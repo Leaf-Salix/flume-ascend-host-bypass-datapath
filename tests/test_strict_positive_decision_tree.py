@@ -1088,6 +1088,24 @@ def main() -> int:
         assert not flume_tool.CommandUsesOfficialP2pLayout(
             official_smoke_command + ["--hcomm-payload-channel-fence"])
 
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "build-official-p2p-subcommand"),
+                "--hccl-devices", "0,1",
+                "hcomm-payload-official-p2p-positive",
+            ]
+            official_subcommand_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert official_subcommand_args.hcomm_payload_disable_batch
+        assert official_subcommand_args.hcomm_payload_recv_direct_output
+        assert official_subcommand_args.hcomm_payload_comm_binding == "channel-handle"
+        assert official_subcommand_args.hcomm_channel_engine == "aicpu"
+        assert not official_subcommand_args.hcomm_payload_write_path
+        assert not official_subcommand_args.hcomm_payload_channel_fence
+
         fake_binary = write(tmp / "flume-hccl-collective-smoke", "")
         old_argv = sys.argv[:]
         try:
