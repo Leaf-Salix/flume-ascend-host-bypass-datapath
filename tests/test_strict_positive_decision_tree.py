@@ -3051,6 +3051,26 @@ def main() -> int:
         assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in offline_text
         assert "binding | engine | resource_layout" in offline_text
 
+        evidence_select_dir = tmp / "candidate-evidence-select"
+        evidence_select_dir.mkdir()
+        write_path_evidence = write(
+            evidence_select_dir /
+            "01-hcomm-payload-write-path-candidate.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy "
+            "--hcomm-payload-write-path\nreturncode: 0\n\n" +
+            strict_write_path_log(True))
+        official_p2p_evidence = write(
+            evidence_select_dir /
+            "02-hcomm-payload-official-p2p-candidate.log",
+            "$ flume-hccl-collective-smoke --hcomm-require-payload-copy "
+            "--hcomm-payload-comm-binding=channel-handle "
+            "--hcomm-payload-disable-batch "
+            "--hcomm-payload-recv-direct-output\nreturncode: 0\n\n" +
+            strict_channel_handle_no_batch_direct_output)
+        assert flume_tool.FindPassingHcommPayloadCandidateLog(
+            evidence_select_dir, require_storage=False) == official_p2p_evidence
+        assert official_p2p_evidence != write_path_evidence
+
         progress_dir = tmp / "candidate-progress-summary"
         progress_dir.mkdir()
         early_candidate = write(

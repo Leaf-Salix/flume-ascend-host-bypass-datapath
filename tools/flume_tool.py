@@ -3113,6 +3113,34 @@ def _PayloadCandidateScore(text: str, returncode: int) -> int:
     return score
 
 
+def _PayloadCandidateEvidenceScore(text: str, returncode: int) -> int:
+    score = _PayloadCandidateScore(text, returncode)
+    rank_lines = ExtractStrictPayloadRankLines(text)
+    rank0_line = rank_lines.get(0, "")
+    rank1_line = rank_lines.get(1, "")
+    layout = MarkerValueFromLine(rank0_line, "payload_layout")
+    transfer_mode = MarkerValueFromLine(rank0_line, "payload_transfer_mode")
+    binding = MarkerValueFromLine(rank0_line, "payload_comm_binding")
+    batch_mode = MarkerValueFromLine(rank0_line, "payload_batch_mode")
+    recv_path = MarkerValueFromLine(rank1_line, "payload_recv_path")
+    completion = MarkerValueFromLine(rank0_line, "payload_completion_mode")
+    if layout == "official-p2p":
+        score += 500
+    if transfer_mode == "write-with-notify":
+        score += 450
+    elif transfer_mode == "write":
+        score += 350
+    if binding == "channel-handle":
+        score += 150
+    if recv_path == "direct-output":
+        score += 100
+    if batch_mode == "off":
+        score += 75
+    if completion == "channel-fence":
+        score += 50
+    return score
+
+
 def _PayloadCandidateDataFlowProgressScore(reason: str) -> int:
     # Rank candidates by how far real device data advanced, not just by launch.
     progress = {
@@ -6021,6 +6049,7 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
 def FindPassingHcommPayloadCandidateLog(run_dir: Path,
                                         *,
                                         require_storage: bool) -> Optional[Path]:
+    passing_candidates: list[tuple[int, str, Path]] = []
     for step_name in HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS:
         candidate_log = FindStepLog(run_dir, [step_name])
         if candidate_log is None:
@@ -6034,8 +6063,13 @@ def FindPassingHcommPayloadCandidateLog(run_dir: Path,
             continue
         if require_storage and not StorageHbmHcommPathPassed(candidate_text):
             continue
-        return candidate_log
-    return None
+        passing_candidates.append(
+            (_PayloadCandidateEvidenceScore(candidate_text, 0), step_name,
+             candidate_log))
+    if not passing_candidates:
+        return None
+    passing_candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return passing_candidates[0][2]
 
 
 def SelectHcommPayloadEvidenceLog(run_dir: Path,
