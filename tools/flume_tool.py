@@ -5929,28 +5929,47 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
             f"selected_evidence_log={evidence_log.name}",
             f"selected_payload_rank_evidence_count={len(rank_lines)}",
         ]
-    rank0_path = MarkerValueFromLine(
-        rank_lines[0], "payload_trace_primitive_path")
-    rank1_path = MarkerValueFromLine(
-        rank_lines[1], "payload_trace_primitive_path")
-    rank0_transfer = MarkerValueFromLine(rank_lines[0], "payload_transfer_mode")
-    rank1_transfer = MarkerValueFromLine(rank_lines[1], "payload_transfer_mode")
-    rank0_trace_transfer = MarkerValueFromLine(
-        rank_lines[0], "payload_trace_transfer_mode")
-    rank1_trace_transfer = MarkerValueFromLine(
-        rank_lines[1], "payload_trace_transfer_mode")
-    rank0_layout = MarkerValueFromLine(rank_lines[0], "payload_layout")
-    rank1_layout = MarkerValueFromLine(rank_lines[1], "payload_layout")
-    return [
+    def RankSummaryLines(rank: int) -> list[str]:
+        line = rank_lines[rank]
+        names = [
+            "payload_kernel_status",
+            "payload_failure_step",
+            "payload_status_word",
+            "payload_kernel_hcomm_ret",
+            "payload_primitive_state",
+            "payload_trace_schema",
+            "payload_trace_word_count",
+            "payload_trace_status_word",
+            "payload_trace_hcomm_ret",
+            "payload_trace_result",
+            "payload_trace_first_error_event",
+            "payload_verify",
+            "fallback",
+        ]
+        return [
+            f"selected_payload_rank{rank}_{name.removeprefix('payload_')}="
+            f"{MarkerValueFromLine(line, name)}"
+            for name in names
+        ]
+
+    summary = [
         f"selected_evidence_log={evidence_log.name}",
-        f"selected_payload_rank0_trace_path={rank0_path}",
-        f"selected_payload_rank1_trace_path={rank1_path}",
-        f"selected_payload_rank0_transfer_mode={rank0_transfer}",
-        f"selected_payload_rank1_transfer_mode={rank1_transfer}",
-        f"selected_payload_rank0_trace_transfer_mode={rank0_trace_transfer}",
-        f"selected_payload_rank1_trace_transfer_mode={rank1_trace_transfer}",
-        f"selected_payload_rank0_layout={rank0_layout}",
-        f"selected_payload_rank1_layout={rank1_layout}",
+        "selected_payload_rank0_trace_path=" +
+        MarkerValueFromLine(rank_lines[0], "payload_trace_primitive_path"),
+        "selected_payload_rank1_trace_path=" +
+        MarkerValueFromLine(rank_lines[1], "payload_trace_primitive_path"),
+        "selected_payload_rank0_transfer_mode=" +
+        MarkerValueFromLine(rank_lines[0], "payload_transfer_mode"),
+        "selected_payload_rank1_transfer_mode=" +
+        MarkerValueFromLine(rank_lines[1], "payload_transfer_mode"),
+        "selected_payload_rank0_trace_transfer_mode=" +
+        MarkerValueFromLine(rank_lines[0], "payload_trace_transfer_mode"),
+        "selected_payload_rank1_trace_transfer_mode=" +
+        MarkerValueFromLine(rank_lines[1], "payload_trace_transfer_mode"),
+        "selected_payload_rank0_layout=" +
+        MarkerValueFromLine(rank_lines[0], "payload_layout"),
+        "selected_payload_rank1_layout=" +
+        MarkerValueFromLine(rank_lines[1], "payload_layout"),
         "selected_payload_recv_path=" +
         MarkerValueFromLine(rank_lines[1], "payload_recv_path"),
         "selected_payload_trace_recv_path=" +
@@ -5960,6 +5979,9 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
         "selected_payload_batch_mode=" +
         MarkerValueFromLine(rank_lines[0], "payload_batch_mode"),
     ]
+    summary.extend(RankSummaryLines(0))
+    summary.extend(RankSummaryLines(1))
+    return summary
 
 
 def AnalyzeHcommPayloadStrictPositiveLogs(

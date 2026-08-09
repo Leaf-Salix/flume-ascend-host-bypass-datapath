@@ -2803,6 +2803,26 @@ def main() -> int:
         assert "selected_payload_rank0_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_rank1_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_recv_path=local-buffer" in pass_evidence_text
+        assert "selected_payload_rank0_kernel_status=success" in pass_evidence_text
+        assert "selected_payload_rank1_kernel_status=success" in pass_evidence_text
+        assert "selected_payload_rank0_failure_step=none" in pass_evidence_text
+        assert "selected_payload_rank1_failure_step=none" in pass_evidence_text
+        assert "selected_payload_rank0_status_word=0" in pass_evidence_text
+        assert "selected_payload_rank1_status_word=0" in pass_evidence_text
+        assert "selected_payload_rank0_kernel_hcomm_ret=0" in pass_evidence_text
+        assert "selected_payload_rank1_kernel_hcomm_ret=0" in pass_evidence_text
+        assert "selected_payload_rank0_trace_schema=v3" in pass_evidence_text
+        assert "selected_payload_rank1_trace_schema=v3" in pass_evidence_text
+        assert "selected_payload_rank0_trace_word_count=82" in pass_evidence_text
+        assert "selected_payload_rank1_trace_word_count=82" in pass_evidence_text
+        assert "selected_payload_rank0_trace_status_word=0" in pass_evidence_text
+        assert "selected_payload_rank1_trace_status_word=0" in pass_evidence_text
+        assert "selected_payload_rank0_trace_hcomm_ret=0" in pass_evidence_text
+        assert "selected_payload_rank1_trace_hcomm_ret=0" in pass_evidence_text
+        assert "selected_payload_rank0_trace_result=success" in pass_evidence_text
+        assert "selected_payload_rank1_trace_result=success" in pass_evidence_text
+        assert "selected_payload_rank0_fallback=none" in pass_evidence_text
+        assert "selected_payload_rank1_fallback=none" in pass_evidence_text
 
         summary_dir = tmp / "candidate-summary"
         summary_dir.mkdir()

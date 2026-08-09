@@ -307,8 +307,8 @@ to reference the HCOMM primitive symbols used by the payload path, including
 Channel Notify, Batch, and Comm Acquire/Release APIs. A marker-only SO is
 therefore not accepted as a real payload package. When the target host can load
 the tar-contained SO, preflight also calls the exported metadata functions and
-requires the current values: payload ABI v4, semantic v15, status schema v7,
-status word count 17, trace schema v2, trace word count 80, comm-acquire
+requires the current values: payload ABI v4, semantic v16, status schema v7,
+status word count 17, trace schema v3, trace word count 82, comm-acquire
 marker 1, and official-p2p layout marker 1.
 The packaging CMake installs a mode-specific JSON under the same runtime name:
 canary builds use `libflume_hcomm_payload_aicpu_kernel_canary.json`, while
