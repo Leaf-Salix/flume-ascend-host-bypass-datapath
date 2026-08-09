@@ -430,7 +430,8 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
 
 def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
                          *, hccl_header: bool = True,
-                         hcomm_header: bool = True) -> Path:
+                         hcomm_header: bool = True,
+                         write_with_notify_lib: bool = True) -> Path:
     root = tmp / name
     include_hccl = root / "aarch64-linux" / "include" / "hccl"
     include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
@@ -472,7 +473,7 @@ int32_t HcommThreadNotifyWaitOnThread(ThreadHandle, uint32_t, uint32_t);
         (include_hcomm / "hcomm_primitives.h").write_text(
             header, encoding="utf-8")
     source = tmp / "fake_hcomm.c"
-    source.write_text(
+    source_lines = [
         """
 #include <stdint.h>
 typedef uint64_t ChannelHandle;
@@ -480,7 +481,6 @@ typedef uint64_t ThreadHandle;
 int32_t HcommLocalCopyOnThread(ThreadHandle a, void* b, const void* c, uint64_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommReadOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 int32_t HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
-int32_t HcommWriteWithNotifyOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, uint64_t e, uint32_t f) { (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }
 int32_t HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, uint32_t c, uint32_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
 int32_t HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }
@@ -490,8 +490,15 @@ int32_t HcommBatchModeStart(const char* a) { (void)a; return 0; }
 int32_t HcommBatchModeEnd(const char* a) { (void)a; return 0; }
 int32_t HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommThreadNotifyWaitOnThread(ThreadHandle a, uint32_t b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
-""",
-        encoding="utf-8")
+"""
+    ]
+    if write_with_notify_lib:
+        source_lines.append(
+            "int32_t HcommWriteWithNotifyOnThread(ThreadHandle a, "
+            "ChannelHandle b, void* c, const void* d, uint64_t e, "
+            "uint32_t f) { (void)a; (void)b; (void)c; (void)d; "
+            "(void)e; (void)f; return 0; }\n")
+    source.write_text("".join(source_lines), encoding="utf-8")
     output = lib64 / ("libhcomm.dylib" if platform.system() == "Darwin"
                       else "libhcomm.so")
     command = (["cc", "-dynamiclib", "-o", str(output), str(source)]
@@ -1210,6 +1217,11 @@ def main() -> int:
         assert cann_pair == (fake_cann, fake_cann / "aarch64-linux")
         assert flume_tool.ResolveCannBinaryRoot(str(fake_cann)) == (
             fake_cann / "aarch64-linux")
+        primitive_args = SimpleNamespace(
+            hcomm_primitives_include_root="",
+            hcomm_primitives_lib_root="")
+        assert flume_tool.HcommWriteWithNotifySupported(
+            primitive_args, fake_cann / "aarch64-linux")
         runtime_env = flume_tool.CannRuntimeEnvUpdates(
             SimpleNamespace(cann_package_root=str(fake_cann)))
         assert runtime_env["ASCEND_HOME_PATH"] == str(fake_cann)
@@ -1322,6 +1334,40 @@ def main() -> int:
                 "direct custom-op build with include/hcomm header did not pass")
         assert "hcomm-custom-op-direct-build-preflight" in direct_hcomm_only.stdout
 
+        fake_cann_no_write_notify = write_fake_cann_root(
+            tmp, "fake-cann-no-write-notify", hccl_header=False,
+            hcomm_header=True, write_with_notify_lib=False)
+        assert not flume_tool.HcommWriteWithNotifySupported(
+            primitive_args, fake_cann_no_write_notify / "aarch64-linux")
+        no_write_notify_log_root = tmp / "no-write-notify-direct-build-logs"
+        no_write_notify_build = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "flume_tool.py"),
+                f"--cann-package-root={fake_cann_no_write_notify}",
+                f"--build-dir={tmp / 'direct-build-no-write-notify'}",
+                f"--log-root={no_write_notify_log_root}",
+                "--custom-op-build-mode=payload",
+                "hcomm-custom-op-direct-build",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if no_write_notify_build.returncode != 0:
+            print(no_write_notify_build.stdout)
+            print(no_write_notify_build.stderr, file=sys.stderr)
+            raise AssertionError(
+                "direct custom-op build without write-with-notify symbol did not pass")
+        no_write_notify_artifacts = next(
+            no_write_notify_log_root.glob(
+                "flume-check-*/HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"))
+        no_write_notify_artifact_text = (
+            no_write_notify_artifacts.read_text(encoding="utf-8"))
+        assert "hcomm_write_with_notify_enabled: 0" in no_write_notify_artifact_text
+        assert "hcomm-custom-op-direct-build-preflight" in no_write_notify_build.stdout
+
         fake_cann_no_hcomm_header = write_fake_cann_root(
             tmp, "fake-cann-no-hcomm-header", hccl_header=False,
             hcomm_header=False)
@@ -1352,6 +1398,7 @@ def main() -> int:
         local_refer_artifact_text = local_refer_artifacts.read_text(
             encoding="utf-8")
         assert "hcomm_primitives_header_source: local-refer" in local_refer_artifact_text
+        assert "hcomm_write_with_notify_enabled: 1" in local_refer_artifact_text
         assert "hcomm-custom-op-direct-build-preflight" in local_refer_build.stdout
 
         fake_cann_minimal = tmp / "fake-cann-minimal"

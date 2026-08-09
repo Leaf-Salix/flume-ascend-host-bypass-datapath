@@ -303,7 +303,9 @@ payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符�
 `hcomm_primitives.h`，direct-build 会保守尝试本地
 `refer/cann-src/hcomm/include` 作为 header fallback，并追加该参考头所需的
 本地 ACL/securec support include；运行时仍链接目标 CANN toolkit 的
-`libhcomm.so`。
+`libhcomm.so`。可选 `HcommWriteWithNotifyOnThread` 路径只有在 header
+声明且目标 `libhcomm.so` 实际导出符号时才会启用，产物说明里会记录
+`hcomm_write_with_notify_enabled: 0|1`。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`，生成 Stage 3B.3E 所需的

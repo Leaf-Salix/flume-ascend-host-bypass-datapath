@@ -777,6 +777,15 @@ def _LibraryExists(lib_dir: Path, name: str) -> bool:
                for suffix in (".so", ".a", ".dylib"))
 
 
+def _FindLibraryPath(lib_dirs: Iterable[Path], name: str) -> Optional[Path]:
+    for lib_dir in lib_dirs:
+        for suffix in (".so", ".dylib", ".a"):
+            candidate = lib_dir / f"lib{name}{suffix}"
+            if candidate.exists():
+                return candidate
+    return None
+
+
 def _ExpandedIncludeRoots(root: Path) -> list[Path]:
     return [root, root / "include"]
 
@@ -880,6 +889,29 @@ def FindLibraryDir(lib_dirs: Iterable[Path], name: str) -> Optional[Path]:
         if _LibraryExists(lib_dir, name):
             return lib_dir
     return None
+
+
+def LibraryExportsSymbol(library: Path, symbol: str) -> bool:
+    if shutil.which("nm") is None:
+        return False
+    command_variants = (
+        ["nm", "-D", str(library)],
+        ["nm", "-g", str(library)],
+    )
+    for command in command_variants:
+        result = subprocess.run(command, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, check=False)
+        if result.returncode == 0 and symbol in result.stdout:
+            return True
+    return False
+
+
+def HcommPrimitiveLibraryExportsSymbol(cann_binary_root: Path,
+                                       extra_lib_root: str,
+                                       symbol: str) -> bool:
+    library = _FindLibraryPath(
+        HcommPrimitiveLibraryDirs(cann_binary_root, extra_lib_root), "hcomm")
+    return library is not None and LibraryExportsSymbol(library, symbol)
 
 
 def HcommPrimitiveIncludeFlags(cann_binary_root: Path,
@@ -6203,9 +6235,7 @@ def _DirectBuildSharedLibraryCommand(
         ])
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1")
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
-        if HcommPrimitivesHeaderContains(
-                cann_root, args.hcomm_primitives_include_root,
-                "HcommWriteWithNotifyOnThread"):
+        if HcommWriteWithNotifySupported(args, cann_root):
             defines.append("FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1")
     command = [cxx, "-std=c++14"]
     if platform.system() == "Darwin":
@@ -6234,6 +6264,17 @@ def _DirectBuildSharedLibraryCommand(
         for lib_dir in link_dirs:
             command.append(f"-Wl,-rpath,{lib_dir}")
     return command
+
+
+def HcommWriteWithNotifySupported(args: argparse.Namespace,
+                                  cann_root: Path) -> bool:
+    return (
+        HcommPrimitivesHeaderContains(
+            cann_root, args.hcomm_primitives_include_root,
+            "HcommWriteWithNotifyOnThread") and
+        HcommPrimitiveLibraryExportsSymbol(
+            cann_root, args.hcomm_primitives_lib_root,
+            "HcommWriteWithNotifyOnThread"))
 
 
 def _WriteAicpuTar(so_path: Path, tar_path: Path) -> None:
@@ -6318,6 +6359,9 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"
         hcomm_header = FindHcommPrimitivesHeader(
             cann_root, args.hcomm_primitives_include_root)
+        write_with_notify_enabled = (
+            args.custom_op_build_mode == "payload" and
+            HcommWriteWithNotifySupported(args, cann_root))
         artifact_note.write_text(
             "Flume HCOMM direct custom-op build artifacts\n"
             f"cann_binary_root: {cann_root}\n"
@@ -6327,6 +6371,8 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
             f"{HcommPrimitiveHeaderSourceLabel(hcomm_header, cann_root)}\n"
             "hcomm_primitives_include_roots: "
             f"{HcommPrimitiveIncludeRootsDetail(cann_root, args.hcomm_primitives_include_root)}\n"
+            "hcomm_write_with_notify_enabled: "
+            f"{1 if write_with_notify_enabled else 0}\n"
             f"json: {output_json}\n"
             f"aicpu_tar: {output_tar}\n",
             encoding="utf-8",
