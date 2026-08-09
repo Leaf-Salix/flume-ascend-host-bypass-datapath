@@ -2987,6 +2987,10 @@ std::string PayloadTraceEventName(uint32_t event) {
       return "send-remote-write-notify-enter";
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE:
       return "send-remote-write-notify-done";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_ENTER:
+      return "send-remote-write-notify-nbi-enter";
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_DONE:
+      return "send-remote-write-notify-nbi-done";
     default:
       return std::string("unknown-") + std::to_string(event);
   }
@@ -3046,6 +3050,60 @@ std::vector<uint32_t> PayloadTraceReturns(const uint32_t* trace_words) {
     returns.push_back(trace_words[ret_base + ((first + i) % capacity)]);
   }
   return returns;
+}
+
+bool PayloadTraceContainsEvent(const uint32_t* trace_words, uint32_t event) {
+  if (trace_words == nullptr ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return false;
+  }
+  const uint32_t count = trace_words[4];
+  const uint32_t capacity = FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY;
+  const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
+  if (count == 0 || count > capacity) {
+    return false;
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    if (trace_words[event_base + i] == event) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool PayloadTraceUsesWriteNotifyNbi(const uint32_t* trace_words) {
+  return PayloadTraceContainsEvent(
+             trace_words,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_ENTER) ||
+         PayloadTraceContainsEvent(
+             trace_words,
+             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_DONE);
+}
+
+std::string PayloadTraceWriteNotifyBackend(const uint32_t* trace_words) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return "missing";
+  }
+  const bool write_with_notify =
+      (trace_words[12] &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_WITH_NOTIFY) != 0;
+  if (!write_with_notify) {
+    return "none";
+  }
+  if (PayloadTraceUsesWriteNotifyNbi(trace_words)) {
+    return "nbi";
+  }
+  if (PayloadTraceContainsEvent(
+          trace_words,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER) ||
+      PayloadTraceContainsEvent(
+          trace_words,
+          FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE)) {
+    return "blocking";
+  }
+  return "missing";
 }
 
 std::string PayloadTraceEventSequence(const std::vector<uint32_t>& events) {
@@ -3135,9 +3193,13 @@ std::vector<uint32_t> ExpectedPayloadTraceEvents(const uint32_t* trace_words,
            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_LOCAL_COPY_DONE);
     if (write_path) {
       if (write_with_notify) {
-        append(
-            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER,
-            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE);
+        if (PayloadTraceUsesWriteNotifyNbi(trace_words)) {
+          append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_ENTER,
+                 FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_DONE);
+        } else {
+          append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER,
+                 FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE);
+        }
       } else {
         append(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER,
                FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_DONE);
@@ -3232,6 +3294,7 @@ bool PayloadTraceEventIsEnter(uint32_t event) {
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER:
+    case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_READY_RECORD_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_DONE_WAIT_ENTER:
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_READY_WAIT_ENTER:
@@ -3388,6 +3451,8 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
               (((trace_words[12] &
                  FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0) ?
                    "write" : "read")) +
+         " payload_trace_write_notify_backend=" +
+         PayloadTraceWriteNotifyBackend(trace_words) +
          " payload_trace_ready_notify_idx=" + std::to_string(trace_words[13]) +
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +

@@ -461,6 +461,16 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
        (write_path ? "recv-write-local-copy" :
         (effective_recv_direct_output ? "recv-read-direct-output" :
                                         "recv-read-local-copy")));
+  const char* available_write_notify_backend =
+#if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+      "blocking";
+#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+      "nbi";
+#else
+      "missing";
+#endif
+  const char* write_notify_backend =
+      write_with_notify ? available_write_notify_backend : "none";
   std::vector<std::string> markers = {
       "stage3b3e_payload_copy=passed",
       "stage3b3e_direct_aclrt_payload_loader=passed",
@@ -499,6 +509,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       DetailValueMarker("payload_trace_comm_binding",
                         HcommPayloadCommBindingName(comm_binding)),
       DetailValueMarker("payload_trace_transfer_mode", transfer_mode),
+      DetailValueMarker("payload_trace_write_notify_backend",
+                        write_notify_backend),
       "payload_trace_ready_notify_idx=",
       "payload_trace_done_notify_idx=",
       "payload_trace_result=success",

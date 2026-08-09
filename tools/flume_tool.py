@@ -2084,6 +2084,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_comm_acquire=",
     "payload_trace_comm_binding=",
     "payload_trace_transfer_mode=",
+    "payload_trace_write_notify_backend=",
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
     "payload_trace_result=success",
@@ -3247,6 +3248,8 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
     transfer_mode = MarkerValue(candidate_text, "payload_transfer_mode")
     trace_transfer_mode = MarkerValue(candidate_text,
                                       "payload_trace_transfer_mode")
+    trace_write_notify_backend = MarkerValue(
+        candidate_text, "payload_trace_write_notify_backend")
     trace_path = MarkerValue(candidate_text, "payload_trace_primitive_path")
     semantic_v12 = MarkerValue(candidate_text, "payload_semantic_v12")
 
@@ -3286,6 +3289,7 @@ def WriteHcommPayloadWriteWithNotifyCandidate(
         f"- first_error_ret: `{first_error_ret}`",
         f"- transfer_mode: `{transfer_mode}`",
         f"- trace_transfer_mode: `{trace_transfer_mode}`",
+        f"- trace_write_notify_backend: `{trace_write_notify_backend}`",
         f"- trace_path: `{trace_path}`",
         f"- semantic_v12: `{semantic_v12}`",
         f"- rank0_evidence: `{'passed' if rank0_ok else 'missing'}`",

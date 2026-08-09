@@ -101,6 +101,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_comm_acquire=default "
         "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
+        "payload_trace_write_notify_backend=none "
         "payload_trace_ready_notify_idx=0 "
         "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
@@ -141,6 +142,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_comm_acquire=default "
         "payload_trace_comm_binding=comm-name "
         "payload_trace_transfer_mode=read "
+        "payload_trace_write_notify_backend=none "
         "payload_trace_ready_notify_idx=0 "
         "payload_trace_done_notify_idx=1 "
         "payload_trace_result=success "
@@ -226,6 +228,8 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
                         "payload_transfer_mode=write-with-notify")
     text = text.replace("payload_trace_transfer_mode=read",
                         "payload_trace_transfer_mode=write-with-notify")
+    text = text.replace("payload_trace_write_notify_backend=none",
+                        "payload_trace_write_notify_backend=blocking")
     text = text.replace(
         "payload_trace_primitive_path=send-local-copy",
         "payload_trace_primitive_path=send-write-with-notify")
@@ -261,6 +265,7 @@ def strict_write_with_notify_remote_write_failure_log() -> str:
         "payload_trace_primitive_path=send-write-with-notify "
         "payload_transfer_mode=write-with-notify "
         "payload_trace_transfer_mode=write-with-notify "
+        "payload_trace_write_notify_backend=blocking "
         "payload_semantic_v12=present fallback=none\"",
         "rank 1 hcomm payload smoke unsupported: fallback=none detail=\""
         "stage3b3e_payload_copy=failed "
@@ -271,7 +276,8 @@ def strict_write_with_notify_remote_write_failure_log() -> str:
         "payload_trace_first_error_ret=110 "
         "payload_trace_primitive_path=recv-write-notify-local-copy "
         "payload_transfer_mode=write-with-notify "
-        "payload_trace_transfer_mode=write-with-notify fallback=none\"",
+        "payload_trace_transfer_mode=write-with-notify "
+        "payload_trace_write_notify_backend=blocking fallback=none\"",
         "",
     ])
 

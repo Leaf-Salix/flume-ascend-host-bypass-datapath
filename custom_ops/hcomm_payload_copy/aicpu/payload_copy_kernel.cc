@@ -329,25 +329,41 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
       BeginPayloadPrimitive(desc,
                             FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
       if (write_with_notify) {
+#if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
         TracePayloadEvent(
             desc,
             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER,
             -1);
-#if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
         ret = HcommWriteWithNotifyOnThread(
             thread, channel, remote_hccl_buffer, local_hccl_buffer,
             desc.bytes, desc.ready_notify_idx);
-#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
-        ret = HcommWriteWithNotifyNbiOnThread(
-            thread, channel, remote_hccl_buffer, local_hccl_buffer,
-            desc.bytes, desc.ready_notify_idx);
-#else
-        ret = -1;
-#endif
         TracePayloadEvent(
             desc,
             FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE,
             ret);
+#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+        TracePayloadEvent(
+            desc,
+            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_ENTER,
+            -1);
+        ret = HcommWriteWithNotifyNbiOnThread(
+            thread, channel, remote_hccl_buffer, local_hccl_buffer,
+            desc.bytes, desc.ready_notify_idx);
+        TracePayloadEvent(
+            desc,
+            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_NBI_DONE,
+            ret);
+#else
+        TracePayloadEvent(
+            desc,
+            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_ENTER,
+            -1);
+        ret = -1;
+        TracePayloadEvent(
+            desc,
+            FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_NOTIFY_DONE,
+            ret);
+#endif
       } else {
         TracePayloadEvent(
             desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_REMOTE_WRITE_ENTER, -1);
