@@ -166,7 +166,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_status_schema=v7 "
             "payload_status_word_count=17 payload_echo=passed payload_descriptor_fingerprint=passed payload_host_descriptor_validation=passed payload_host_validation_reason=ok payload_host_validation_reason_code=0 payload_role=send "
         + send_data_probe +
-        "payload_trace=passed payload_trace_schema=v3 "
+        "payload_trace=passed payload_trace_header=passed payload_trace_schema=v3 "
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
@@ -217,7 +217,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_status_schema=v7 "
             "payload_status_word_count=17 payload_echo=passed payload_descriptor_fingerprint=passed payload_host_descriptor_validation=passed payload_host_validation_reason=ok payload_host_validation_reason_code=0 payload_role=recv "
         + recv_data_probe +
-        "payload_trace=passed payload_trace_schema=v3 "
+        "payload_trace=passed payload_trace_header=passed payload_trace_schema=v3 "
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
@@ -272,7 +272,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_source=host-sentinel-not-payload payload_local_buffer_prime_bytes=4096 payload_primitive_state=completed "
         "payload_status_schema=v7 "
         "payload_status_word_count=17 payload_echo=passed payload_descriptor_fingerprint=passed payload_host_descriptor_validation=passed payload_host_validation_reason=ok payload_host_validation_reason_code=0 payload_role=send "
-        "payload_trace=passed payload_trace_schema=v3 "
+        "payload_trace=passed payload_trace_header=passed payload_trace_schema=v3 "
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
@@ -2398,6 +2398,20 @@ def main() -> int:
         assert "| Strict payload positive passed? | no |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_without_operand_layout.read_text(encoding="utf-8"))[0]
+
+        strict_without_trace_header = write(
+            tmp / "strict-without-trace-header.log",
+            strict_log(True).replace("payload_trace_header=passed ", ""))
+        no_trace_header_dir = tmp / "no-trace-header"
+        no_trace_header_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_trace_header_dir, smoke, strict_without_trace_header, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| rank0 strict evidence | missing |" in text
+        assert "| rank1 strict evidence | missing |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_without_trace_header.read_text(encoding="utf-8"))[0]
 
         strict_missing_trace_first_error = write(
             tmp / "strict-missing-trace-first-error.log",

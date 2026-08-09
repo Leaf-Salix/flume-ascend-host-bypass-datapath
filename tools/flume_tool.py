@@ -2276,6 +2276,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_device_data_side_reason=",
     "payload_primitive_state=completed",
     "payload_trace=passed",
+    "payload_trace_header=passed",
     "payload_trace_schema=v3",
     "payload_trace_word_count=82",
     "payload_trace_event=kernel-exit",
@@ -7066,7 +7067,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_host_expected_fingerprint=,"
             "payload_host_sample_bytes=,"
             "payload_role=send/recv,"
-            "payload_primitive_state=completed,payload_trace=passed,"
+            "payload_primitive_state=completed,payload_trace=passed,payload_trace_header=passed,"
             "payload_trace_schema=v3,payload_trace_word_count=82,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
             "payload_trace_ret_order=passed,"

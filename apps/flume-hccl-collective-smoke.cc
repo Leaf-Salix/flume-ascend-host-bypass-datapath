@@ -544,6 +544,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_device_data_side_reason=",
       "payload_primitive_state=completed",
       "payload_trace=passed",
+      "payload_trace_header=passed",
       "payload_trace_schema=v3",
       "payload_trace_word_count=82",
       "payload_trace_event=kernel-exit",

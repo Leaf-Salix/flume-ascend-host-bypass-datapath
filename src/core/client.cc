@@ -3981,6 +3981,29 @@ bool PayloadTracePassed(const uint32_t* trace_words,
                                         include_thread_notify);
 }
 
+bool PayloadTraceHeaderMatchesDesc(
+    const flume_hcomm_payload_copy_desc_v1& desc,
+    const uint32_t* trace_words,
+    aclError read_status) {
+  if (read_status != ACL_SUCCESS || trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return false;
+  }
+  const uint64_t trace_bytes =
+      static_cast<uint64_t>(trace_words[8]) |
+      (static_cast<uint64_t>(trace_words[9]) << 32U);
+  return trace_words[5] == desc.role &&
+         trace_words[6] == desc.local_rank &&
+         trace_words[7] == desc.peer_rank &&
+         trace_bytes == desc.bytes &&
+         trace_words[10] == static_cast<uint32_t>(desc.reserved2[0]) &&
+         trace_words[11] == static_cast<uint32_t>(desc.reserved2[1]) &&
+         trace_words[12] == desc.completion_mode &&
+         trace_words[13] == desc.ready_notify_idx &&
+         trace_words[14] == desc.done_notify_idx;
+}
+
 std::string NotifyKernelStatusName(uint32_t status) {
   switch (status) {
     case 0xFFFFFFFFU:
@@ -4885,6 +4908,46 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
+  if (!PayloadTraceHeaderMatchesDesc(desc, kernel_trace_words, trace_ret)) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=passed "
+                       "payload_launch_api=") +
+           payload_launch_api + " " +
+           PayloadBatchModeDetail(desc) +
+           " payload_kernel_status=success "
+           "payload_failure_step=none "
+           "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+           "payload_echo=passed "
+           "payload_descriptor_fingerprint=passed "
+           "payload_trace_header=failed "
+           "expected_trace_role=" + std::to_string(desc.role) +
+           " expected_trace_local_rank=" + std::to_string(desc.local_rank) +
+           " expected_trace_peer_rank=" + std::to_string(desc.peer_rank) +
+           " expected_trace_bytes=" + std::to_string(desc.bytes) +
+           " expected_trace_batch_mode=" +
+           std::to_string(static_cast<uint32_t>(desc.reserved2[0])) +
+           " expected_trace_recv_path=" +
+           std::to_string(static_cast<uint32_t>(desc.reserved2[1])) +
+           " expected_trace_completion_mode=" +
+           std::to_string(desc.completion_mode) +
+           " expected_trace_ready_notify_idx=" +
+           std::to_string(desc.ready_notify_idx) +
+           " expected_trace_done_notify_idx=" +
+           std::to_string(desc.done_notify_idx) +
+           PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadValidationReasonDetail(kernel_status_words) +
+           PayloadEchoWordsDetail(kernel_status_words) +
+           PayloadDataProbeDetail(kernel_status_words) +
+           PayloadDeviceDataSideDetail(desc, kernel_status_words) +
+           PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
+           " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
+  }
   if (!PayloadTracePassed(kernel_trace_words, trace_ret,
                           resource_info.host_thread_notify_ready)) {
     *status = FLUME_ERR_BACKEND;
@@ -4934,6 +4997,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
          std::to_string(expected_desc_fingerprint) +
          " payload_trace_expected_thread_notify=" +
          (resource_info.host_thread_notify_ready ? "on" : "off") +
+         " payload_trace_header=passed" +
          PayloadStatusSchemaDetail() +
          PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadValidationReasonDetail(kernel_status_words) +
