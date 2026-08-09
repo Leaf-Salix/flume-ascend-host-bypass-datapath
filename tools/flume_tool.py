@@ -3165,6 +3165,12 @@ def _PayloadCandidateNextAction(text: str) -> str:
         return (f"candidate passed; rerun strict-positive focused on "
                 f"`payload_transfer_mode={transfer}` and then run storage "
                 "strict gate")
+    resource_layout_ok, resource_layout_reason = (
+        StrictPayloadResourceLayoutPassed(ExtractStrictPayloadRankLines(text)))
+    if not resource_layout_ok and resource_layout_reason != "missing-rank-line":
+        return (
+            "fix payload resource layout before accepting this candidate: "
+            f"`{resource_layout_reason}`")
     failure_step = MarkerValue(text, "payload_failure_step")
     first_error_event = MarkerValue(text, "payload_trace_first_error_event")
     if failure_step not in ("missing", "none"):
@@ -3294,6 +3300,8 @@ def WriteHcommPayloadStrictCandidateSummary(
             ExtractStrictPayloadRankLines(text))
         host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
             ExtractStrictPayloadRankLines(text))
+        resource_layout_ok, resource_layout_reason = (
+            StrictPayloadResourceLayoutPassed(ExtractStrictPayloadRankLines(text)))
         candidates.append({
             "name": result.name,
             "rc": result.returncode,
@@ -3306,6 +3314,9 @@ def WriteHcommPayloadStrictCandidateSummary(
             "trace_transfer": _CandidateMarker(
                 text, "payload_trace_transfer_mode"),
             "binding": _CandidateMarker(text, "payload_comm_binding"),
+            "engine": _CandidateMarker(text, "payload_resolved_engine"),
+            "resource_layout": (
+                "passed" if resource_layout_ok else resource_layout_reason),
             "batch": _CandidateMarker(text, "payload_batch_mode"),
             "recv": _CandidateMarker(text, "payload_recv_path"),
             "completion": _CandidateMarker(text, "payload_completion_mode"),
@@ -3349,8 +3360,8 @@ def WriteHcommPayloadStrictCandidateSummary(
         "checksum match, HCOMM primitive trace, and `fallback=none` can mark "
         "the payload path as passed.",
         "",
-        "| rank | candidate | rc | score | selected | evidence | rank0 | rank1 | transfer | trace_transfer | binding | batch | recv_path | completion | data_flow | host_data | failure_step | hcomm_ret | first_error | first_error_ret | trace_path | fallback | log | next_action |",
-        "|---:|---|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| rank | candidate | rc | score | selected | evidence | rank0 | rank1 | transfer | trace_transfer | binding | engine | resource_layout | batch | recv_path | completion | data_flow | host_data | failure_step | hcomm_ret | first_error | first_error_ret | trace_path | fallback | log | next_action |",
+        "|---:|---|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for idx, row in enumerate(ranked, start=1):
         log_name = Path(str(row["log"])).name
@@ -3358,7 +3369,9 @@ def WriteHcommPayloadStrictCandidateSummary(
             f"| {idx} | {row['name']} | {row['rc']} | {row['score']} | "
             f"{row['selected']} | {row['evidence']} | {row['rank0']} | "
             f"{row['rank1']} | {row['transfer']} | "
-            f"{row['trace_transfer']} | {row['binding']} | {row['batch']} | "
+            f"{row['trace_transfer']} | {row['binding']} | "
+            f"{row['engine']} | {row['resource_layout']} | "
+            f"{row['batch']} | "
             f"{row['recv']} | {row['completion']} | "
             f"{row['data_flow']} | {row['host_data']} | "
             f"{row['failure']} | {row['hcomm_ret']} | {row['first_error']} | "
@@ -3677,10 +3690,11 @@ def _PayloadCandidateMatrixRow(
     except OSError as exc:
         text = f"failed to read log: {exc}"
     passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
-    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(
-        ExtractStrictPayloadRankLines(text))
-    host_data_ok, host_data_reason = StrictPayloadHostDataPassed(
-        ExtractStrictPayloadRankLines(text))
+    rank_lines = ExtractStrictPayloadRankLines(text)
+    data_flow_ok, data_flow_reason = StrictPayloadDataFlowPassed(rank_lines)
+    host_data_ok, host_data_reason = StrictPayloadHostDataPassed(rank_lines)
+    resource_layout_ok, resource_layout_reason = (
+        StrictPayloadResourceLayoutPassed(rank_lines))
     return {
         "step": result.name,
         "returncode": str(result.returncode),
@@ -3696,6 +3710,9 @@ def _PayloadCandidateMatrixRow(
         "trace_error_ret": _CandidateMarker(
             text, "payload_trace_first_error_ret"),
         "binding": _CandidateMarker(text, "payload_comm_binding"),
+        "engine": _CandidateMarker(text, "payload_resolved_engine"),
+        "resource_layout": (
+            "passed" if resource_layout_ok else resource_layout_reason),
         "batch": _CandidateMarker(text, "payload_batch_mode"),
         "recv": _CandidateMarker(text, "payload_recv_path"),
         "completion": _CandidateMarker(text, "payload_completion_mode"),
@@ -3765,8 +3782,8 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | backend | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | engine | resource_layout | batch | completion | transfer | trace_path | backend | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -3774,7 +3791,8 @@ def WriteHcommPayloadWriteWithNotifyCandidateMatrix(
             f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
             f"{row['failure']} | {row['hcomm_ret']} | "
             f"{row['trace_error']} | {row['trace_error_ret']} | "
-            f"{row['binding']} | {row['batch']} | "
+            f"{row['binding']} | {row['engine']} | "
+            f"{row['resource_layout']} | {row['batch']} | "
             f"{row['completion']} | {row['transfer']} | "
             f"{row['trace']} | {row['backend']} | "
             f"{row['fallback']} | {row['log']} | {row['score']} | "
@@ -4010,8 +4028,8 @@ def WriteHcommPayloadWritePathCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | completion | transfer | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | engine | resource_layout | batch | completion | transfer | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -4019,7 +4037,8 @@ def WriteHcommPayloadWritePathCandidateMatrix(
             f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
             f"{row['failure']} | {row['hcomm_ret']} | "
             f"{row['trace_error']} | {row['trace_error_ret']} | "
-            f"{row['binding']} | {row['batch']} | "
+            f"{row['binding']} | {row['engine']} | "
+            f"{row['resource_layout']} | {row['batch']} | "
             f"{row['completion']} | {row['transfer']} | "
             f"{row['trace']} | {row['fallback']} | {row['log']} | "
             f"{row['score']} | {row['data_flow']} | {row['host_data']} | "
@@ -4516,8 +4535,8 @@ def WriteHcommPayloadCandidateMatrix(
         "",
         f"decision: {decision}",
         "",
-        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | batch | recv_path | completion | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
-        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
+        "| candidate | rc | selected | evidence | rank0 | rank1 | failure_step | hcomm_ret | first_error | first_error_ret | binding | engine | resource_layout | batch | recv_path | completion | trace_path | fallback | log | score | data_flow | host_data | focus_flags | next_action |",
+        "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---:|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -4525,7 +4544,8 @@ def WriteHcommPayloadCandidateMatrix(
             f"{row['evidence']} | {row['rank0']} | {row['rank1']} | "
             f"{row['failure']} | {row['hcomm_ret']} | "
             f"{row['trace_error']} | {row['trace_error_ret']} | "
-            f"{row['binding']} | {row['batch']} | {row['recv']} | "
+            f"{row['binding']} | {row['engine']} | "
+            f"{row['resource_layout']} | {row['batch']} | {row['recv']} | "
             f"{row['completion']} | "
             f"{row['trace']} | {row['fallback']} | {row['log']} | "
             f"{row['score']} | {row['data_flow']} | {row['host_data']} | "

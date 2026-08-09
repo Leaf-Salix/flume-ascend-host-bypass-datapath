@@ -1440,7 +1440,7 @@ def main() -> int:
                 in candidate_matrix_text)
         assert "best_candidate_score: `" in candidate_matrix_text
         assert "best_candidate_next_action: `" in candidate_matrix_text
-        assert "| score | data_flow | host_data | focus_flags | next_action |" in candidate_matrix_text
+        assert "| engine | resource_layout |" in candidate_matrix_text
         assert ("hcomm-payload-channel-handle-nobatch-direct-output-"
                 "channel-fence-candidate | 0 | yes | passed"
                 in candidate_matrix_text)
@@ -1578,7 +1578,7 @@ def main() -> int:
                 in write_candidate_matrix_text)
         assert "best_candidate_score: `" in write_candidate_matrix_text
         assert "best_candidate_next_action: `" in write_candidate_matrix_text
-        assert "| score | data_flow | host_data | focus_flags | next_action |" in write_candidate_matrix_text
+        assert "| engine | resource_layout |" in write_candidate_matrix_text
         assert ("hcomm-payload-write-path-nobatch-channel-fence-candidate"
                 in write_candidate_matrix_text)
         assert ("hcomm-payload-write-path-channel-handle-nobatch-"
@@ -1704,7 +1704,7 @@ def main() -> int:
                 in write_notify_matrix_text)
         assert "best_candidate_score: `" in write_notify_matrix_text
         assert "best_candidate_next_action: `" in write_notify_matrix_text
-        assert "| score | data_flow | host_data | focus_flags | next_action |" in write_notify_matrix_text
+        assert "| engine | resource_layout |" in write_notify_matrix_text
         assert ("hcomm-payload-write-with-notify-nobatch-"
                 "channel-fence-candidate" in write_notify_matrix_text)
         assert ("hcomm-payload-write-with-notify-channel-handle-nobatch-"
@@ -2953,6 +2953,7 @@ def main() -> int:
         assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in summary_text
         assert "selected_evidence_log: `" in summary_text
         assert "transfer | trace_transfer" in summary_text
+        assert "binding | engine | resource_layout" in summary_text
         assert "write | write" in summary_text
         assert "candidate passed; rerun strict-positive focused on `payload_transfer_mode=write`" in summary_text
 
@@ -2982,6 +2983,7 @@ def main() -> int:
         offline_text = offline_summary.read_text(encoding="utf-8")
         assert "best_candidate: `hcomm-payload-write-path-candidate`" in offline_text
         assert "best_candidate_focus_flags: `--hcomm-payload-write-path`" in offline_text
+        assert "binding | engine | resource_layout" in offline_text
 
         progress_dir = tmp / "candidate-progress-summary"
         progress_dir.mkdir()
