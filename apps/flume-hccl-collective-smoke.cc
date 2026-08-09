@@ -438,6 +438,26 @@ std::string DetailValueMarker(const std::string& key,
 const char* HcommPayloadCommBindingName(
     flume_hcomm_payload_comm_binding_t binding);
 
+const char* HcommPayloadLayoutName(
+    bool disable_batch,
+    flume_hcomm_payload_comm_binding_t comm_binding,
+    bool write_path,
+    bool write_with_notify,
+    bool effective_recv_direct_output) {
+  if (write_with_notify) {
+    return "write-with-notify";
+  }
+  if (write_path) {
+    return "write";
+  }
+  if (disable_batch &&
+      comm_binding == FLUME_HCOMM_PAYLOAD_COMM_BINDING_CHANNEL_HANDLE &&
+      effective_recv_direct_output) {
+    return "official-p2p";
+  }
+  return effective_recv_direct_output ? "read-direct-output" : "read-default";
+}
+
 std::vector<std::string> RequiredHcommPayloadIoMarkers(
     bool disable_batch,
     flume_hcomm_payload_comm_binding_t comm_binding,
@@ -541,6 +561,10 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_desc_batch_tag=",
       DetailValueMarker("payload_transfer_mode", transfer_mode),
       DetailValueMarker("payload_recv_path", recv_path),
+      DetailValueMarker("payload_layout",
+                        HcommPayloadLayoutName(
+                            disable_batch, comm_binding, write_path,
+                            write_with_notify, effective_recv_direct_output)),
       "payload_semantic_v6=present",
       "payload_semantic_v7=present",
       "payload_semantic_v8=present",

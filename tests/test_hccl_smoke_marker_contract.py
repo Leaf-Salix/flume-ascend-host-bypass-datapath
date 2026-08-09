@@ -45,6 +45,7 @@ REQUIRED_MARKERS = (
     "payload_trace_first_error_event=none",
     "payload_trace_first_error_ret=0",
     "payload_trace_first_error_index=-1",
+    'DetailValueMarker("payload_layout"',
     "payload_semantic_v10=present",
     "payload_semantic_v11=present",
     "payload_semantic_v12=present",

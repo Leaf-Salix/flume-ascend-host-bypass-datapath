@@ -2842,6 +2842,33 @@ flume_hcomm_payload_comm_binding_t PayloadDescCommBinding(
   return FLUME_HCOMM_PAYLOAD_COMM_BINDING_COMM_NAME;
 }
 
+const char* PayloadLayoutName(const flume_hcomm_payload_copy_desc_v1& desc) {
+  const bool batch_disabled =
+      desc.reserved2[0] == FLUME_HCOMM_PAYLOAD_BATCH_MODE_DISABLED;
+  const bool recv_direct_output =
+      desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  const bool write_path =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
+  const bool write_with_notify =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_WITH_NOTIFY) != 0;
+  const flume_hcomm_payload_comm_binding_t comm_binding =
+      PayloadDescCommBinding(desc);
+  if (write_with_notify) {
+    return "write-with-notify";
+  }
+  if (write_path) {
+    return "write";
+  }
+  if (batch_disabled &&
+      comm_binding == FLUME_HCOMM_PAYLOAD_COMM_BINDING_CHANNEL_HANDLE &&
+      recv_direct_output) {
+    return "official-p2p";
+  }
+  return recv_direct_output ? "read-direct-output" : "read-default";
+}
+
 uint64_t PayloadEchoBytes(const uint32_t* status_words) {
   return static_cast<uint64_t>(status_words[4]) |
          (static_cast<uint64_t>(status_words[5]) << 32U);
@@ -2928,6 +2955,7 @@ std::string PayloadDescriptorDetail(
          " payload_transfer_mode=" +
          (write_with_notify ? "write-with-notify" :
                               (write_path ? "write" : "read")) +
+         " payload_layout=" + PayloadLayoutName(desc) +
          " payload_write_notify_backend=" +
          (write_with_notify ? HcommWriteWithNotifyBackendName() : "none") +
          " payload_recv_path=" +

@@ -6042,6 +6042,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_desc_batch_tag=,"
             "payload_transfer_mode=read|write|write-with-notify,"
             "payload_recv_path=,"
+            "payload_layout=official-p2p|read-default|read-direct-output|write|write-with-notify,"
             "payload_semantic_v6=present,"
             "payload_semantic_v7=present,payload_semantic_v8=present,"
             "payload_semantic_v9=present,payload_semantic_v10=present,"

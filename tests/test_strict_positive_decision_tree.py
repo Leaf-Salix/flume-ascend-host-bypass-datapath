@@ -51,6 +51,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_status_word_count=17 "
             "payload_desc_batch_tag=default "
             "payload_transfer_mode=read "
+            "payload_layout=read-default "
             "payload_write_notify_backend=none "
             "payload_recv_path=local-buffer "
             "payload_desc_local_hccl_buffer_bytes=8192 "
@@ -219,6 +220,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_comm_binding=comm-name "
         "payload_desc_batch_tag=default "
         "payload_transfer_mode=read "
+        "payload_layout=read-default "
         "payload_recv_path=local-buffer "
             "payload_semantic_v6=present "
             "payload_semantic_v7=present "
@@ -240,6 +242,8 @@ def strict_write_path_log(include_verify: bool) -> str:
                         "payload_transfer_mode=write")
     text = text.replace("payload_trace_transfer_mode=read",
                         "payload_trace_transfer_mode=write")
+    text = text.replace("payload_layout=read-default",
+                        "payload_layout=write")
     text = text.replace("payload_trace_primitive_path=send-local-copy",
                         "payload_trace_primitive_path=send-write")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
@@ -253,6 +257,8 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
                         "payload_transfer_mode=write-with-notify")
     text = text.replace("payload_trace_transfer_mode=read",
                         "payload_trace_transfer_mode=write-with-notify")
+    text = text.replace("payload_layout=read-default",
+                        "payload_layout=write-with-notify")
     text = text.replace("payload_write_notify_backend=none",
                         "payload_write_notify_backend=blocking")
     text = text.replace("payload_trace_write_notify_backend=none",
@@ -329,10 +335,15 @@ def strict_log_with_channel_handle_binding(text: str) -> str:
 
 
 def strict_log_with_no_batch(text: str) -> str:
-    return text.replace("payload_batch_mode=on",
+    text = text.replace("payload_batch_mode=on",
                         "payload_batch_mode=off").replace(
                             "payload_trace_batch_mode=0",
                             "payload_trace_batch_mode=1")
+    if ("payload_comm_binding=channel-handle" in text and
+            "payload_recv_path=direct-output" in text):
+        text = text.replace("payload_layout=read-direct-output",
+                            "payload_layout=official-p2p")
+    return text
 
 
 def strict_write_path_with_direct_output_log() -> str:
@@ -585,6 +596,8 @@ def strict_log_with_recv_direct_output() -> str:
     if text.count(marker) < 2:
         raise AssertionError("synthetic log missing rank recv path markers")
     text = text.replace(marker, "payload_recv_path=direct-output")
+    text = text.replace("payload_layout=read-default",
+                        "payload_layout=read-direct-output")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-read-direct-output")
     return text.replace("payload_trace_recv_path=0",
@@ -1215,6 +1228,12 @@ def main() -> int:
             strict_channel_handle_direct_output)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_no_batch_direct_output)[0]
+        assert "payload_layout=read-direct-output" in (
+            strict_channel_handle_direct_output)
+        assert "payload_layout=official-p2p" in (
+            strict_channel_handle_no_batch_direct_output)
+        assert "payload_layout=read-default" not in (
+            strict_channel_handle_no_batch_direct_output)
         assert flume_tool.StrictPayloadRankEvidencePassed(
             strict_channel_handle_fence)[0]
         assert flume_tool.StrictPayloadRankEvidencePassed(
