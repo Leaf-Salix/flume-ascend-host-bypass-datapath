@@ -8225,6 +8225,19 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_path={tar_path if tar_path else '<unset>'}")
         print(f"json={'present' if json_exists else 'missing'}")
         print(f"aicpu_tar={'present' if tar_exists else 'missing'}")
+        json_forbidden_refs: dict[str, list[str]] = {}
+        if json_exists and json_path is not None:
+            json_forbidden_refs = FindForbiddenTokenRefsInFiles(
+                [json_path], HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+        json_forbidden_ref_state = (
+            "not-checked" if not json_exists
+            else ("present" if json_forbidden_refs else "absent"))
+        print("custom_op_json_forbidden_hccl_p2p_refs="
+              f"{json_forbidden_ref_state}")
+        for forbidden_name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS:
+            print("custom_op_json_forbidden_hccl_p2p_ref."
+                  f"{forbidden_name}="
+                  f"{'present' if json_forbidden_refs.get(forbidden_name) else 'absent'}")
         tar_state, tar_so_state, tar_members, tar_error = InspectAicpuTar(tar_path)
         print(f"aicpu_tar_readable={tar_state}")
         print(f"aicpu_tar_so.{HCOMM_CUSTOM_OP_KERNEL_SO}={tar_so_state}")
@@ -8583,7 +8596,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     for name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
                 forbidden_hccl_p2p_absent = (
                     forbidden_hccl_p2p_absent and
-                    forbidden_ref_state == "absent")
+                    forbidden_ref_state == "absent" and
+                    json_forbidden_ref_state == "absent")
                 found_payload_no_hccl_sendrecv_deps_marker = (
                     found_payload_no_hccl_sendrecv_deps_marker or
                     forbidden_hccl_p2p_absent)

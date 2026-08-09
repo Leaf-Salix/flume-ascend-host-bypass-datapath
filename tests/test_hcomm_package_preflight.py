@@ -50,7 +50,8 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
     ]
     if mode in ("v4", "v4_nbi_write_with_notify",
                 "v4_no_write_with_notify", "v4_with_hccl_p2p",
-                "v4_with_hccl_p2p_string", "wrong_values"):
+                "v4_with_hccl_p2p_string",
+                "v4_with_hccl_p2p_json", "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
         include_write_with_notify_nbi = mode == "v4_nbi_write_with_notify"
         lines.extend([
@@ -583,6 +584,21 @@ def write_package(tmp: Path, mode: str) -> tuple[Path, Path]:
                 "opKernelLib": "AICPUKernel",
                 "kernelSo": kernel_so,
                 "functionName": "FlumeHcommPayloadBuildModeInternalPayload",
+            }
+        }
+    if mode == "v4_with_hccl_p2p_json":
+        payload["HcclSend"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "HcclSend",
+            }
+        }
+        payload["HcclRecv"] = {
+            "opInfo": {
+                "opKernelLib": "AICPUKernel",
+                "kernelSo": kernel_so,
+                "functionName": "HcclRecv",
             }
         }
     json_path = tmp / f"pkg_{mode}.json"
@@ -1208,6 +1224,9 @@ def main() -> int:
             assert "ctypes unavailable" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_refs=absent" in v4.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_ref.HcclSend=absent" in v4.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_ref.HcclRecv=absent" in v4.stdout
         assert "aicpu_tar_forbidden_hccl_p2p_refs=absent" in v4.stdout
         assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclSend=absent" in v4.stdout
         assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclRecv=absent" in v4.stdout
@@ -1254,6 +1273,25 @@ def main() -> int:
         assert "payload_no_hccl_sendrecv_deps=failed" in hccp_string.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "Send/Recv symbols") in hccp_string.stdout
+
+        hccp_json_cfg, hccp_json_tar = write_package(
+            tmp, mode="v4_with_hccl_p2p_json")
+        hccp_json = run_preflight(repo, hccp_json_cfg, hccp_json_tar)
+        if hccp_json.returncode == 0:
+            print(hccp_json.stdout)
+            print(hccp_json.stderr, file=sys.stderr)
+            raise AssertionError(
+                "payload package with HCCL P2P JSON refs passed")
+        assert "payload_primitive_deps=present" in hccp_json.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=absent" in hccp_json.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=absent" in hccp_json.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_refs=absent" in hccp_json.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_refs=present" in hccp_json.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_ref.HcclSend=present" in hccp_json.stdout
+        assert "custom_op_json_forbidden_hccl_p2p_ref.HcclRecv=present" in hccp_json.stdout
+        assert "payload_no_hccl_sendrecv_deps=failed" in hccp_json.stdout
+        assert ("reason=payload kernel package references forbidden HCCL "
+                "Send/Recv symbols") in hccp_json.stdout
 
         nbi_write_notify_json, nbi_write_notify_tar = write_package(
             tmp, mode="v4_nbi_write_with_notify")
