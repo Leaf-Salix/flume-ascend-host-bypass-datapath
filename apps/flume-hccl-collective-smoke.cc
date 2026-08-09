@@ -66,6 +66,9 @@
 #ifndef FLUME_HAVE_HCOMM_PRIMITIVES
 #define FLUME_HAVE_HCOMM_PRIMITIVES 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+#define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_RANK_GRAPH
 #define FLUME_HAVE_HCOMM_RANK_GRAPH 0
 #endif
@@ -2561,6 +2564,8 @@ int main(int argc, char** argv) {
             << " hcomm_channel_res=" << FLUME_HAVE_HCOMM_CHANNEL_RES
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
+            << " hcomm_write_with_notify="
+            << FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
             << " hcomm_rank_graph=" << FLUME_HAVE_HCOMM_RANK_GRAPH
             << " hcomm_aicpu_kernel_launch="
             << FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH
@@ -2600,6 +2605,8 @@ int main(int argc, char** argv) {
             << OnOff(caps.hcomm_payload_direct_aclrt_host_args)
             << " hcomm_payload_thread_notify="
             << OnOff(caps.hcomm_payload_thread_notify)
+            << " hcomm_write_with_notify="
+            << OnOff(caps.hcomm_write_with_notify)
             << " hcomm_launcher_public_hccl="
             << (FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH ? "on" : "off")
             << " hcomm_launcher_direct_aclrt="

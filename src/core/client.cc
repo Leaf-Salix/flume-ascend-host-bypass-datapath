@@ -5351,6 +5351,8 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
       (FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_ACLRT_CUSTOM_OP_HOST_ARGS) ? 1U : 0U;
   caps.hcomm_payload_thread_notify =
       (FLUME_HAVE_HCOMM_THREAD_EXPORT && FLUME_HAVE_HCOMM_PRIMITIVES) ? 1U : 0U;
+  caps.hcomm_write_with_notify =
+      FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY ? 1U : 0U;
   caps.hcomm_payload_scheduler_candidate =
       (sim_attached ||
        (FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES &&

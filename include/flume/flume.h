@@ -123,6 +123,7 @@ typedef struct {
   uint32_t hcomm_payload_direct_aclrt;
   uint32_t hcomm_payload_direct_aclrt_host_args;
   uint32_t hcomm_payload_thread_notify;
+  uint32_t hcomm_write_with_notify;
 } flume_backend_caps_t;
 
 const char *flume_status_string(int status);
