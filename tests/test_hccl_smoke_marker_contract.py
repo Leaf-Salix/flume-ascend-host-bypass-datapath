@@ -10,6 +10,7 @@ from pathlib import Path
 REQUIRED_MARKERS = (
     "payload_status_schema=v5",
     "payload_status_word_count=15",
+    "payload_local_buffer_prime=passed",
     "payload_echo=passed",
     "payload_descriptor_fingerprint=passed",
     "payload_data_probe=observed",

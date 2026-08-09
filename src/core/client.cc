@@ -2669,6 +2669,55 @@ aclError SyncAclStreamForHcomm(aclrtStream stream, uint32_t timeout_sec) {
 #endif
 }
 
+uint8_t HcommPayloadLocalPrimeByte(flume::hcomm_payload::PayloadRole role,
+                                   uint32_t local_rank,
+                                   uint32_t peer_rank,
+                                   uint64_t offset) {
+  const uint8_t role_seed =
+      role == flume::hcomm_payload::PayloadRole::kSend ? 0x5AU : 0xC3U;
+  return static_cast<uint8_t>(
+      0xA5U ^ role_seed ^ ((local_rank * 17U) & 0xFFU) ^
+      ((peer_rank * 31U) & 0xFFU) ^ (offset & 0xFFU) ^
+      ((offset >> 8U) & 0xFFU));
+}
+
+aclError PrimeHcommPayloadLocalBuffer(
+    flume::hcomm_payload::PayloadRole role,
+    const CommState& state,
+    uint32_t peer_rank,
+    const HcommChannelResourceInfo& resource_info,
+    uint64_t bytes) {
+  constexpr size_t kChunkBytes = 64U * 1024U;
+  std::vector<uint8_t> scratch(kChunkBytes);
+  uint64_t copied = 0;
+  while (copied < bytes) {
+    const uint64_t remaining = bytes - copied;
+    const size_t chunk =
+        static_cast<size_t>(std::min<uint64_t>(remaining, scratch.size()));
+    for (size_t i = 0; i < chunk; ++i) {
+      scratch[i] =
+          HcommPayloadLocalPrimeByte(role, state.rank, peer_rank, copied + i);
+    }
+    uint8_t* dst = static_cast<uint8_t*>(resource_info.local_buffer) + copied;
+    const size_t dst_max =
+        static_cast<size_t>(resource_info.local_buffer_bytes - copied);
+    aclError ret = aclrtMemcpy(dst, dst_max, scratch.data(), chunk,
+                               ACL_MEMCPY_HOST_TO_DEVICE);
+    if (ret != ACL_SUCCESS) {
+      return ret;
+    }
+    copied += chunk;
+  }
+  return ACL_SUCCESS;
+}
+
+std::string PayloadLocalPrimeDetail(uint64_t bytes) {
+  return std::string(" payload_local_buffer_prime=passed"
+                     " payload_local_buffer_prime_pattern=strict-sentinel-v1"
+                     " payload_local_buffer_prime_bytes=") +
+         std::to_string(bytes);
+}
+
 std::string PayloadKernelStatusName(uint32_t status) {
   switch (status) {
     case 0xFFFFFFFFU:
@@ -3799,6 +3848,20 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
   desc.status_word = reinterpret_cast<uint64_t>(kernel_status_dev);
   desc.status_word_count = FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT;
   desc.status_schema_version = FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION;
+  acl_ret = PrimeHcommPayloadLocalBuffer(role, state, peer_rank,
+                                         resource_info, bytes);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=not-attempted "
+                       "stage3b3e_payload_descriptor_handoff=failed "
+                       "payload_local_buffer_prime=failed "
+                       "api=aclrtMemcpy(local_hccl_buffer_prime) error=\"") +
+           AclErrorMessage(acl_ret) + "\"" +
+           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+  }
+  const std::string local_prime_detail = PayloadLocalPrimeDetail(bytes);
 
   aclrtBinHandle bin_handle = nullptr;
   aclrtBinaryLoadOption option = {};
@@ -3816,7 +3879,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_direct_aclrt_payload_loader=failed "
            "api=aclrtBinaryLoadFromFile error=\"") +
            AclErrorMessage(acl_ret) +
-           "\"" + PayloadDescriptorDetail(desc) +
+           "\"" + local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3836,7 +3899,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_abi=v4-missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3856,7 +3919,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_semantic=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3876,7 +3939,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_semantic=present payload_semantic_v5=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V5_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3897,7 +3960,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic=present payload_semantic_v5=present "
            "payload_semantic_v6=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V6_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3919,7 +3982,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v6=present payload_semantic_v7=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V7_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3941,7 +4004,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v6=present payload_semantic_v7=present "
            "payload_semantic_v8=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V8_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3964,7 +4027,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v8=present payload_semantic_v9=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V9_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -3987,7 +4050,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v8=present payload_semantic_v9=present "
            "payload_semantic_v10=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V10_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4011,7 +4074,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v10=present payload_semantic_v11=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V11_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4036,7 +4099,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              "payload_semantic_v10=present payload_semantic_v11=present "
              "payload_semantic_v12=missing kernel_func=" +
              FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC +
-             PayloadDescriptorDetail(desc) +
+             local_prime_detail + PayloadDescriptorDetail(desc) +
              " custom_op_package=present" + HcommPackageDetail(decision);
     }
   }
@@ -4062,7 +4125,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "payload_semantic_v12=present payload_semantic_v13=missing "
            "kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4082,7 +4145,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_requires_comm_acquire=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4102,7 +4165,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_status_schema_marker=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4122,7 +4185,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_status_word_count_marker=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_STATUS_WORD_COUNT_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4142,7 +4205,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_trace_schema_marker=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4162,7 +4225,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_trace_word_count_marker=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4182,7 +4245,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_build_mode=not-internal kernel_func=" +
            FLUME_HCOMM_PAYLOAD_BUILD_MODE_INTERNAL_PAYLOAD_FUNC +
-           PayloadDescriptorDetail(desc) +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
@@ -4201,7 +4264,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "\" stage3b3e_payload_descriptor_handoff=blocked "
            "stage3b3e_direct_aclrt_payload_launch=not-attempted kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           " payload_kernel=missing" + PayloadDescriptorDetail(desc) +
+           " payload_kernel=missing" + local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" +
            HcommPackageDetail(decision);
   }
@@ -4220,7 +4283,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=failed "
                        "api=aclrtMalloc(payload_trace) error=\"") +
            AclErrorMessage(acl_ret) + "\"" +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   acl_ret = aclrtMemcpy(kernel_trace_dev, sizeof(kernel_trace_words),
                         kernel_trace_words, sizeof(kernel_trace_words),
@@ -4235,7 +4298,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=failed "
                        "api=aclrtMemcpy(payload_trace_h2d) error=\"") +
            AclErrorMessage(acl_ret) + "\"" +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   desc.reserved2[2] = reinterpret_cast<uint64_t>(kernel_trace_dev);
 
@@ -4262,7 +4325,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=failed "
                        "api=aclrtKernelArgsInit error=\"") +
            AclErrorMessage(acl_ret) + "\"" +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 
   aclrtParamHandle param_handle = nullptr;
@@ -4278,7 +4341,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=failed "
                        "api=aclrtKernelArgsAppend error=\"") +
            AclErrorMessage(acl_ret) + "\"" +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 
   acl_ret = aclrtKernelArgsFinalize(args_handle);
@@ -4292,7 +4355,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                        "stage3b3e_payload_descriptor_handoff=failed "
                        "api=aclrtKernelArgsFinalize error=\"") +
            AclErrorMessage(acl_ret) + "\"" +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 #endif
 
@@ -4315,7 +4378,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                          "hcomm_ret=") +
              std::to_string(notify_ret) + " kernel_func=" +
              FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-             HcommPayloadRuntimeDetail(desc, resource_info, decision);
+             local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
     }
   }
 #endif
@@ -4344,7 +4407,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            payload_launch_api + " error=\"" +
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 
 #if FLUME_HAVE_HCOMM_PRIMITIVES
@@ -4402,7 +4465,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              PayloadTraceWordsDetail(observed_trace_words, trace_ret) +
              " kernel_func=" +
              FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-             HcommPayloadRuntimeDetail(desc, resource_info, decision);
+             local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
     }
   }
 #endif
@@ -4451,7 +4514,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadTraceWordsDetail(observed_trace_words, trace_ret) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 
   acl_ret = aclrtMemcpy(kernel_status_words, sizeof(kernel_status_words),
@@ -4476,7 +4539,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            AclErrorMessage(acl_ret) + "\" kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
 
   aclError trace_ret = aclrtMemcpy(kernel_trace_words,
@@ -4514,7 +4577,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   if (kernel_hcomm_ret != 0) {
     *status = FLUME_ERR_BACKEND;
@@ -4537,7 +4600,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   const uint32_t expected_role =
       role == flume::hcomm_payload::PayloadRole::kSend ?
@@ -4581,7 +4644,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " expected_desc_fingerprint=" +
            std::to_string(expected_desc_fingerprint) +
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   if (!PayloadTracePassed(kernel_trace_words, trace_ret,
                           resource_info.host_thread_notify_ready)) {
@@ -4608,7 +4671,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            PayloadDataProbeDetail(kernel_status_words) +
            PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+           local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
   *status = FLUME_OK;
   return std::string("stage3b3e_payload_copy=passed "
@@ -4637,7 +4700,7 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
          PayloadTraceWordsDetail(kernel_trace_words, trace_ret) + " " +
          "kernel_func=" +
          FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
-         HcommPayloadRuntimeDetail(desc, resource_info, decision);
+         local_prime_detail + HcommPayloadRuntimeDetail(desc, resource_info, decision);
 }
 
 std::string TryLaunchHcommDirectAclrtCanary(

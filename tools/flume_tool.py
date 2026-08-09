@@ -2065,6 +2065,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_failure_step=none",
     "payload_status_word=0",
     "payload_kernel_hcomm_ret=0",
+    "payload_local_buffer_prime=passed",
     "payload_status_schema=v5",
     "payload_status_word_count=15",
     "payload_echo=passed",
@@ -4998,6 +4999,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
     strict_failure_step = marker_value(strict, "payload_failure_step")
     strict_status_word = marker_value(strict, "payload_status_word")
     strict_hcomm_ret = marker_value(strict, "payload_kernel_hcomm_ret")
+    strict_local_prime = marker_value(strict, "payload_local_buffer_prime")
+    strict_local_prime_pattern = marker_value(
+        strict, "payload_local_buffer_prime_pattern")
+    strict_local_prime_bytes = marker_value(
+        strict, "payload_local_buffer_prime_bytes")
     strict_status_schema = marker_value(strict, "payload_status_schema")
     strict_status_word_count = marker_value(strict, "payload_status_word_count")
     strict_echo = marker_value(strict, "payload_echo")
@@ -5307,6 +5313,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| kernel status | {strict_kernel} | `payload_kernel_status`, status word `{strict_status_word}` |",
             f"| kernel failure step | {strict_failure_step} | `payload_failure_step` maps status word to a HCOMM stage |",
             f"| kernel HCOMM ret | {strict_hcomm_ret} | `payload_kernel_hcomm_ret` must be `0` on success |",
+            f"| local HCCL Buffer prime | {strict_local_prime} | pattern={strict_local_prime_pattern}, bytes={strict_local_prime_bytes}; strict smoke seeds the local HCCL Buffer before launch so entry/exit fingerprints prove primitive data movement rather than stale contents |",
             f"| primitive state | {strict_primitive_state} | `payload_primitive_state`; `pending` points to a primitive timeout/hang |",
             f"| host descriptor fingerprint | bytes={strict_desc_bytes}, ready={strict_desc_ready_notify}, done={strict_desc_done_notify}, completion={strict_desc_completion}/{strict_completion_mode}, thread_notify={strict_desc_thread_notify}, transfer={strict_transfer_mode}, write_notify_backend=rank0:{strict_rank0_write_notify_selected}/rank1:{strict_rank1_write_notify_selected}, batch_tag={strict_desc_batch_tag}, recv_path={strict_recv_path}, local_buffer={strict_desc_local_buffer}, remote_buffer={strict_desc_remote_buffer} | `payload_desc_*` fields passed to the direct ACL kernel; `payload_write_notify_backend` is the host-selected primitive backend before device trace is available |",
             f"| HCOMM resource fingerprint | engine={strict_resolved_engine}, protocol={strict_resolved_protocol}, channel_desc={strict_channel_desc}, channels={strict_channel_count}, notify_num={strict_notify_num}, usable={strict_usable_buffer}, local={strict_local_buffer}, remote={strict_remote_buffer} | resource selected before direct ACL payload launch |",

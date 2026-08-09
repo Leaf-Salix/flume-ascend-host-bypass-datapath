@@ -90,7 +90,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_completion_mode=ordered-notify "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
+        "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_bytes=4096 payload_primitive_state=completed "
         "payload_status_schema=v5 "
         "payload_status_word_count=15 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         + send_data_probe +
@@ -132,7 +132,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_completion_mode=ordered-notify "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
+        "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_bytes=4096 payload_primitive_state=completed "
         "payload_status_schema=v5 "
         "payload_status_word_count=15 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=recv "
         + recv_data_probe +
@@ -179,7 +179,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
+        "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_bytes=4096 payload_primitive_state=completed "
         "payload_status_schema=v5 "
         "payload_status_word_count=15 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         "payload_trace=passed payload_trace_schema=v2 "
@@ -413,7 +413,7 @@ def strict_log_with_rank1_remote_read_failure() -> str:
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_status_schema=v5 "
+        "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_bytes=4096 payload_status_schema=v5 "
         "payload_status_word_count=15 payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send "
         "fallback=none\" "
         "payload_source_checksum=1234",
@@ -484,7 +484,7 @@ def strict_log_with_rank1_pending_remote_read() -> str:
         "stage3b3e_payload_sync=passed "
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 "
-        "payload_kernel_hcomm_ret=0 payload_primitive_state=completed "
+        "payload_kernel_hcomm_ret=0 payload_local_buffer_prime=passed payload_local_buffer_prime_pattern=strict-sentinel-v1 payload_local_buffer_prime_bytes=4096 payload_primitive_state=completed "
         "payload_status_schema=v5 payload_status_word_count=15 "
         "payload_echo=passed payload_descriptor_fingerprint=passed payload_role=send payload_batch_mode=on "
         "fallback=none\" "
@@ -970,6 +970,8 @@ def main() -> int:
                 in text)
         assert "| direct ACL payload launch ABI | host-args |" in text
         assert "| kernel failure step | none |" in text
+        assert ("| local HCCL Buffer prime | passed | "
+                "pattern=strict-sentinel-v1, bytes=4096;") in text
         assert "| payload checksum match | yes |" in text
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "

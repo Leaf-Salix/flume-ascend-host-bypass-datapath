@@ -493,6 +493,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_failure_step=none",
       "payload_status_word=0",
       "payload_kernel_hcomm_ret=0",
+      "payload_local_buffer_prime=passed",
       "payload_status_schema=v5",
       "payload_status_word_count=15",
       "payload_echo=passed",
