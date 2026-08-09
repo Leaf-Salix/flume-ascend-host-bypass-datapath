@@ -745,7 +745,11 @@ python3 tools/flume_tool.py hcomm-storage-verify-logs logs/flume-check-...
 该命令只有在 strict-positive payload 证据完整且 storage smoke 走
 `storage_hbm=hcomm-payload-staging` 时返回 0。它同样会重建
 `HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md`，用于从 storage-over-HCOMM 的候选
-日志中找出最佳复跑命令。
+日志中找出最佳复跑命令。通过时的 `hcomm-storage-strict-evidence` 还会摘录
+所选 payload 日志中的 `payload_copy_api=hcomm-direct-aclrt`、
+`payload_hccl_p2p_api=not-used`、`payload_no_hccl_sendrecv=passed` 和
+`payload_trace_primitive_counts=passed`，便于单文件审计 storage marker 是否
+确实继承了 HCOMM direct-copy 证据。
 
 如果要同时采集 CANN fixture：
 

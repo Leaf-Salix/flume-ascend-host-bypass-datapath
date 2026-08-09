@@ -2797,6 +2797,24 @@ def main() -> int:
         assert "selected_storage_rank1_bytes=4096" in storage_evidence_text
         assert "selected_storage_rank1_checksum=7" in storage_evidence_text
         assert "selected_storage_hcomm_path=passed" in storage_evidence_text
+        assert ("selected_storage_payload_rank0_copy_api=hcomm-direct-aclrt"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank1_copy_api=hcomm-direct-aclrt"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank0_hccl_p2p_api=not-used"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank1_hccl_p2p_api=not-used"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank0_no_hccl_sendrecv=passed"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank1_no_hccl_sendrecv=passed"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank0_trace_primitive_counts=passed"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank1_trace_primitive_counts=passed"
+                in storage_evidence_text)
+        assert ("selected_storage_payload_rank1_trace_read_count=1"
+                in storage_evidence_text)
 
         channel_fallback_log_dir = tmp / "flume-check-channel-fallback"
         channel_fallback_log_dir.mkdir()

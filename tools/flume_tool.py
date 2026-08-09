@@ -6642,6 +6642,10 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
     def RankSummaryLines(rank: int) -> list[str]:
         line = rank_lines[rank]
         names = [
+            "payload_copy_api",
+            "payload_hccl_p2p_api",
+            "payload_no_hccl_sendrecv",
+            "payload_no_hccl_payload_collective",
             "payload_kernel_status",
             "payload_failure_step",
             "payload_status_word",
@@ -6649,6 +6653,16 @@ def StrictPayloadEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]
             "payload_primitive_state",
             "payload_trace_schema",
             "payload_trace_word_count",
+            "payload_trace_order",
+            "payload_trace_ret_order",
+            "payload_trace_primitive_counts",
+            "payload_trace_local_copy_count",
+            "payload_trace_read_count",
+            "payload_trace_write_count",
+            "payload_trace_write_notify_count",
+            "payload_trace_notify_record_count",
+            "payload_trace_notify_wait_count",
+            "payload_trace_channel_fence_count",
             "payload_trace_count",
             "payload_trace_status_word",
             "payload_trace_hcomm_ret",
@@ -6723,7 +6737,36 @@ def HcommStorageEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]:
     focus_flags = (_PayloadCandidateFocusFlags(command) if command else
                    "<unknown>")
     rank1_line = StorageHbmRank1Line(text)
-    return [
+    rank_lines = ExtractStrictPayloadRankLines(text)
+
+    def StoragePayloadRankSummaryLines(rank: int) -> list[str]:
+        line = rank_lines.get(rank, "")
+        names = [
+            "payload_copy_api",
+            "payload_hccl_p2p_api",
+            "payload_no_hccl_sendrecv",
+            "payload_no_hccl_payload_collective",
+            "payload_trace_primitive_counts",
+            "payload_trace_local_copy_count",
+            "payload_trace_read_count",
+            "payload_trace_write_count",
+            "payload_trace_write_notify_count",
+            "payload_trace_notify_record_count",
+            "payload_trace_notify_wait_count",
+            "payload_trace_channel_fence_count",
+            "payload_trace_primitive_path",
+            "payload_trace_operand_layout",
+            "payload_transfer_mode",
+            "payload_recv_path",
+            "fallback",
+        ]
+        return [
+            f"selected_storage_payload_rank{rank}_{name.removeprefix('payload_')}="
+            f"{MarkerValueFromLine(line, name)}"
+            for name in names
+        ]
+
+    summary = [
         f"selected_storage_evidence_log={evidence_log.name}",
         f"selected_storage_command={command_detail}",
         f"selected_storage_focus_flags={focus_flags}",
@@ -6736,6 +6779,9 @@ def HcommStorageEvidenceSummaryLines(evidence_log: Optional[Path]) -> list[str]:
         "selected_storage_hcomm_path=" +
         ("passed" if StorageHbmHcommPathPassed(text) else "failed"),
     ]
+    summary.extend(StoragePayloadRankSummaryLines(0))
+    summary.extend(StoragePayloadRankSummaryLines(1))
+    return summary
 
 
 def AnalyzeHcommPayloadStrictPositiveLogs(

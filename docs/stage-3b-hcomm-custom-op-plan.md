@@ -751,6 +751,11 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
 The command records both `hcomm-payload-strict-evidence` and
 `hcomm-storage-strict-evidence`; the second gate requires strict-positive
 payload copy plus `storage_hbm=hcomm-payload-staging`. If the storage-over-HCOMM
+gate passes, the storage evidence file also records the selected payload
+rank markers for `payload_copy_api=hcomm-direct-aclrt`,
+`payload_hccl_p2p_api=not-used`, `payload_no_hccl_sendrecv=passed`, and
+`payload_trace_primitive_counts=passed`, so the storage marker is auditable
+without manually correlating multiple logs. If the storage-over-HCOMM
 gate fails after package preflight, the optional write-path matrix, no-batch,
 tagged-batch, and channel-fence reruns collect the same A/B evidence as the
 focused payload gate, but the final storage gate still requires the HCOMM
