@@ -2133,6 +2133,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_semantic_v13=present",
     "payload_semantic_v14=present",
     "payload_semantic_v15=present",
+    "payload_official_p2p_layout=present",
     "payload_thread_notify_order=",
     "payload_pattern=strict-v1",
     "fallback=none",

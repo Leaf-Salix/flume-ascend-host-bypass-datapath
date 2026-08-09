@@ -75,7 +75,8 @@ def strict_log(include_verify: bool) -> str:
                        "payload_semantic_v12=present "
                        "payload_semantic_v13=present "
                        "payload_semantic_v14=present "
-                       "payload_semantic_v15=present")
+                       "payload_semantic_v15=present "
+                       "payload_official_p2p_layout=present")
     send_data_probe = (" payload_data_probe=observed "
                        "payload_data_user_entry_fingerprint=222 "
                        "payload_data_local_entry_fingerprint=111 "
@@ -1135,6 +1136,18 @@ def main() -> int:
         assert ("rank1 user-entry/local-entry/remote-entry/transfer-exit/"
                 "local-exit/user-exit=111/111/222/222/222/222") in text
         assert "start Stage 3B.4 storage rewiring" in text
+        strict_no_official_p2p = write(
+            tmp / "strict-no-official-p2p.log",
+            strict_log(True).replace(
+                " payload_official_p2p_layout=present", ""))
+        no_official_p2p_dir = tmp / "no-official-p2p"
+        no_official_p2p_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_official_p2p_dir, smoke, strict_no_official_p2p, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_no_official_p2p.read_text(encoding="utf-8"))[0]
         strict_data_mismatch = write(tmp / "strict-data-mismatch.log",
                                      strict_log_with_data_flow_mismatch())
         data_mismatch_dir = tmp / "data-mismatch"

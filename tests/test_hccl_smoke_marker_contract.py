@@ -52,6 +52,7 @@ REQUIRED_MARKERS = (
     "payload_semantic_v13=present",
     "payload_semantic_v14=present",
     "payload_semantic_v15=present",
+    "payload_official_p2p_layout=present",
 )
 
 STALE_MARKERS = (

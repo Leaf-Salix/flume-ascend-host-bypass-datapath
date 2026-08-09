@@ -3736,6 +3736,7 @@ std::string HcommPayloadRuntimeDetail(
          "payload_semantic_v10=present payload_semantic_v11=present "
          "payload_semantic_v12=present payload_semantic_v13=present "
          "payload_semantic_v14=present payload_semantic_v15=present "
+         "payload_official_p2p_layout=present "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
 }
@@ -4118,30 +4119,28 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
-  if (payload_write_with_notify) {
-    aclrtFuncHandle semantic_v12_func_handle = nullptr;
-    acl_ret = aclrtBinaryGetFunction(
-        bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC,
-        &semantic_v12_func_handle);
-    if (acl_ret != ACL_SUCCESS) {
-      (void)aclrtBinaryUnLoad(bin_handle);
-      (void)aclrtFree(kernel_status_dev);
-      *status = FLUME_ERR_UNSUPPORTED;
-      return std::string("stage3b3e_payload_copy=unsupported "
-                         "stage3b3e_direct_aclrt_payload_loader=unsupported "
-                         "api=aclrtBinaryGetFunction error=\"") +
-             AclErrorMessage(acl_ret) +
-             "\" stage3b3e_payload_descriptor_handoff=blocked "
-             "stage3b3e_direct_aclrt_payload_launch=not-attempted "
-             "payload_semantic=present payload_semantic_v5=present "
-             "payload_semantic_v6=present payload_semantic_v7=present "
-             "payload_semantic_v8=present payload_semantic_v9=present "
-             "payload_semantic_v10=present payload_semantic_v11=present "
-             "payload_semantic_v12=missing kernel_func=" +
-             FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC +
-             local_prime_detail + PayloadDescriptorDetail(desc) +
-             " custom_op_package=present" + HcommPackageDetail(decision);
-    }
+  aclrtFuncHandle semantic_v12_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC,
+      &semantic_v12_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_semantic=present payload_semantic_v5=present "
+           "payload_semantic_v6=present payload_semantic_v7=present "
+           "payload_semantic_v8=present payload_semantic_v9=present "
+           "payload_semantic_v10=present payload_semantic_v11=present "
+           "payload_semantic_v12=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V12_FUNC +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
   }
 
   aclrtFuncHandle semantic_v13_func_handle = nullptr;
@@ -4236,6 +4235,26 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            "stage3b3e_direct_aclrt_payload_launch=not-attempted "
            "payload_requires_comm_acquire=missing kernel_func=" +
            FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC +
+           local_prime_detail + PayloadDescriptorDetail(desc) +
+           " custom_op_package=present" + HcommPackageDetail(decision);
+  }
+
+  aclrtFuncHandle official_p2p_func_handle = nullptr;
+  acl_ret = aclrtBinaryGetFunction(
+      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
+      &official_p2p_func_handle);
+  if (acl_ret != ACL_SUCCESS) {
+    (void)aclrtBinaryUnLoad(bin_handle);
+    (void)aclrtFree(kernel_status_dev);
+    *status = FLUME_ERR_UNSUPPORTED;
+    return std::string("stage3b3e_payload_copy=unsupported "
+                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                       "api=aclrtBinaryGetFunction error=\"") +
+           AclErrorMessage(acl_ret) +
+           "\" stage3b3e_payload_descriptor_handoff=blocked "
+           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+           "payload_official_p2p_layout=missing kernel_func=" +
+           FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC +
            local_prime_detail + PayloadDescriptorDetail(desc) +
            " custom_op_package=present" + HcommPackageDetail(decision);
   }
