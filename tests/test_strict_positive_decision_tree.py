@@ -3053,6 +3053,24 @@ def main() -> int:
         assert found_strict_log == log_dir / "02-hcomm-payload-strict-positive.log"
         assert package_log == log_dir / "00-hcomm-custom-op-package-preflight.log"
         assert tree.exists()
+        strict_pass_tree = tree
+        strict_pass_log = found_strict_log
+
+        official_log_dir = tmp / "flume-check-synthetic-official-pass"
+        official_log_dir.mkdir()
+        write(official_log_dir / "00-hcomm-custom-op-package-preflight.log",
+              payload_ready_package_log())
+        official_strict = write(
+            official_log_dir / "01-hcomm-payload-official-p2p-positive.log",
+            strict_channel_handle_no_batch_direct_output)
+        tree, passed, _smoke_log, found_strict_log, package_log = (
+            flume_tool.AnalyzeHcommPayloadStrictPositiveLogs(
+                official_log_dir))
+        assert passed
+        assert found_strict_log == official_strict
+        assert package_log == (
+            official_log_dir / "00-hcomm-custom-op-package-preflight.log")
+        assert tree.exists()
 
         fail_log_dir = tmp / "flume-check-synthetic-fail"
         fail_log_dir.mkdir()
@@ -3066,8 +3084,8 @@ def main() -> int:
 
         pass_runner = flume_tool.Runner(tmp / "runner-pass")
         flume_tool.RecordStrictPositiveEvidenceGate(
-            pass_runner, tree, True, required=True,
-            evidence_log=found_strict_log)
+            pass_runner, strict_pass_tree, True, required=True,
+            evidence_log=strict_pass_log)
         assert pass_runner.write_summary() == 0
         pass_evidence_logs = sorted(pass_runner.run_dir.glob(
             "*-hcomm-payload-strict-evidence.log"))

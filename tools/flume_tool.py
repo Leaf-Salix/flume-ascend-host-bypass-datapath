@@ -6195,6 +6195,12 @@ def FindStepLog(run_dir: Path, step_names: Iterable[str]) -> Optional[Path]:
     return None
 
 
+HCOMM_PAYLOAD_STRICT_STEP_NAMES = (
+    "hcomm-payload-official-p2p-positive",
+    "hcomm-payload-strict-positive",
+)
+
+
 HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-nobatch-diagnostic",
     "hcomm-payload-direct-output-diagnostic",
@@ -6399,7 +6405,7 @@ def AnalyzeHcommPayloadStrictPositiveLogs(
         run_dir: Path) -> tuple[Path, bool, Optional[Path], Optional[Path],
                                 Optional[Path]]:
     smoke_log = FindStepLog(run_dir, ["hccl-collective-smoke"])
-    strict_log = FindStepLog(run_dir, ["hcomm-payload-strict-positive"])
+    strict_log = FindStepLog(run_dir, HCOMM_PAYLOAD_STRICT_STEP_NAMES)
     package_log = FindStepLog(run_dir, ["hcomm-custom-op-package-preflight"])
     strict_log = SelectHcommPayloadEvidenceLog(
         run_dir, strict_log, require_storage=False)
@@ -6589,7 +6595,7 @@ def run_hcomm_payload_verify_logs(args: argparse.Namespace) -> int:
         AnalyzeHcommPayloadStrictPositiveLogs(run_dir))
     candidate_summary = WriteHcommPayloadStrictCandidateSummary(
         run_dir, HcommPayloadCandidateResultsFromRunDir(run_dir),
-        FindStepLog(run_dir, ["hcomm-payload-strict-positive"]),
+        FindStepLog(run_dir, HCOMM_PAYLOAD_STRICT_STEP_NAMES),
         strict_log)
     print(f"[ok] analyzed log dir -> {run_dir}")
     print(f"[ok] strict log -> {strict_log if strict_log else '<missing>'}")
@@ -6902,21 +6908,25 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
 
     strict_result: Optional[StepResult] = None
     strict_tree_log: Optional[Path] = None
+    primary_step_name = (
+        "hcomm-payload-official-p2p-positive"
+        if args.command == "hcomm-payload-official-p2p-positive" else
+        "hcomm-payload-strict-positive")
     for spec in command_specs:
         timeout = (args.hccl_smoke_timeout_sec if spec.name == "hccl-collective-smoke"
                    else args.step_timeout_sec)
-        step_name = ("hcomm-payload-strict-positive"
+        step_name = (primary_step_name
                      if spec.name == "hccl-collective-smoke"
                      else spec.name)
         allow_accepted_candidate = (
-            step_name == "hcomm-payload-strict-positive" and
+            step_name == primary_step_name and
             HasAcceptedPayloadCandidate(args, spec.command))
         result = runner.run(step_name, spec.command,
                             required=spec.required and
                             not allow_accepted_candidate,
                             timeout_seconds=timeout,
                             env_updates=spec.env_updates)
-        if step_name == "hcomm-payload-strict-positive":
+        if step_name == primary_step_name:
             strict_result = result
             strict_tree_log = result.log_path
             if result.returncode != 0:

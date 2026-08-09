@@ -684,6 +684,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-official-p2p-positive \
 `aicpu + channel-handle + no-batch + direct-output + ordered-notify`。
 这个子命令不运行其它 fallback candidate；如果它通过，结论只归因于
 official-p2p 形态，如果失败则直接看该形态的 strict evidence。
+主 smoke 日志会命名为 `*-hcomm-payload-official-p2p-positive.log`。
 成功时 decision tree 应显示 `payload_layout=official-p2p`、
 `payload official-p2p shape match | passed`，并且 rank0/rank1
 `payload_trace_count` 都为 `8`。
