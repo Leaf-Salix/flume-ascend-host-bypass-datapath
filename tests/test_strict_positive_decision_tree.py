@@ -1123,9 +1123,11 @@ def main() -> int:
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0/ordered-notify, thread_notify=0, transfer=read, "
+                "layout=rank0:read-default/rank1:read-default, "
                 "write_notify_backend=rank0:none/rank1:none, "
                 "batch_tag=default, recv_path=local-buffer, local_buffer=8192, "
                 "remote_buffer=8192 |") in text
+        assert "| payload trace descriptor match | passed |" in text
         assert "| payload batch tag | default |" in text
         assert ("| HCOMM resource fingerprint | engine=aicpu-ts, "
                 "protocol=hccs, channel_desc=rank-graph, channels=1, "
@@ -1220,6 +1222,7 @@ def main() -> int:
             missing_layout_dir, smoke, strict_missing_layout, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| payload trace descriptor match | rank0-missing-trace-descriptor-field |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_missing_layout())[0]
         strict_layout_mismatch = write(
@@ -1231,6 +1234,7 @@ def main() -> int:
             layout_mismatch_dir, smoke, strict_layout_mismatch, package)
         text = tree.read_text(encoding="utf-8")
         assert "| Strict payload positive passed? | no |" in text
+        assert "| payload trace descriptor match | rank0-payload-layout-mismatch |" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_layout_mismatch())[0]
         strict_channel_handle = strict_log_with_channel_handle_binding(
