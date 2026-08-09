@@ -802,7 +802,9 @@ def payload_ready_package_log() -> str:
             "payload_status_schema,"
             "payload_status_word_count,payload_trace_schema,"
             "payload_trace_word_count,payload_primitive_deps,"
+            "payload_no_hccl_sendrecv_deps,"
             "build_mode_internal\n"
+            "payload_no_hccl_sendrecv_deps=passed\n"
             "status=PASS\n")
 
 
@@ -897,7 +899,7 @@ def abi_missing_package_log() -> str:
 
 def missing_aicpu_tar_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,build_mode_internal",
         "json=present",
         "aicpu_tar=missing",
         "aicpu_tar_readable=missing",
@@ -910,10 +912,22 @@ def missing_aicpu_tar_package_log() -> str:
 
 def metadata_mismatch_package_log() -> str:
     return "\n".join([
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,build_mode_internal",
         "function_value.payload_semantic_version.FlumeHcommPayloadCopySemanticVersion=12 expected=17 status=mismatch",
         "function_value.payload_status_word_count.FlumeHcommPayloadStatusWordCount=8 expected=17 status=mismatch",
         "payload_metadata_values=mismatch",
+        "status=FAIL",
+        "reason=payload kernel package is missing or incomplete",
+        "",
+    ])
+
+
+def forbidden_hccl_p2p_package_log() -> str:
+    return "\n".join([
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,build_mode_internal",
+        "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=present",
+        "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=present",
+        "payload_no_hccl_sendrecv_deps=failed",
         "status=FAIL",
         "reason=payload kernel package is missing or incomplete",
         "",
@@ -929,7 +943,7 @@ def multi_candidate_payload_package_log() -> str:
         "",
         "root=/tmp/current-cann",
         "vendor=flume",
-        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,build_mode_internal",
+        "required=canary_direct_aclrt,payload_direct_aclrt,payload_abi_v4,payload_semantic,payload_semantic_v5,payload_semantic_v6,payload_semantic_v7,payload_semantic_v8,payload_semantic_v9,payload_semantic_v10,payload_semantic_v11,payload_semantic_v12,payload_semantic_v13,payload_semantic_v14,payload_semantic_v15,payload_semantic_v16,payload_semantic_v17,payload_requires_comm_acquire,payload_official_p2p_layout,payload_status_schema,payload_status_word_count,payload_trace_schema,payload_trace_word_count,payload_primitive_deps,payload_no_hccl_sendrecv_deps,build_mode_internal",
         "status=PASS",
         "",
         "status=PASS",
@@ -2504,6 +2518,20 @@ def main() -> int:
         assert ("| HCOMM custom-op package reason | payload kernel package "
                 "metadata function returned unexpected value |") in text
         assert "exports stale ABI, semantic, status, or trace metadata values" in text
+
+        forbidden_p2p_package = write(
+            tmp / "package-forbidden-hccl-p2p.log",
+            forbidden_hccl_p2p_package_log())
+        forbidden_p2p_dir = tmp / "forbidden-hccl-p2p-package"
+        forbidden_p2p_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            forbidden_p2p_dir, smoke, None, forbidden_p2p_package)
+        text = tree.read_text(encoding="utf-8")
+        assert not flume_tool.PackageTextPayloadReady(
+            forbidden_hccl_p2p_package_log())
+        assert ("| HCOMM custom-op package reason | payload kernel package "
+                "references forbidden HCCL Send/Recv symbols |") in text
+        assert "must not reference HcclSend/HcclRecv" in text
 
         multi_payload_package = write(
             tmp / "package-multi-candidate-payload.log",

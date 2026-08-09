@@ -106,6 +106,10 @@ HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
     "HcommWriteWithNotifyOnThread",
     "HcommWriteWithNotifyNbiOnThread",
 )
+HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS = (
+    "HcclSend",
+    "HcclRecv",
+)
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
 LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
@@ -579,6 +583,9 @@ def PackageRequirementBlocks(package_text: str) -> list[tuple[set[str], str]]:
 
 
 def PackageTextPayloadReady(package_text: str) -> bool:
+    if re.search(r"^payload_no_hccl_sendrecv_deps=failed$",
+                 package_text, re.MULTILINE):
+        return False
     payload_required = {
         "canary_direct_aclrt",
         "payload_direct_aclrt",
@@ -604,6 +611,7 @@ def PackageTextPayloadReady(package_text: str) -> bool:
         "payload_trace_schema",
         "payload_trace_word_count",
         "payload_primitive_deps",
+        "payload_no_hccl_sendrecv_deps",
         "build_mode_internal",
     }
     return any(status == "PASS" and payload_required.issubset(required_set)
@@ -662,6 +670,10 @@ def PackageTextReason(package_text: str) -> str:
                 r"^aicpu_tar_so_symbols=(missing|unreadable|not-checked)$",
                 package_text, re.MULTILINE):
             return "custom-op AICPU tar symbols unavailable"
+        if re.search(r"^payload_no_hccl_sendrecv_deps=failed$",
+                     package_text, re.MULTILINE):
+            return ("payload kernel package references forbidden HCCL "
+                    "Send/Recv symbols")
     return reason
 
 
@@ -687,6 +699,10 @@ def PackageTextNextAction(package_text: str) -> str:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package does not reference "
                 "the required HCOMM primitive APIs")
+    if "forbidden HCCL Send/Recv" in reason:
+        return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
+                "from the HCOMM primitive scheduler; strict payload packages "
+                "must not reference HcclSend/HcclRecv")
     if "metadata function returned unexpected value" in reason:
         return ("rebuild/reinstall the Stage 3B.3E payload custom-op package "
                 "from current Flume; installed package exports stale ABI, "
@@ -8072,6 +8088,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         required_functions.append("payload_trace_schema")
         required_functions.append("payload_trace_word_count")
         required_functions.append("payload_primitive_deps")
+        required_functions.append("payload_no_hccl_sendrecv_deps")
         required_functions.append("build_mode_internal")
 
     found_any_json = False
@@ -8103,6 +8120,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_trace_schema_marker = False
     found_payload_trace_word_count_marker = False
     found_payload_primitive_deps_marker = False
+    found_payload_no_hccl_sendrecv_deps_marker = False
     found_payload_metadata_values_valid = False
     found_payload_metadata_value_mismatch = False
     print("HCOMM custom-op package inspection")
@@ -8164,7 +8182,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION,
             HCOMM_PAYLOAD_TRACE_WORD_COUNT,
         ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS) + list(
-            HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS)
+            HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS) + list(
+                HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
             tar_path, symbol_names)
         print(f"aicpu_tar_so_symbols={symbol_state}")
@@ -8178,6 +8197,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
 
         functions_present: dict[str, bool] = {}
         primitive_deps_present = False
+        forbidden_hccl_p2p_absent = False
         metadata_values_valid = False
         legacy_payload_present = False
         if json_exists and json_path is not None:
@@ -8471,6 +8491,18 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get("HcommWriteWithNotifyNbiOnThread", False))
                 print("payload_optional_write_with_notify="
                       f"{'present' if write_with_notify_present else 'missing'}")
+                forbidden_hccl_p2p_absent = all(
+                    not symbols_present.get(name, False)
+                    for name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+                found_payload_no_hccl_sendrecv_deps_marker = (
+                    found_payload_no_hccl_sendrecv_deps_marker or
+                    forbidden_hccl_p2p_absent)
+                for forbidden_name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS:
+                    print("function_so.payload_forbidden_hccl_p2p_dep."
+                          f"{forbidden_name}="
+                          f"{'present' if symbols_present.get(forbidden_name, False) else 'absent'}")
+                print("payload_no_hccl_sendrecv_deps="
+                      f"{'passed' if forbidden_hccl_p2p_absent else 'failed'}")
             if value_state == "present":
                 metadata_values_valid = all(
                     state == "match"
@@ -8504,19 +8536,24 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print(f"function.{label}.{function_name}=missing")
             if args.require_hcomm_payload_kernel:
                 print("payload_primitive_deps=missing")
+                print("payload_no_hccl_sendrecv_deps=failed")
 
         required_ok = (
             tar_state == "present" and tar_so_state == "present" and
             all(functions_present.get(label, False)
                 for label in required_functions
-                if label != "payload_primitive_deps"))
+                if label not in (
+                    "payload_primitive_deps",
+                    "payload_no_hccl_sendrecv_deps")))
         if symbol_state in ("unreadable", "not-checked"):
             required_ok = False
         elif symbol_state == "present":
             required_ok = required_ok and all(
                 symbols_present.get(HCOMM_CUSTOM_OP_FUNCTIONS[label], False)
                 for label in required_functions
-                if label != "payload_primitive_deps")
+                if label not in (
+                    "payload_primitive_deps",
+                    "payload_no_hccl_sendrecv_deps"))
             if args.require_hcomm_payload_kernel:
                 required_ok = (
                     required_ok and
@@ -8544,7 +8581,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     symbols_present.get(HCOMM_PAYLOAD_STATUS_WORD_COUNT, False) and
                     symbols_present.get(HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION, False) and
                     symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT, False) and
-                    primitive_deps_present)
+                    primitive_deps_present and
+                    forbidden_hccl_p2p_absent)
                 if value_state == "present":
                     required_ok = required_ok and metadata_values_valid
         print(f"required={','.join(required_functions)}")
@@ -8932,6 +8970,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                   found_payload_status_word_count_marker and
                   found_payload_trace_schema_marker and
                   found_payload_trace_word_count_marker and
+                  found_payload_no_hccl_sendrecv_deps_marker and
                   found_payload_metadata_value_mismatch and
                   not found_payload_metadata_values_valid):
                 print("reason=payload kernel package metadata function returned "
@@ -8964,6 +9003,34 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                       "primitive dependencies")
                 print("action=rebuild package with the primitive payload "
                       "kernel, not a marker-only payload stub")
+            elif (found_internal_payload_marker and
+                  found_payload_abi_version_marker and
+                  found_payload_semantic_marker and
+                  found_payload_semantic_v5_marker and
+                  found_payload_semantic_v6_marker and
+                  found_payload_semantic_v7_marker and
+                  found_payload_semantic_v8_marker and
+                  found_payload_semantic_v9_marker and
+                  found_payload_semantic_v10_marker and
+                  found_payload_semantic_v11_marker and
+                  found_payload_semantic_v12_marker and
+                  found_payload_semantic_v13_marker and
+                  found_payload_semantic_v14_marker and
+                  found_payload_semantic_v15_marker and
+                  found_payload_semantic_v16_marker and
+                  found_payload_semantic_v17_marker and
+                  found_payload_requires_comm_acquire_marker and
+                  found_payload_status_schema_marker and
+                  found_payload_status_word_count_marker and
+                  found_payload_trace_schema_marker and
+                  found_payload_trace_word_count_marker and
+                  found_payload_primitive_deps_marker and
+                  not found_payload_no_hccl_sendrecv_deps_marker):
+                print("reason=payload kernel package references forbidden "
+                      "HCCL Send/Recv symbols")
+                print("action=rebuild package with the HCOMM primitive "
+                      "payload kernel; strict payload packages must not "
+                      "reference HcclSend/HcclRecv")
             else:
                 print("reason=payload kernel package is missing or incomplete")
         else:

@@ -49,7 +49,8 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "{ (void)p; return 0; }",
     ]
     if mode in ("v4", "v4_nbi_write_with_notify",
-                "v4_no_write_with_notify", "wrong_values"):
+                "v4_no_write_with_notify", "v4_with_hccl_p2p",
+                "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
         include_write_with_notify_nbi = mode == "v4_nbi_write_with_notify"
         lines.extend([
@@ -67,6 +68,13 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
             "int HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "int HcommThreadNotifyWaitOnThread(ThreadHandle a, unsigned int b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
+        ])
+        if mode == "v4_with_hccl_p2p":
+            lines.extend([
+                "int HcclSend(void) { return 0; }",
+                "int HcclRecv(void) { return 0; }",
+            ])
+        lines.extend([
             "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {",
             "  char a[8] = {0};",
             "  char b[8] = {0};",
@@ -1115,6 +1123,7 @@ def main() -> int:
         assert "function.payload_semantic_v17.FlumeHcommPayloadCopySemanticVersion17=present" in marker_only.stdout
         assert "function.payload_official_p2p_layout.FlumeHcommPayloadCopySupportsOfficialP2pLayout=present" in marker_only.stdout
         assert "payload_primitive_deps=missing" in marker_only.stdout
+        assert "payload_no_hccl_sendrecv_deps=passed" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=missing" in marker_only.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=missing" in marker_only.stdout
@@ -1184,6 +1193,9 @@ def main() -> int:
             assert "ctypes unavailable" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=absent" in v4.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=absent" in v4.stdout
+        assert "payload_no_hccl_sendrecv_deps=passed" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommLocalCopyOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommReadOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommWriteOnThread=present" in v4.stdout
@@ -1193,6 +1205,19 @@ def main() -> int:
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
         assert "status=PASS" in v4.stdout
+
+        hccp_json, hccp_tar = write_package(tmp, mode="v4_with_hccl_p2p")
+        hccp = run_preflight(repo, hccp_json, hccp_tar)
+        if hccp.returncode == 0:
+            print(hccp.stdout)
+            print(hccp.stderr, file=sys.stderr)
+            raise AssertionError("payload package with HCCL P2P symbols passed")
+        assert "payload_primitive_deps=present" in hccp.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=present" in hccp.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=present" in hccp.stdout
+        assert "payload_no_hccl_sendrecv_deps=failed" in hccp.stdout
+        assert ("reason=payload kernel package references forbidden HCCL "
+                "Send/Recv symbols") in hccp.stdout
 
         nbi_write_notify_json, nbi_write_notify_tar = write_package(
             tmp, mode="v4_nbi_write_with_notify")
