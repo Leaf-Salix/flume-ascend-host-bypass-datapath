@@ -4460,10 +4460,11 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = (
                 "rerun with --auto-run-hcomm-payload-candidate-matrix "
                 "to test channel-handle, write-path, channel-fence, "
-                "no-batch, tagged-batch, direct-output, and "
+                "write-with-notify, no-batch, tagged-batch, direct-output, and "
                 "no-comm-acquire variants, or directly add "
-                "--hcomm-payload-write-path to isolate the "
-                "HcommWriteOnThread send-side transfer path")
+                "--hcomm-payload-write-path or "
+                "--hcomm-payload-write-with-notify to isolate send-side "
+                "transfer paths")
         elif any(rank_status[rank]["failure_step"] == "output-copy"
                  for rank in (0, 1)):
             bad_rank = next(
@@ -4558,6 +4559,7 @@ HCOMM_PAYLOAD_ACCEPTED_CANDIDATE_STEPS = (
     "hcomm-payload-write-path-channel-handle-channel-fence-candidate",
     "hcomm-payload-write-path-channel-handle-nobatch-candidate",
     "hcomm-payload-write-path-channel-handle-nobatch-channel-fence-candidate",
+    "hcomm-payload-write-with-notify-candidate",
     "hcomm-payload-channel-handle-candidate",
     "hcomm-payload-channel-handle-channel-fence-candidate",
     "hcomm-payload-channel-handle-nobatch-candidate",
@@ -5008,15 +5010,16 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "--auto-run-hcomm-payload-candidate-matrix is enabled, a failed "
         "default comm-name strict run triggers the built-in Stage 3B.3E "
         "candidate matrix: channel-handle binding, write-path, "
-        "channel-fence, no-batch, tagged-batch, direct-output, and "
-        "no-comm-acquire isolation. Channel-handle, write-path, "
-        "channel-fence, no-batch, tagged-batch, and direct-output candidates "
-        "can satisfy the strict evidence gate only with complete payload copy, "
-        "checksum, trace, and fallback=none markers; no-comm-acquire remains "
-        "diagnostic-only. The write-path matrix strips recv direct-output "
-        "because direct-output only applies to the read path. A write-path "
-        "candidate can satisfy the gate only with "
-        "payload_transfer_mode=write, complete trace/checksum evidence, and "
+        "write-with-notify, channel-fence, no-batch, tagged-batch, "
+        "direct-output, and no-comm-acquire isolation. Channel-handle, "
+        "write-path, write-with-notify, channel-fence, no-batch, "
+        "tagged-batch, and direct-output candidates can satisfy the strict "
+        "evidence gate only with complete payload copy, checksum, trace, and "
+        "fallback=none markers; no-comm-acquire remains diagnostic-only. The "
+        "write-path matrix strips recv direct-output because direct-output "
+        "only applies to the read path. A write-path or write-with-notify "
+        "candidate can satisfy the gate only with payload_transfer_mode=write "
+        "or write-with-notify, complete trace/checksum evidence, and "
         "fallback=none. Before "
         "the smoke, it runs hcomm-custom-op-package-preflight to record "
         "whether the installed package is canary-ready or payload-ready. The "
@@ -5437,11 +5440,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "--auto-run-hcomm-payload-candidate-matrix, a failed default "
         "comm-name storage run may be followed by the built-in Stage 3B.4 "
         "storage candidate matrix: channel-handle binding, write-path, "
-        "channel-fence, no-batch, tagged-batch, direct-output, and "
-        "no-comm-acquire isolation. The write-path matrix strips recv "
-        "direct-output because it is read-path-only and still requires "
-        "payload_transfer_mode=write, full trace/checksum evidence, "
-        "fallback=none, and storage verification. Both strict payload evidence "
+        "write-with-notify, channel-fence, no-batch, tagged-batch, "
+        "direct-output, and no-comm-acquire isolation. The write-path matrix "
+        "strips recv direct-output because it is read-path-only and still "
+        "requires payload_transfer_mode=write or write-with-notify, full "
+        "trace/checksum evidence, fallback=none, and storage verification. "
+        "Both strict payload evidence "
         "and storage verification "
         "must pass for the storage gate to pass. This still reads the storage file "
         "through the host into proxy HBM; it validates storage-proxy wiring "

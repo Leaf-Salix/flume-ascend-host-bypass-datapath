@@ -1042,6 +1042,16 @@ def main() -> int:
         assert "payload_copy_and_verify: `passed`" in write_with_notify_text
         assert "transfer_mode: `write-with-notify`" in write_with_notify_text
         assert "trace_path: `send-write-with-notify`" in write_with_notify_text
+        write_with_notify_select_dir = tmp / "write-with-notify-select"
+        write_with_notify_select_dir.mkdir()
+        write_with_notify_candidate_log = write(
+            write_with_notify_select_dir /
+            "01-hcomm-payload-write-with-notify-candidate.log",
+            strict_write_with_notify)
+        assert flume_tool.SelectHcommPayloadEvidenceLog(
+            write_with_notify_select_dir,
+            None,
+            require_storage=False) == write_with_notify_candidate_log
 
         strict_mixed_binding = strict_log(True).replace(
             "payload_comm_acquire=default payload_comm_binding=comm-name",
