@@ -2472,6 +2472,41 @@ def main() -> int:
         assert "selected_payload_rank1_transfer_mode=read" in pass_evidence_text
         assert "selected_payload_recv_path=local-buffer" in pass_evidence_text
 
+        summary_dir = tmp / "candidate-summary"
+        summary_dir.mkdir()
+        default_candidate = write(summary_dir / "01-hcomm-payload-strict-positive.log",
+                                  strict_log(False))
+        write_candidate = write(summary_dir / "02-hcomm-payload-write-path-candidate.log",
+                                strict_write_path_log(True))
+        summary = flume_tool.WriteHcommPayloadStrictCandidateSummary(
+            summary_dir,
+            [
+                flume_tool.StepResult(
+                    "hcomm-payload-strict-positive",
+                    ["flume-hccl-collective-smoke"],
+                    1,
+                    1.0,
+                    default_candidate,
+                    True),
+                flume_tool.StepResult(
+                    "hcomm-payload-write-path-candidate",
+                    ["flume-hccl-collective-smoke",
+                     "--hcomm-payload-write-path"],
+                    0,
+                    1.0,
+                    write_candidate,
+                    False),
+            ],
+            default_candidate,
+            write_candidate)
+        assert summary is not None
+        summary_text = summary.read_text(encoding="utf-8")
+        assert "best_candidate: `hcomm-payload-write-path-candidate`" in summary_text
+        assert "selected_evidence_log: `" in summary_text
+        assert "transfer | trace_transfer" in summary_text
+        assert "write | write" in summary_text
+        assert "candidate passed; rerun strict-positive focused on `payload_transfer_mode=write`" in summary_text
+
         fail_runner = flume_tool.Runner(tmp / "runner-fail")
         flume_tool.RecordStrictPositiveEvidenceGate(
             fail_runner, tree, False, required=True)

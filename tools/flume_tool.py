@@ -1974,6 +1974,9 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
     if args.hcomm_require_payload_copy and package_result is not None:
         selected_evidence_log = SelectHcommPayloadEvidenceLog(
             runner.run_dir, strict_tree_log, require_storage=False)
+        WriteHcommPayloadStrictCandidateSummary(
+            runner.run_dir, runner.results, strict_tree_log,
+            selected_evidence_log)
         tree = WriteMatrixDecisionTree(
             runner.run_dir,
             None,
@@ -2836,6 +2839,143 @@ def RunHcommPayloadStrictFailureFollowups(
         RunHcommPayloadNoCommAcquireDiagnostic(
             runner, base_command, env_updates, timeout_seconds, default_log)
     return selected_log
+
+
+def _PayloadCandidateScore(text: str, returncode: int) -> int:
+    passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+    if passed:
+        return 10000
+    score = 0
+    if rank0_ok:
+        score += 1000
+    if rank1_ok:
+        score += 1000
+    for marker in (
+            "stage3b3e_direct_aclrt_payload_loader=passed",
+            "stage3b3e_payload_descriptor_handoff=passed",
+            "stage3b3e_direct_aclrt_payload_launch=passed",
+            "stage3b3e_payload_sync=passed",
+            "payload_trace=passed",
+            "payload_data_probe=observed"):
+        if marker in text:
+            score += 100
+    failure_step = MarkerValue(text, "payload_failure_step")
+    if failure_step not in ("missing", "none"):
+        score += 50
+    if MarkerValue(text, "payload_kernel_hcomm_ret") not in ("missing", ""):
+        score += 25
+    if returncode == 0:
+        score += 10
+    return score
+
+
+def _PayloadCandidateNextAction(text: str) -> str:
+    passed, _, _ = StrictPayloadRankEvidencePassed(text)
+    if passed:
+        transfer = MarkerValue(text, "payload_transfer_mode")
+        return (f"candidate passed; rerun strict-positive focused on "
+                f"`payload_transfer_mode={transfer}` and then run storage "
+                "strict gate")
+    failure_step = MarkerValue(text, "payload_failure_step")
+    first_error_event = MarkerValue(text, "payload_trace_first_error_event")
+    if failure_step not in ("missing", "none"):
+        return StrictPayloadFailureAction(
+            1, failure_step, first_error_event=first_error_event)
+    if MarkerValue(text, "stage3b3e_direct_aclrt_payload_loader") != "passed":
+        return "fix custom-op package load/function lookup before retesting"
+    if MarkerValue(text, "stage3b3e_payload_descriptor_handoff") != "passed":
+        return "fix direct ACL descriptor handoff / kernel args ABI"
+    if MarkerValue(text, "stage3b3e_direct_aclrt_payload_launch") != "passed":
+        return "fix direct ACL payload launch boundary"
+    if MarkerValue(text, "stage3b3e_payload_sync") != "passed":
+        return "inspect stream sync, timeout, and device status words"
+    return "inspect missing rank evidence, checksum, trace, or fallback marker"
+
+
+def WriteHcommPayloadStrictCandidateSummary(
+        run_dir: Path,
+        results: list[StepResult],
+        default_log: Optional[Path],
+        selected_log: Optional[Path]) -> Optional[Path]:
+    candidates: list[dict[str, str | int | Path]] = []
+    for result in results:
+        if (not result.name.startswith("hcomm-payload-") and
+                not result.name.startswith("hcomm-storage-")):
+            continue
+        if "package" in result.name:
+            continue
+        try:
+            text = result.log_path.read_text(encoding="utf-8",
+                                             errors="replace")
+        except OSError as exc:
+            text = f"failed to read log: {exc}"
+        passed, rank0_ok, rank1_ok = StrictPayloadRankEvidencePassed(text)
+        candidates.append({
+            "name": result.name,
+            "rc": result.returncode,
+            "score": _PayloadCandidateScore(text, result.returncode),
+            "selected": "yes" if selected_log == result.log_path else "no",
+            "evidence": "passed" if passed else "not-passed",
+            "rank0": "passed" if rank0_ok else "missing",
+            "rank1": "passed" if rank1_ok else "missing",
+            "transfer": _CandidateMarker(text, "payload_transfer_mode"),
+            "trace_transfer": _CandidateMarker(
+                text, "payload_trace_transfer_mode"),
+            "binding": _CandidateMarker(text, "payload_comm_binding"),
+            "batch": _CandidateMarker(text, "payload_batch_mode"),
+            "recv": _CandidateMarker(text, "payload_recv_path"),
+            "completion": _CandidateMarker(text, "payload_completion_mode"),
+            "failure": _CandidateMarker(text, "payload_failure_step"),
+            "hcomm_ret": _CandidateMarker(text, "payload_kernel_hcomm_ret"),
+            "first_error": _CandidateMarker(
+                text, "payload_trace_first_error_event"),
+            "first_error_ret": _CandidateMarker(
+                text, "payload_trace_first_error_ret"),
+            "trace": _CandidateMarker(text, "payload_trace_primitive_path"),
+            "fallback": _CandidateMarker(text, "fallback"),
+            "next": _PayloadCandidateNextAction(text),
+            "log": result.log_path,
+        })
+    if not candidates:
+        return None
+
+    ranked = sorted(candidates, key=lambda item: int(item["score"]),
+                    reverse=True)
+    best = ranked[0]
+    note = run_dir / "HCOMM_PAYLOAD_STRICT_CANDIDATE_SUMMARY.md"
+    lines = [
+        "# HCOMM Payload Strict Candidate Summary",
+        "",
+        f"- default_strict_log: `{default_log}`",
+        f"- selected_evidence_log: `{selected_log if selected_log else '<none>'}`",
+        f"- candidates_observed: `{len(candidates)}`",
+        f"- best_candidate: `{best['name']}`",
+        f"- best_candidate_score: `{best['score']}`",
+        f"- best_candidate_log: `{Path(str(best['log'])).name}`",
+        f"- best_candidate_next_action: `{best['next']}`",
+        "",
+        "This summary ranks already executed strict-positive candidates. It "
+        "does not weaken the strict gate; only complete rank evidence, "
+        "checksum match, HCOMM primitive trace, and `fallback=none` can mark "
+        "the payload path as passed.",
+        "",
+        "| rank | candidate | rc | score | selected | evidence | rank0 | rank1 | transfer | trace_transfer | binding | batch | recv_path | completion | failure_step | hcomm_ret | first_error | first_error_ret | trace_path | fallback | log | next_action |",
+        "|---:|---|---:|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for idx, row in enumerate(ranked, start=1):
+        log_name = Path(str(row["log"])).name
+        lines.append(
+            f"| {idx} | {row['name']} | {row['rc']} | {row['score']} | "
+            f"{row['selected']} | {row['evidence']} | {row['rank0']} | "
+            f"{row['rank1']} | {row['transfer']} | "
+            f"{row['trace_transfer']} | {row['binding']} | {row['batch']} | "
+            f"{row['recv']} | {row['completion']} | {row['failure']} | "
+            f"{row['hcomm_ret']} | {row['first_error']} | "
+            f"{row['first_error_ret']} | {row['trace']} | "
+            f"{row['fallback']} | {log_name} | {row['next']} |")
+    note.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] hcomm payload strict candidate summary -> {note}")
+    return note
 
 
 def PayloadCommandWithoutWritePath(command: list[str]) -> list[str]:
@@ -5659,6 +5799,10 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
 
     selected_evidence_log = SelectHcommPayloadEvidenceLog(
         runner.run_dir, strict_tree_log, require_storage=False)
+    WriteHcommPayloadStrictCandidateSummary(
+        runner.run_dir, runner.results,
+        strict_result.log_path if strict_result is not None else strict_tree_log,
+        selected_evidence_log)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         smoke_result.log_path if smoke_result is not None else None,
@@ -5831,6 +5975,10 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
 
     selected_evidence_log = SelectHcommPayloadEvidenceLog(
         runner.run_dir, strict_tree_log, require_storage=False)
+    WriteHcommPayloadStrictCandidateSummary(
+        runner.run_dir, runner.results,
+        strict_result.log_path if strict_result is not None else strict_tree_log,
+        selected_evidence_log)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
@@ -6018,6 +6166,10 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
 
     selected_evidence_log = SelectHcommPayloadEvidenceLog(
         runner.run_dir, strict_tree_log, require_storage=True)
+    WriteHcommPayloadStrictCandidateSummary(
+        runner.run_dir, runner.results,
+        strict_result.log_path if strict_result is not None else strict_tree_log,
+        selected_evidence_log)
     tree = WriteMatrixDecisionTree(
         runner.run_dir,
         None,
