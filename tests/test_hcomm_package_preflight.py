@@ -50,7 +50,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
     ]
     if mode in ("v4", "v4_nbi_write_with_notify",
                 "v4_no_write_with_notify", "v4_with_hccl_p2p",
-                "wrong_values"):
+                "v4_with_hccl_p2p_string", "wrong_values"):
         include_write_with_notify = mode != "v4_no_write_with_notify"
         include_write_with_notify_nbi = mode == "v4_nbi_write_with_notify"
         lines.extend([
@@ -73,6 +73,11 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             lines.extend([
                 "int HcclSend(void) { return 0; }",
                 "int HcclRecv(void) { return 0; }",
+            ])
+        if mode == "v4_with_hccl_p2p_string":
+            lines.extend([
+                "const char* FlumeForbiddenHcclSendString(void) { return \"HcclSend\"; }",
+                "const char* FlumeForbiddenHcclRecvString(void) { return \"HcclRecv\"; }",
             ])
         lines.extend([
             "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV4(void *p) {",
@@ -698,6 +703,16 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
         flume_tool = load_flume_tool(repo)
+        forbidden_source = tmp / "forbidden_payload_source.cc"
+        forbidden_source.write_text(
+            "const char* bad_send = \"HcclSend\";\n"
+            "const char* bad_recv = \"HcclRecv\";\n",
+            encoding="utf-8")
+        refs = flume_tool.FindForbiddenTokenRefsInFiles(
+            [forbidden_source],
+            flume_tool.HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+        assert refs["HcclSend"] == [str(forbidden_source)]
+        assert refs["HcclRecv"] == [str(forbidden_source)]
         local_hcomm_refer = (
             repo / "refer" / "cann-src" / "hcomm" / "include")
         if (local_hcomm_refer / "hcomm_primitives.h").exists():
@@ -1193,6 +1208,9 @@ def main() -> int:
             assert "ctypes unavailable" in v4.stdout
         assert "function.build_mode_internal.FlumeHcommPayloadBuildModeInternalPayload=present" in v4.stdout
         assert "payload_primitive_deps=present" in v4.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_refs=absent" in v4.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclSend=absent" in v4.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclRecv=absent" in v4.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=absent" in v4.stdout
         assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=absent" in v4.stdout
         assert "payload_no_hccl_sendrecv_deps=passed" in v4.stdout
@@ -1218,6 +1236,24 @@ def main() -> int:
         assert "payload_no_hccl_sendrecv_deps=failed" in hccp.stdout
         assert ("reason=payload kernel package references forbidden HCCL "
                 "Send/Recv symbols") in hccp.stdout
+
+        hccp_string_json, hccp_string_tar = write_package(
+            tmp, mode="v4_with_hccl_p2p_string")
+        hccp_string = run_preflight(repo, hccp_string_json, hccp_string_tar)
+        if hccp_string.returncode == 0:
+            print(hccp_string.stdout)
+            print(hccp_string.stderr, file=sys.stderr)
+            raise AssertionError(
+                "payload package with HCCL P2P string refs passed")
+        assert "payload_primitive_deps=present" in hccp_string.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclSend=absent" in hccp_string.stdout
+        assert "function_so.payload_forbidden_hccl_p2p_dep.HcclRecv=absent" in hccp_string.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_refs=present" in hccp_string.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclSend=present" in hccp_string.stdout
+        assert "aicpu_tar_forbidden_hccl_p2p_ref.HcclRecv=present" in hccp_string.stdout
+        assert "payload_no_hccl_sendrecv_deps=failed" in hccp_string.stdout
+        assert ("reason=payload kernel package references forbidden HCCL "
+                "Send/Recv symbols") in hccp_string.stdout
 
         nbi_write_notify_json, nbi_write_notify_tar = write_package(
             tmp, mode="v4_nbi_write_with_notify")

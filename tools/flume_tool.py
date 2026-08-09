@@ -331,6 +331,59 @@ def InspectAicpuTarSymbols(
     return ("present", symbols, "")
 
 
+def FindForbiddenTokenRefsInBytes(
+        label: str,
+        data: bytes,
+        tokens: Iterable[str],
+) -> dict[str, list[str]]:
+    refs: dict[str, list[str]] = {}
+    for token in tokens:
+        if token.encode("utf-8") in data:
+            refs.setdefault(token, []).append(label)
+    return refs
+
+
+def FindForbiddenTokenRefsInFiles(
+        paths: Iterable[Path],
+        tokens: Iterable[str],
+) -> dict[str, list[str]]:
+    refs: dict[str, list[str]] = {}
+    for path in paths:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        for token, labels in FindForbiddenTokenRefsInBytes(
+                str(path), data, tokens).items():
+            refs.setdefault(token, []).extend(labels)
+    return refs
+
+
+def InspectAicpuTarForbiddenRefs(
+        tar_path: Optional[Path],
+        tokens: Iterable[str],
+) -> tuple[str, dict[str, list[str]], str]:
+    if tar_path is None or not tar_path.exists():
+        return ("not-checked", {}, "tar missing")
+    refs: dict[str, list[str]] = {}
+    try:
+        with tarfile.open(tar_path, "r:*") as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    continue
+                if Path(member.name).suffix not in (".so", ".json", ".txt"):
+                    continue
+                extracted = tar.extractfile(member)
+                if extracted is None:
+                    continue
+                for token, labels in FindForbiddenTokenRefsInBytes(
+                        member.name, extracted.read(), tokens).items():
+                    refs.setdefault(token, []).extend(labels)
+    except (OSError, tarfile.TarError) as exc:
+        return ("unreadable", {}, str(exc))
+    return ("present" if refs else "absent", refs, "")
+
+
 def InspectAicpuTarFunctionValues(
         tar_path: Optional[Path],
         expected: dict[str, tuple[str, int]]
@@ -7652,21 +7705,27 @@ def run_hcomm_custom_op_export_runtime(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def DirectBuildSourcePaths(args: argparse.Namespace) -> list[Path]:
+    sources = [
+        HCOMM_CUSTOM_OP_PATH / "aicpu" / "direct_acl_canary_kernel.cc",
+    ]
+    if args.custom_op_build_mode == "payload":
+        sources.extend([
+            HCOMM_CUSTOM_OP_PATH / "aicpu" / "notify_only_direct_acl_kernel.cc",
+            HCOMM_CUSTOM_OP_PATH / "aicpu" / "payload_copy_kernel.cc",
+        ])
+    return sources
+
+
 def _DirectBuildSharedLibraryCommand(
         args: argparse.Namespace,
         cann_root: Path,
         output_so: Path,
 ) -> list[str]:
     cxx = os.environ.get("CXX", "c++")
-    sources = [
-        HCOMM_CUSTOM_OP_PATH / "aicpu" / "direct_acl_canary_kernel.cc",
-    ]
+    sources = DirectBuildSourcePaths(args)
     defines: list[str] = []
     if args.custom_op_build_mode == "payload":
-        sources.extend([
-            HCOMM_CUSTOM_OP_PATH / "aicpu" / "notify_only_direct_acl_kernel.cc",
-            HCOMM_CUSTOM_OP_PATH / "aicpu" / "payload_copy_kernel.cc",
-        ])
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1")
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
         if HcommWriteWithNotifySupported(args, cann_root):
@@ -7793,6 +7852,24 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
     output_so = build_root / HCOMM_CUSTOM_OP_KERNEL_SO
     output_tar = build_root / HCOMM_CUSTOM_OP_TAR
     output_json = build_root / HCOMM_CUSTOM_OP_JSON
+    if args.custom_op_build_mode == "payload":
+        forbidden_refs = FindForbiddenTokenRefsInFiles(
+            DirectBuildSourcePaths(args),
+            HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+        if forbidden_refs:
+            setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+            lines = [
+                "payload direct custom-op source references forbidden HCCL "
+                "P2P APIs",
+                "Strict HCOMM payload packages must use HCOMM primitives, not "
+                "HcclSend/HcclRecv fallback.",
+            ]
+            for token, paths in sorted(forbidden_refs.items()):
+                lines.append(f"{token}:")
+                lines.extend(f"- {path}" for path in sorted(set(paths)))
+            setup_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print(f"[failed] command setup -> {setup_log}")
+            return 1
     command = _DirectBuildSharedLibraryCommand(args, cann_root, output_so)
     build_result = runner.run(
         "hcomm-custom-op-direct-build",
@@ -8189,6 +8266,16 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_so_symbols={symbol_state}")
         if symbol_error:
             print(f"aicpu_tar_so_symbols_error={symbol_error}")
+        forbidden_ref_state, forbidden_refs, forbidden_ref_error = (
+            InspectAicpuTarForbiddenRefs(
+                tar_path, HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS))
+        print(f"aicpu_tar_forbidden_hccl_p2p_refs={forbidden_ref_state}")
+        if forbidden_ref_error:
+            print(f"aicpu_tar_forbidden_hccl_p2p_refs_error={forbidden_ref_error}")
+        for forbidden_name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS:
+            print("aicpu_tar_forbidden_hccl_p2p_ref."
+                  f"{forbidden_name}="
+                  f"{'present' if forbidden_refs.get(forbidden_name) else 'absent'}")
         value_state, function_values, value_error = InspectAicpuTarFunctionValues(
             tar_path, HCOMM_PAYLOAD_METADATA_EXPECTED)
         print(f"aicpu_tar_so_function_values={value_state}")
@@ -8494,6 +8581,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 forbidden_hccl_p2p_absent = all(
                     not symbols_present.get(name, False)
                     for name in HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
+                forbidden_hccl_p2p_absent = (
+                    forbidden_hccl_p2p_absent and
+                    forbidden_ref_state == "absent")
                 found_payload_no_hccl_sendrecv_deps_marker = (
                     found_payload_no_hccl_sendrecv_deps_marker or
                     forbidden_hccl_p2p_absent)
