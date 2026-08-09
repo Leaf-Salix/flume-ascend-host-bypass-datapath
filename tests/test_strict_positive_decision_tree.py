@@ -497,7 +497,7 @@ def strict_log_with_invalid_descriptor(reason: str, code: int) -> str:
         "payload_kernel_status=success payload_failure_step=none "
         "payload_status_word=0 payload_kernel_hcomm_ret=0",
         "payload_kernel_status=invalid-argument "
-        "payload_failure_step=invalid-argument "
+        "payload_failure_step=validate-descriptor "
         f"payload_status_word=1 payload_kernel_hcomm_ret={code}",
         1)
     text = text.replace(

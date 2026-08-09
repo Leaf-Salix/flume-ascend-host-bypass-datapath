@@ -5659,7 +5659,7 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
     if primitive_state == "pending":
         return (prefix + "pending HCOMM primitive timeout/hang at " +
                 failure_step)
-    if failure_step == "invalid-argument":
+    if failure_step in ("invalid-argument", "validate-descriptor"):
         return StrictPayloadValidationAction(rank, validation_reason)
     first_error_action = StrictPayloadFirstErrorAction(first_error_event)
     if first_error_action and hcomm_ret not in ("0", "missing"):
@@ -6373,8 +6373,8 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| rank1 kernel failure step | {rank_status[1]['failure_step']} | rank1 `payload_failure_step` |",
             f"| rank0 kernel HCOMM ret | {rank_status[0]['hcomm_ret']} | rank0 `payload_kernel_hcomm_ret` |",
             f"| rank1 kernel HCOMM ret | {rank_status[1]['hcomm_ret']} | rank1 `payload_kernel_hcomm_ret` |",
-            f"| rank0 descriptor validation reason | {rank_status[0]['validation_reason']} / {rank_status[0]['validation_reason_code']} | rank0 `payload_validation_reason`; meaningful when kernel status is `invalid-argument` |",
-            f"| rank1 descriptor validation reason | {rank_status[1]['validation_reason']} / {rank_status[1]['validation_reason_code']} | rank1 `payload_validation_reason`; meaningful when kernel status is `invalid-argument` |",
+            f"| rank0 descriptor validation reason | {rank_status[0]['validation_reason']} / {rank_status[0]['validation_reason_code']} | rank0 `payload_validation_reason`; meaningful when `payload_failure_step=validate-descriptor` |",
+            f"| rank1 descriptor validation reason | {rank_status[1]['validation_reason']} / {rank_status[1]['validation_reason_code']} | rank1 `payload_validation_reason`; meaningful when `payload_failure_step=validate-descriptor` |",
             f"| rank0 first trace error | {rank_status[0]['trace_first_error_event']} / {rank_status[0]['trace_first_error_ret']} | rank0 first non-zero HCOMM trace return, index `{rank_status[0]['trace_first_error_index']}` |",
             f"| rank1 first trace error | {rank_status[1]['trace_first_error_event']} / {rank_status[1]['trace_first_error_ret']} | rank1 first non-zero HCOMM trace return, index `{rank_status[1]['trace_first_error_index']}` |",
             f"| rank0 primitive state | {rank_status[0]['primitive_state']} | rank0 `payload_primitive_state`; `pending` means the primitive was entered but did not return before status read |",
