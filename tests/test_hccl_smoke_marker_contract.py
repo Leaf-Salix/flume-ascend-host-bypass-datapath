@@ -27,8 +27,8 @@ REQUIRED_MARKERS = (
     "payload_host_sample_bytes=",
     "payload_primitive_state=completed",
     "payload_trace=passed",
-    "payload_trace_schema=v2",
-    "payload_trace_word_count=80",
+    "payload_trace_schema=v3",
+    "payload_trace_word_count=82",
     "payload_trace_event=kernel-exit",
     "payload_trace_order=passed",
     "payload_trace_ret_order=passed",
@@ -42,6 +42,8 @@ REQUIRED_MARKERS = (
     "recv-read-direct-output",
     "payload_trace_ready_notify_idx=",
     "payload_trace_done_notify_idx=",
+    "payload_trace_status_word=0",
+    "payload_trace_hcomm_ret=0",
     "payload_trace_first_error_event=none",
     "payload_trace_first_error_ret=0",
     "payload_trace_first_error_index=-1",
@@ -52,6 +54,7 @@ REQUIRED_MARKERS = (
     "payload_semantic_v13=present",
     "payload_semantic_v14=present",
     "payload_semantic_v15=present",
+    "payload_semantic_v16=present",
     "payload_official_p2p_layout=present",
 )
 
@@ -69,6 +72,7 @@ RUNTIME_PACKAGE_READY_MARKERS = (
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15_FUNC",
+    "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC",
     "FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC",
 )
 

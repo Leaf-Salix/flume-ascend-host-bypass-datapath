@@ -176,7 +176,9 @@ void CheckTraceHeaderMatchesDesc(
   FLUME_TEST_CHECK(trace[14] == desc.done_notify_idx);
 }
 
-void CheckTraceFinishedWithStatus(const uint32_t* trace, uint32_t status) {
+void CheckTraceFinishedWithStatus(const uint32_t* trace,
+                                  uint32_t status,
+                                  int32_t hcomm_ret = 0) {
   FLUME_TEST_CHECK(trace != nullptr);
   FLUME_TEST_CHECK(trace[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION);
   FLUME_TEST_CHECK(trace[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT);
@@ -184,6 +186,8 @@ void CheckTraceFinishedWithStatus(const uint32_t* trace, uint32_t status) {
   FLUME_TEST_CHECK(trace[3] == 0U);
   FLUME_TEST_CHECK(trace[4] > 0U);
   FLUME_TEST_CHECK(trace[15] == status);
+  FLUME_TEST_CHECK(trace[16] == status);
+  FLUME_TEST_CHECK(static_cast<int32_t>(trace[17]) == hcomm_ret);
   const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
   FLUME_TEST_CHECK(
       trace[event_base + trace[4] - 1] ==
@@ -239,6 +243,7 @@ int main() {
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion13() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion14() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion15() == 1U);
+  FLUME_TEST_CHECK(FlumeHcommPayloadCopySemanticVersion16() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopyRequiresCommAcquire() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadCopySupportsOfficialP2pLayout() == 1U);
   FLUME_TEST_CHECK(FlumeHcommPayloadStatusSchemaVersion() ==
@@ -313,6 +318,8 @@ int main() {
   FLUME_TEST_CHECK(trace[7] == 1U);
   FLUME_TEST_CHECK(trace[8] == 16U);
   FLUME_TEST_CHECK(trace[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(trace[16] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS);
+  FLUME_TEST_CHECK(trace[17] == 0U);
   const uint32_t event_base = FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT;
   const uint32_t send_events[] = {
       FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER,
@@ -894,7 +901,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
   FLUME_TEST_CHECK(status[1] == 99U);
   CheckTraceFinishedWithStatus(
-      trace, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED);
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_COMM_ACQUIRE_FAILED, 99);
   const int acquire_fail_calls[] = {kAcquireComm};
   FLUME_TEST_CHECK(CallsEqual(acquire_fail_calls, 1));
 
@@ -970,7 +977,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
   FLUME_TEST_CHECK(status[1] == 77U);
   CheckTraceFinishedWithStatus(
-      trace, FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED);
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_LOCAL_COPY_FAILED, 77);
 
   Reset();
   local_copy_ret = 78;
@@ -1154,7 +1161,7 @@ int main() {
                    FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
   FLUME_TEST_CHECK(status[1] == 62U);
   CheckTraceFinishedWithStatus(
-      trace, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED);
+      trace, FLUME_HCOMM_PAYLOAD_STATUS_REMOTE_WRITE_FAILED, 62);
   FLUME_TEST_CHECK(trace[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT);
   FLUME_TEST_CHECK(trace[3] == 0U);
   const int write_notify_enter = FindTraceEvent(

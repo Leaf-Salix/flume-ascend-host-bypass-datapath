@@ -2355,6 +2355,7 @@ bool JsonLooksPayloadReady(const std::string& json_text,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V13_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V14_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15_FUNC,
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
       FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION_FUNC,
@@ -3532,6 +3533,8 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
       trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
       trace_words[3] == 0U &&
       trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+      trace_words[16] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+      trace_words[17] == 0U &&
       PayloadTraceOrderState(trace_words, events) == "passed" &&
       PayloadTraceReturnOrderState(trace_words, events, returns) == "passed") {
     state = "passed";
@@ -3577,6 +3580,9 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          " payload_trace_ready_notify_idx=" + std::to_string(trace_words[13]) +
          " payload_trace_done_notify_idx=" + std::to_string(trace_words[14]) +
          " payload_trace_result=" + PayloadKernelStatusName(trace_words[15]) +
+         " payload_trace_status_word=" + std::to_string(trace_words[16]) +
+         " payload_trace_hcomm_ret=" +
+         std::to_string(static_cast<int32_t>(trace_words[17])) +
          " payload_trace_order=" + PayloadTraceOrderState(trace_words, events) +
          " payload_trace_ret_order=" +
          PayloadTraceReturnOrderState(trace_words, events, returns) +
@@ -3603,6 +3609,8 @@ bool PayloadTracePassed(const uint32_t* trace_words,
          trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
          trace_words[3] == 0U &&
          trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+         trace_words[16] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+         trace_words[17] == 0U &&
          PayloadTraceOrderMatches(trace_words, events,
                                   include_thread_notify) &&
          PayloadTraceReturnOrderMatches(trace_words, events, returns,
@@ -3736,6 +3744,7 @@ std::string HcommPayloadRuntimeDetail(
          "payload_semantic_v10=present payload_semantic_v11=present "
          "payload_semantic_v12=present payload_semantic_v13=present "
          "payload_semantic_v14=present payload_semantic_v15=present "
+         "payload_semantic_v16=present "
          "payload_official_p2p_layout=present "
          "payload_build_mode=internal" +
          " custom_op_package=present" + HcommPackageDetail(decision);
@@ -4219,45 +4228,71 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
              " custom_op_package=present" + HcommPackageDetail(decision);
     }
 
-    aclrtFuncHandle comm_acquire_func_handle = nullptr;
-  acl_ret = aclrtBinaryGetFunction(
-      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
-      &comm_acquire_func_handle);
-  if (acl_ret != ACL_SUCCESS) {
-    (void)aclrtBinaryUnLoad(bin_handle);
-    (void)aclrtFree(kernel_status_dev);
-    *status = FLUME_ERR_UNSUPPORTED;
-    return std::string("stage3b3e_payload_copy=unsupported "
-                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
-                       "api=aclrtBinaryGetFunction error=\"") +
-           AclErrorMessage(acl_ret) +
-           "\" stage3b3e_payload_descriptor_handoff=blocked "
-           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
-           "payload_requires_comm_acquire=missing kernel_func=" +
-           FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC +
-           local_prime_detail + PayloadDescriptorDetail(desc) +
-           " custom_op_package=present" + HcommPackageDetail(decision);
-  }
+    aclrtFuncHandle semantic_v16_func_handle = nullptr;
+    acl_ret = aclrtBinaryGetFunction(
+        bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC,
+        &semantic_v16_func_handle);
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      (void)aclrtFree(kernel_status_dev);
+      *status = FLUME_ERR_UNSUPPORTED;
+      return std::string("stage3b3e_payload_copy=unsupported "
+                         "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                         "api=aclrtBinaryGetFunction error=\"") +
+             AclErrorMessage(acl_ret) +
+             "\" stage3b3e_payload_descriptor_handoff=blocked "
+             "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+             "payload_semantic=present payload_semantic_v5=present "
+             "payload_semantic_v6=present payload_semantic_v7=present "
+             "payload_semantic_v8=present payload_semantic_v9=present "
+             "payload_semantic_v10=present payload_semantic_v11=present "
+             "payload_semantic_v12=present payload_semantic_v13=present "
+             "payload_semantic_v14=present payload_semantic_v15=present "
+             "payload_semantic_v16=missing kernel_func=" +
+             FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC +
+             local_prime_detail + PayloadDescriptorDetail(desc) +
+             " custom_op_package=present" + HcommPackageDetail(decision);
+    }
 
-  aclrtFuncHandle official_p2p_func_handle = nullptr;
-  acl_ret = aclrtBinaryGetFunction(
-      bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
-      &official_p2p_func_handle);
-  if (acl_ret != ACL_SUCCESS) {
-    (void)aclrtBinaryUnLoad(bin_handle);
-    (void)aclrtFree(kernel_status_dev);
-    *status = FLUME_ERR_UNSUPPORTED;
-    return std::string("stage3b3e_payload_copy=unsupported "
-                       "stage3b3e_direct_aclrt_payload_loader=unsupported "
-                       "api=aclrtBinaryGetFunction error=\"") +
-           AclErrorMessage(acl_ret) +
-           "\" stage3b3e_payload_descriptor_handoff=blocked "
-           "stage3b3e_direct_aclrt_payload_launch=not-attempted "
-           "payload_official_p2p_layout=missing kernel_func=" +
-           FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC +
-           local_prime_detail + PayloadDescriptorDetail(desc) +
-           " custom_op_package=present" + HcommPackageDetail(decision);
-  }
+    aclrtFuncHandle comm_acquire_func_handle = nullptr;
+    acl_ret = aclrtBinaryGetFunction(
+        bin_handle, FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
+        &comm_acquire_func_handle);
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      (void)aclrtFree(kernel_status_dev);
+      *status = FLUME_ERR_UNSUPPORTED;
+      return std::string("stage3b3e_payload_copy=unsupported "
+                         "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                         "api=aclrtBinaryGetFunction error=\"") +
+             AclErrorMessage(acl_ret) +
+             "\" stage3b3e_payload_descriptor_handoff=blocked "
+             "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+             "payload_requires_comm_acquire=missing kernel_func=" +
+             FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC +
+             local_prime_detail + PayloadDescriptorDetail(desc) +
+             " custom_op_package=present" + HcommPackageDetail(decision);
+    }
+
+    aclrtFuncHandle official_p2p_func_handle = nullptr;
+    acl_ret = aclrtBinaryGetFunction(
+        bin_handle, FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC,
+        &official_p2p_func_handle);
+    if (acl_ret != ACL_SUCCESS) {
+      (void)aclrtBinaryUnLoad(bin_handle);
+      (void)aclrtFree(kernel_status_dev);
+      *status = FLUME_ERR_UNSUPPORTED;
+      return std::string("stage3b3e_payload_copy=unsupported "
+                         "stage3b3e_direct_aclrt_payload_loader=unsupported "
+                         "api=aclrtBinaryGetFunction error=\"") +
+             AclErrorMessage(acl_ret) +
+             "\" stage3b3e_payload_descriptor_handoff=blocked "
+             "stage3b3e_direct_aclrt_payload_launch=not-attempted "
+             "payload_official_p2p_layout=missing kernel_func=" +
+             FLUME_HCOMM_PAYLOAD_COPY_SUPPORTS_OFFICIAL_P2P_LAYOUT_FUNC +
+             local_prime_detail + PayloadDescriptorDetail(desc) +
+             " custom_op_package=present" + HcommPackageDetail(decision);
+    }
 
   aclrtFuncHandle status_schema_func_handle = nullptr;
   acl_ret = aclrtBinaryGetFunction(

@@ -26,7 +26,7 @@ int main() {
                 "payload descriptor ABI size changed");
   static_assert(FLUME_HCOMM_PAYLOAD_COPY_VERSION == 4,
                 "payload descriptor semantic ABI version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 15,
+  static_assert(FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 16,
                 "payload copy semantic marker changed");
   static_assert(
       offsetof(flume_hcomm_payload_copy_desc_v1, completion_mode) == 44,
@@ -60,13 +60,13 @@ int main() {
                 "payload status word count changed");
   static_assert(FLUME_HCOMM_PAYLOAD_STATUS_SCHEMA_VERSION == 7,
                 "payload status schema version changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT == 16,
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_HEADER_WORD_COUNT == 18,
                 "payload trace header word count changed");
   static_assert(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY == 32,
                 "payload trace event capacity changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT == 80,
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT == 82,
                 "payload trace word count changed");
-  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION == 2,
+  static_assert(FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION == 3,
                 "payload trace schema version changed");
   static_assert(FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE == 0,
                 "default payload thread notify mode changed");
@@ -207,6 +207,9 @@ int main() {
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V15_FUNC,
       "FlumeHcommPayloadCopySemanticVersion15") == 0);
+  FLUME_TEST_CHECK(std::strcmp(
+      FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V16_FUNC,
+      "FlumeHcommPayloadCopySemanticVersion16") == 0);
   FLUME_TEST_CHECK(std::strcmp(
       FLUME_HCOMM_PAYLOAD_COPY_REQUIRES_COMM_ACQUIRE_FUNC,
       "FlumeHcommPayloadCopyRequiresCommAcquire") == 0);

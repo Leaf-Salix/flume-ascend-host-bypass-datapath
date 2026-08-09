@@ -54,6 +54,13 @@ void StorePayloadStatus(const flume_hcomm_payload_copy_desc_v1& desc,
   }
   auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
   status_words[0] = status;
+  if (desc.reserved2[2] != 0) {
+    auto* trace_words = reinterpret_cast<unsigned int*>(desc.reserved2[2]);
+    if (trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
+        trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+      trace_words[16] = status;
+    }
+  }
 }
 
 void StorePayloadPrimitiveRet(const flume_hcomm_payload_copy_desc_v1& desc,
@@ -64,6 +71,13 @@ void StorePayloadPrimitiveRet(const flume_hcomm_payload_copy_desc_v1& desc,
   }
   auto* status_words = reinterpret_cast<unsigned int*>(desc.status_word);
   status_words[1] = static_cast<unsigned int>(ret);
+  if (desc.reserved2[2] != 0) {
+    auto* trace_words = reinterpret_cast<unsigned int*>(desc.reserved2[2]);
+    if (trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
+        trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+      trace_words[17] = static_cast<unsigned int>(ret);
+    }
+  }
 }
 
 void BeginPayloadPrimitive(const flume_hcomm_payload_copy_desc_v1& desc,
@@ -181,6 +195,8 @@ void InitPayloadTrace(const flume_hcomm_payload_copy_desc_v1& desc) {
   trace_words[13] = desc.ready_notify_idx;
   trace_words[14] = desc.done_notify_idx;
   trace_words[15] = 0xFFFFFFFFU;
+  trace_words[16] = 0xFFFFFFFFU;
+  trace_words[17] = 0xFFFFFFFFU;
 }
 
 void TracePayloadEvent(const flume_hcomm_payload_copy_desc_v1& desc,
@@ -746,7 +762,11 @@ extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion14() {
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion15() {
-  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 15U ? 1U : 0U;
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION >= 15U ? 1U : 0U;
+}
+
+extern "C" unsigned int FlumeHcommPayloadCopySemanticVersion16() {
+  return FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION == 16U ? 1U : 0U;
 }
 
 extern "C" unsigned int FlumeHcommPayloadCopyRequiresCommAcquire() {
