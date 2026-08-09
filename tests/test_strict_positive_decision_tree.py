@@ -89,6 +89,8 @@ def strict_log(include_verify: bool) -> str:
             "payload_layout=read-default "
             "payload_write_notify_backend=none "
             "payload_recv_path=local-buffer "
+            "payload_desc_primitive_path=send-local-copy "
+            "payload_desc_operand_layout=input-hbm->local-hccl-buffer "
             "payload_desc_local_hccl_buffer_bytes=8192 "
             "payload_desc_remote_hccl_buffer_bytes=8192")
     resource = (" payload_resolved_engine=aicpu-ts "
@@ -141,6 +143,12 @@ def strict_log(include_verify: bool) -> str:
                                   "payload_desc_local_rank=1")
     recv_desc = recv_desc.replace("payload_desc_peer_rank=1",
                                   "payload_desc_peer_rank=0")
+    recv_desc = recv_desc.replace("payload_desc_primitive_path=send-local-copy",
+                                  "payload_desc_primitive_path=recv-read-local-copy")
+    recv_desc = recv_desc.replace(
+        "payload_desc_operand_layout=input-hbm->local-hccl-buffer",
+        "payload_desc_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm")
     return "\n".join([
         "$ flume-hccl-collective-smoke --hcomm-require-payload-copy",
         "rank 0 hcomm payload smoke passed: fallback=none "
@@ -292,16 +300,28 @@ def strict_write_path_log(include_verify: bool) -> str:
                         "payload_layout=write")
     text = text.replace("payload_trace_primitive_path=send-local-copy",
                         "payload_trace_primitive_path=send-write")
+    text = text.replace("payload_desc_primitive_path=send-local-copy",
+                        "payload_desc_primitive_path=send-write")
     text = text.replace(
         "payload_trace_operand_layout=input-hbm->local-hccl-buffer",
         "payload_trace_operand_layout=input-hbm->local-hccl-buffer->"
         "remote-hccl-buffer")
+    text = text.replace(
+        "payload_desc_operand_layout=input-hbm->local-hccl-buffer",
+        "payload_desc_operand_layout=input-hbm->local-hccl-buffer->"
+        "remote-hccl-buffer")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-write-local-copy")
+    text = text.replace("payload_desc_primitive_path=recv-read-local-copy",
+                        "payload_desc_primitive_path=recv-write-local-copy")
     text = text.replace(
         "payload_trace_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_trace_operand_layout=local-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_desc_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_desc_operand_layout=local-hccl-buffer->output-hbm")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -330,16 +350,30 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
         "payload_trace_primitive_path=send-local-copy",
         "payload_trace_primitive_path=send-write-with-notify")
     text = text.replace(
+        "payload_desc_primitive_path=send-local-copy",
+        "payload_desc_primitive_path=send-write-with-notify")
+    text = text.replace(
         "payload_trace_operand_layout=input-hbm->local-hccl-buffer",
         "payload_trace_operand_layout=input-hbm->local-hccl-buffer->"
+        "remote-hccl-buffer+ready-notify")
+    text = text.replace(
+        "payload_desc_operand_layout=input-hbm->local-hccl-buffer",
+        "payload_desc_operand_layout=input-hbm->local-hccl-buffer->"
         "remote-hccl-buffer+ready-notify")
     text = text.replace(
         "payload_trace_primitive_path=recv-read-local-copy",
         "payload_trace_primitive_path=recv-write-notify-local-copy")
     text = text.replace(
+        "payload_desc_primitive_path=recv-read-local-copy",
+        "payload_desc_primitive_path=recv-write-notify-local-copy")
+    text = text.replace(
         "payload_trace_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_trace_operand_layout=local-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_desc_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_desc_operand_layout=local-hccl-buffer->output-hbm")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -712,10 +746,16 @@ def strict_log_with_recv_direct_output() -> str:
                         "payload_layout=read-direct-output")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-read-direct-output")
+    text = text.replace("payload_desc_primitive_path=recv-read-local-copy",
+                        "payload_desc_primitive_path=recv-read-direct-output")
     text = text.replace(
         "payload_trace_operand_layout=remote-hccl-buffer->"
         "local-hccl-buffer->output-hbm",
         "payload_trace_operand_layout=remote-hccl-buffer->output-hbm")
+    text = text.replace(
+        "payload_desc_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_desc_operand_layout=remote-hccl-buffer->output-hbm")
     text = text.replace("payload_trace_recv_path=0",
                         "payload_trace_recv_path=1")
     return _adjust_trace_counts(text, 0, -2)
@@ -1381,6 +1421,9 @@ def main() -> int:
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0/ordered-notify, thread_notify=0, transfer=read, "
                 "layout=rank0:read-default/rank1:read-default, "
+                "primitive=rank0:send-local-copy/rank1:recv-read-local-copy, "
+                "operand=rank0:input-hbm->local-hccl-buffer/rank1:"
+                "remote-hccl-buffer->local-hccl-buffer->output-hbm, "
                 "write_notify_backend=rank0:none/rank1:none, "
                 "batch_tag=default, recv_path=local-buffer, local_buffer=8192, "
                 "remote_buffer=8192 |") in text

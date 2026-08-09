@@ -2874,6 +2874,60 @@ const char* PayloadLayoutName(const flume_hcomm_payload_copy_desc_v1& desc) {
   return recv_direct_output ? "read-direct-output" : "read-default";
 }
 
+const char* PayloadDescPrimitivePath(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  const bool send_role = desc.role == FLUME_HCOMM_NOTIFY_ROLE_SEND;
+  const bool recv_role = desc.role == FLUME_HCOMM_NOTIFY_ROLE_RECV;
+  const bool recv_direct_output =
+      desc.reserved2[1] == FLUME_HCOMM_PAYLOAD_RECV_PATH_DIRECT_OUTPUT;
+  const bool write_path =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_PATH) != 0;
+  const bool write_with_notify =
+      (desc.completion_mode &
+       FLUME_HCOMM_PAYLOAD_COMPLETION_FLAG_WRITE_WITH_NOTIFY) != 0;
+  if (send_role) {
+    if (write_with_notify) {
+      return "send-write-with-notify";
+    }
+    return write_path ? "send-write" : "send-local-copy";
+  }
+  if (recv_role) {
+    if (write_path) {
+      return write_with_notify ? "recv-write-notify-local-copy" :
+                                 "recv-write-local-copy";
+    }
+    return recv_direct_output ? "recv-read-direct-output" :
+                                "recv-read-local-copy";
+  }
+  return "unknown";
+}
+
+const char* PayloadDescOperandLayout(
+    const flume_hcomm_payload_copy_desc_v1& desc) {
+  const char* primitive_path = PayloadDescPrimitivePath(desc);
+  if (strcmp(primitive_path, "send-local-copy") == 0) {
+    return "input-hbm->local-hccl-buffer";
+  }
+  if (strcmp(primitive_path, "send-write") == 0) {
+    return "input-hbm->local-hccl-buffer->remote-hccl-buffer";
+  }
+  if (strcmp(primitive_path, "send-write-with-notify") == 0) {
+    return "input-hbm->local-hccl-buffer->remote-hccl-buffer+ready-notify";
+  }
+  if (strcmp(primitive_path, "recv-read-local-copy") == 0) {
+    return "remote-hccl-buffer->local-hccl-buffer->output-hbm";
+  }
+  if (strcmp(primitive_path, "recv-read-direct-output") == 0) {
+    return "remote-hccl-buffer->output-hbm";
+  }
+  if (strcmp(primitive_path, "recv-write-local-copy") == 0 ||
+      strcmp(primitive_path, "recv-write-notify-local-copy") == 0) {
+    return "local-hccl-buffer->output-hbm";
+  }
+  return "unknown";
+}
+
 uint64_t PayloadEchoBytes(const uint32_t* status_words) {
   return static_cast<uint64_t>(status_words[4]) |
          (static_cast<uint64_t>(status_words[5]) << 32U);
@@ -2965,6 +3019,8 @@ std::string PayloadDescriptorDetail(
          (write_with_notify ? HcommWriteWithNotifyBackendName() : "none") +
          " payload_recv_path=" +
          (recv_direct_output ? "direct-output" : "local-buffer") +
+         " payload_desc_primitive_path=" + PayloadDescPrimitivePath(desc) +
+         " payload_desc_operand_layout=" + PayloadDescOperandLayout(desc) +
          " payload_desc_local_hccl_buffer_bytes=" +
          std::to_string(desc.local_hccl_buffer_bytes) +
          " payload_desc_remote_hccl_buffer_bytes=" +

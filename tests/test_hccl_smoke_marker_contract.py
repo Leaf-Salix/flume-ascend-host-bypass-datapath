@@ -37,6 +37,8 @@ REQUIRED_MARKERS = (
     "payload_trace_ret_order=passed",
     "payload_trace_bytes=",
     'DetailValueMarker("payload_trace_operand_layout"',
+    'DetailValueMarker("payload_desc_primitive_path"',
+    'DetailValueMarker("payload_desc_operand_layout"',
     "payload_trace_batch_mode=",
     'DetailValueMarker("payload_trace_recv_path"',
     "payload_trace_comm_acquire=",

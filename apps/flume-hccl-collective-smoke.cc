@@ -585,6 +585,8 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
                         HcommPayloadLayoutName(
                             disable_batch, comm_binding, write_path,
                             write_with_notify, effective_recv_direct_output)),
+      DetailValueMarker("payload_desc_primitive_path", primitive_path),
+      DetailValueMarker("payload_desc_operand_layout", operand_layout),
       "payload_semantic_v6=present",
       "payload_semantic_v7=present",
       "payload_semantic_v8=present",
