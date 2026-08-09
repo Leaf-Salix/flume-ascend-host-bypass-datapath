@@ -309,6 +309,25 @@ def strict_log_with_nonzero_hcomm_ret() -> str:
         "payload_kernel_hcomm_ret=0", "payload_kernel_hcomm_ret=42")
 
 
+def strict_log_with_primitive_return_first_error() -> str:
+    text = strict_log(True)
+    text = text.replace(
+        "payload_failure_step=none payload_status_word=0 "
+        "payload_kernel_hcomm_ret=0",
+        "payload_failure_step=primitive-return payload_status_word=0 "
+        "payload_kernel_hcomm_ret=88",
+        1)
+    text = text.replace(
+        "payload_trace_first_error_event=none "
+        "payload_trace_first_error_ret=0 "
+        "payload_trace_first_error_index=-1",
+        "payload_trace_first_error_event=recv-remote-read-done "
+        "payload_trace_first_error_ret=88 "
+        "payload_trace_first_error_index=7",
+        1)
+    return text
+
+
 def strict_log_with_trace_transfer_mismatch() -> str:
     return strict_log(True).replace(
         "payload_trace_transfer_mode=read", "payload_trace_transfer_mode=write",
@@ -408,7 +427,13 @@ def strict_log_with_rank1_ready_wait_failure() -> str:
         "payload_kernel_hcomm_ret=88",
         "payload_kernel_status=ready-notify-wait-failed "
         "payload_failure_step=ready-notify-wait payload_status_word=8 "
-        "payload_kernel_hcomm_ret=66")
+        "payload_kernel_hcomm_ret=66").replace(
+            "payload_trace_first_error_event=recv-remote-read-done "
+            "payload_trace_first_error_ret=88 "
+            "payload_trace_first_error_index=7",
+            "payload_trace_first_error_event=recv-ready-wait-done "
+            "payload_trace_first_error_ret=66 "
+            "payload_trace_first_error_index=5")
 
 
 def strict_log_with_rank1_output_copy_failure() -> str:
@@ -418,7 +443,13 @@ def strict_log_with_rank1_output_copy_failure() -> str:
         "payload_kernel_hcomm_ret=88",
         "payload_kernel_status=output-copy-failed "
         "payload_failure_step=output-copy payload_status_word=16 "
-        "payload_kernel_hcomm_ret=91")
+        "payload_kernel_hcomm_ret=91").replace(
+            "payload_trace_first_error_event=recv-remote-read-done "
+            "payload_trace_first_error_ret=88 "
+            "payload_trace_first_error_index=7",
+            "payload_trace_first_error_event=recv-output-copy-done "
+            "payload_trace_first_error_ret=91 "
+            "payload_trace_first_error_index=9")
 
 
 def strict_log_with_rank1_pending_remote_read() -> str:
@@ -1416,6 +1447,20 @@ def main() -> int:
         assert ("| rank0 suggested action | inspect rank 0 in-kernel HCOMM "
                 "primitive return code: 42 |") in text
         assert "inspect rank 0 in-kernel HCOMM primitive return code: 42" in text
+
+        strict_primitive_return_first_error = write(
+            tmp / "strict-primitive-return-first-error.log",
+            strict_log_with_primitive_return_first_error())
+        primitive_return_first_error_dir = tmp / "primitive-return-first-error"
+        primitive_return_first_error_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            primitive_return_first_error_dir, smoke,
+            strict_primitive_return_first_error, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| rank0 first trace error | recv-remote-read-done / 88 |" in text
+        assert ("inspect rank 0 HcommReadOnThread remote HCCL Buffer to "
+                "local HCCL Buffer path (first_error_event="
+                "recv-remote-read-done, hcomm_ret=88)") in text
 
         strict_local_copy_fail = write(
             tmp / "strict-local-copy-fail.log",

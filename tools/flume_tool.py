@@ -4061,6 +4061,51 @@ def RunHcommPayloadChannelFenceDiagnostic(
     return result
 
 
+def StrictPayloadFirstErrorAction(first_error_event: str) -> str:
+    if first_error_event in ("missing", "none", ""):
+        return ""
+    if "comm-acquire" in first_error_event:
+        return ("HcommAcquireComm path, HCCL comm name, and payload package "
+                "libhcomm linkage")
+    if "comm-release" in first_error_event:
+        return "HcommReleaseComm cleanup after payload primitives complete"
+    if "batch-start" in first_error_event:
+        return ("HcommBatchModeStart compatibility for the selected AICPU_TS "
+                "engine and batch tag")
+    if "batch-end" in first_error_event:
+        return "HcommBatchModeEnd completion after payload primitives complete"
+    if "thread-notify-wait" in first_error_event:
+        return "host/AICPU thread notify wait handles and launch ordering"
+    if "thread-notify-record" in first_error_event:
+        return "host/AICPU completion notify record handles after batch end"
+    if "send-local-copy" in first_error_event:
+        return "HcommLocalCopyOnThread input HBM to local HCCL Buffer path"
+    if "recv-output-copy" in first_error_event:
+        return "HcommLocalCopyOnThread local HCCL Buffer to user HBM output copy"
+    if "send-remote-write-notify" in first_error_event:
+        return ("HcommWriteWithNotifyOnThread fused remote write + ready "
+                "notify path, ready notify index, Channel descriptor, and "
+                "optional primitive linkage; rerun plain "
+                "--hcomm-payload-write-path to separate remote write from "
+                "fused notify")
+    if "send-remote-write" in first_error_event:
+        return ("HcommWriteOnThread local HCCL Buffer to remote HCCL Buffer "
+                "path")
+    if "recv-remote-read" in first_error_event:
+        return "HcommReadOnThread remote HCCL Buffer to local HCCL Buffer path"
+    if "channel-fence" in first_error_event:
+        return "HcommChannelFenceOnThread completion for channel-drain mode"
+    if "ready-record" in first_error_event:
+        return "HCOMM ready notify record index and Channel descriptor"
+    if "ready-wait" in first_error_event:
+        return "HCOMM ready notify wait index, peer rank launch, and role pairing"
+    if "done-record" in first_error_event:
+        return "HCOMM done notify record index after recv-side output copy"
+    if "done-wait" in first_error_event:
+        return "HCOMM done notify wait index and recv rank completion"
+    return ""
+
+
 def StrictPayloadFailureAction(rank: int, failure_step: str,
                                primitive_state: str = "missing",
                                first_error_event: str = "missing",
@@ -4069,6 +4114,10 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
     if primitive_state == "pending":
         return (prefix + "pending HCOMM primitive timeout/hang at " +
                 failure_step)
+    first_error_action = StrictPayloadFirstErrorAction(first_error_event)
+    if first_error_action and hcomm_ret not in ("0", "missing"):
+        return (prefix + first_error_action + " (first_error_event=" +
+                first_error_event + ", hcomm_ret=" + hcomm_ret + ")")
     if failure_step in ("none", "primitive-return", "missing") and \
             hcomm_ret not in ("0", "missing"):
         return (prefix + "in-kernel HCOMM primitive return code: " +
