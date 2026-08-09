@@ -3133,6 +3133,21 @@ std::string PayloadTraceOrderState(const uint32_t* trace_words,
   return "observed";
 }
 
+bool PayloadTraceOrderMatches(const uint32_t* trace_words,
+                              const std::vector<uint32_t>& events,
+                              bool include_thread_notify) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return false;
+  }
+  if (trace_words[4] > FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) {
+    return false;
+  }
+  return events == ExpectedPayloadTraceEvents(trace_words,
+                                             include_thread_notify);
+}
+
 bool PayloadTraceEventIsEnter(uint32_t event) {
   switch (event) {
     case FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_ENTER:
@@ -3184,6 +3199,35 @@ std::string PayloadTraceReturnOrderState(
     }
   }
   return "passed";
+}
+
+bool PayloadTraceReturnOrderMatches(const uint32_t* trace_words,
+                                    const std::vector<uint32_t>& events,
+                                    const std::vector<uint32_t>& returns,
+                                    bool include_thread_notify) {
+  if (trace_words == nullptr ||
+      trace_words[0] != FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION ||
+      trace_words[1] != FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT) {
+    return false;
+  }
+  if (events.empty() || events.size() != returns.size()) {
+    return false;
+  }
+  if (trace_words[4] > FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) {
+    return false;
+  }
+  if (!PayloadTraceOrderMatches(trace_words, events,
+                                include_thread_notify)) {
+    return false;
+  }
+  for (size_t i = 0; i < events.size(); ++i) {
+    const uint32_t expected_ret =
+        PayloadTraceEventIsEnter(events[i]) ? 0xFFFFFFFFU : 0U;
+    if (returns[i] != expected_ret) {
+      return false;
+    }
+  }
+  return true;
 }
 
 std::string PayloadTracePrimitivePath(const uint32_t* trace_words) {
@@ -3275,7 +3319,9 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          PayloadTraceFirstErrorDetail(events, returns);
 }
 
-bool PayloadTracePassed(const uint32_t* trace_words, aclError read_status) {
+bool PayloadTracePassed(const uint32_t* trace_words,
+                        aclError read_status,
+                        bool include_thread_notify) {
   if (read_status != ACL_SUCCESS || trace_words == nullptr) {
     return false;
   }
@@ -3286,8 +3332,10 @@ bool PayloadTracePassed(const uint32_t* trace_words, aclError read_status) {
          trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
          trace_words[3] == 0U &&
          trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
-         PayloadTraceOrderState(trace_words, events) == "passed" &&
-         PayloadTraceReturnOrderState(trace_words, events, returns) == "passed";
+         PayloadTraceOrderMatches(trace_words, events,
+                                  include_thread_notify) &&
+         PayloadTraceReturnOrderMatches(trace_words, events, returns,
+                                        include_thread_notify);
 }
 
 std::string NotifyKernelStatusName(uint32_t status) {
@@ -4290,7 +4338,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
-  if (!PayloadTracePassed(kernel_trace_words, trace_ret)) {
+  if (!PayloadTracePassed(kernel_trace_words, trace_ret,
+                          resource_info.host_thread_notify_ready)) {
     *status = FLUME_ERR_BACKEND;
     return std::string("stage3b3e_payload_copy=failed "
                        "stage3b3e_direct_aclrt_payload_loader=passed "
@@ -4305,7 +4354,9 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
                      "payload_status_word=0 payload_kernel_hcomm_ret=0 "
                        "payload_echo=passed "
                        "payload_descriptor_fingerprint=passed "
-                       "payload_trace_gate=failed") +
+                       "payload_trace_gate=failed "
+                       "payload_trace_expected_thread_notify=") +
+           (resource_info.host_thread_notify_ready ? "on" : "off") +
            PayloadStatusSchemaDetail() +
            PayloadPrimitiveStateDetail(kernel_status_words) +
            PayloadEchoWordsDetail(kernel_status_words) +
@@ -4332,6 +4383,8 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
          " payload_descriptor_fingerprint=passed "
          "payload_expected_desc_fingerprint=" +
          std::to_string(expected_desc_fingerprint) +
+         " payload_trace_expected_thread_notify=" +
+         (resource_info.host_thread_notify_ready ? "on" : "off") +
          PayloadStatusSchemaDetail() +
          PayloadPrimitiveStateDetail(kernel_status_words) +
          PayloadEchoWordsDetail(kernel_status_words) +
