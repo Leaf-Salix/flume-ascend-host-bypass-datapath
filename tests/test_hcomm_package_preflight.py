@@ -977,11 +977,13 @@ def main() -> int:
             def __init__(self, run_dir: Path):
                 self.run_dir = run_dir
                 self.calls: list[str] = []
+                self.commands: list[list[str]] = []
 
             def run(self, name, command, required, timeout_seconds,
                     env_updates=None):
                 del required, timeout_seconds, env_updates
                 self.calls.append(name)
+                self.commands.append(list(command))
                 log_path = self.run_dir / f"{len(self.calls):02d}-{name}.log"
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 if name == "hcomm-custom-op-package-preflight-autobuilt":
@@ -1025,6 +1027,33 @@ def main() -> int:
         assert "hcomm-payload-strict-positive" in auto_note_text
         assert "ascend-full-matrix" in auto_note_text
         assert "--auto-run-hcomm-payload-candidate-matrix" in auto_note_text
+        assert any(
+            f"--custom-op-root={auto_args.custom_op_root}" in command
+            for command in auto_runner.commands)
+
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "auto-strict-build"),
+                "--hccl-devices", "0,1",
+                "--run-hcomm-payload-smoke",
+                "--hcomm-require-payload-copy",
+                "--build-hcomm-custom-op",
+                "--custom-op-root", auto_args.custom_op_root,
+                "ascend-probe",
+            ]
+            auto_smoke_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        auto_specs = flume_tool.build_commands(
+            auto_smoke_args, enable_hccl=True,
+            run_dir=auto_runner.run_dir / "auto-smoke-run")
+        auto_smoke = next(spec for spec in auto_specs
+                          if spec.name == "hccl-collective-smoke")
+        assert auto_smoke.env_updates["FLUME_HCOMM_CUSTOM_OP_ROOT"] == (
+            auto_args.custom_op_root)
+        assert "--hcomm-require-payload-copy" in auto_smoke.command
 
         inferred_tar_preflight = subprocess.run(
             [

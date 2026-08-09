@@ -1803,13 +1803,20 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
         if export_result is not None and export_result.returncode != 0:
             return runner.write_summary()
-        runner.run(
+        package_result = runner.run(
             "hcomm-custom-op-package-preflight",
             HcommCustomOpPackageCommand(
                 args, require_payload=args.hcomm_require_payload_copy),
             required=False,
             timeout_seconds=args.step_timeout_sec,
         )
+        if args.hcomm_require_payload_copy:
+            args, package_result = MaybeAutoBuildPayloadPackage(
+                runner, args, package_result)
+            if package_result.returncode != 0 and args.auto_build_hcomm_payload_package:
+                next_steps = WritePayloadPackageBuildNextSteps(
+                    runner.run_dir, args)
+                print(f"[ok] payload package next steps -> {next_steps}")
     try:
         command_specs = build_commands(args, enable_hccl=True,
                                        run_dir=runner.run_dir)
@@ -7559,7 +7566,8 @@ def parse_args() -> argparse.Namespace:
                               "to the selected CANN toolkit."))
     parser.add_argument("--auto-build-hcomm-payload-package",
                         action="store_true",
-                        help=("For ascend-full-matrix, "
+                        help=("For ascend-probe payload-copy smoke, "
+                              "ascend-full-matrix, "
                               "hcomm-payload-strict-positive, and "
                               "hcomm-storage-strict-positive, if the payload "
                               "custom-op package preflight fails, build the "
