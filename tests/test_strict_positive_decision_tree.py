@@ -1062,6 +1062,17 @@ def main() -> int:
         assert "--storage-hbm-smoke" in smoke_command
         assert "--hcomm-require-payload-copy" in smoke_command
         assert "--hcomm-payload-batch-tag=flume-payload-v1" in smoke_command
+        storage_p2p_baseline, storage_payload_only = (
+            flume_tool.SplitStrictPayloadSmokeCommands(
+                smoke_command + ["--p2p-copy"]))
+        assert "--p2p-copy" not in storage_payload_only
+        assert "--storage-hbm-smoke" in storage_payload_only
+        assert "--hcomm-require-payload-copy" in storage_payload_only
+        assert "--p2p-copy" in storage_p2p_baseline
+        assert "--storage-hbm-smoke" not in storage_p2p_baseline
+        assert "--hcomm-require-payload-copy" not in storage_p2p_baseline
+        assert not any(item.startswith("--hcomm-")
+                       for item in storage_p2p_baseline)
 
         old_argv = sys.argv[:]
         try:
@@ -1098,6 +1109,15 @@ def main() -> int:
         assert flume_tool.CommandUsesOfficialP2pLayout(official_smoke_command)
         assert not flume_tool.CommandUsesOfficialP2pLayout(
             official_smoke_command + ["--hcomm-payload-channel-fence"])
+        official_p2p_baseline, official_payload_only = (
+            flume_tool.SplitStrictPayloadSmokeCommands(
+                official_smoke_command + ["--p2p-copy"]))
+        assert "--p2p-copy" not in official_payload_only
+        assert flume_tool.CommandUsesOfficialP2pLayout(official_payload_only)
+        assert "--p2p-copy" in official_p2p_baseline
+        assert "--hcomm-payload-smoke" not in official_p2p_baseline
+        assert "--hcomm-require-payload-copy" not in official_p2p_baseline
+        assert "--hcomm-channel-engine=aicpu" not in official_p2p_baseline
 
         old_argv = sys.argv[:]
         try:

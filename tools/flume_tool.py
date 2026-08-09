@@ -1899,6 +1899,58 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     return commands
 
 
+def _FilterCommandArgs(command: list[str],
+                       *,
+                       remove_exact: set[str],
+                       remove_prefixes: tuple[str, ...]) -> list[str]:
+    return [
+        item for item in command
+        if item not in remove_exact and
+        not any(item.startswith(prefix) for prefix in remove_prefixes)
+    ]
+
+
+def SplitStrictPayloadSmokeCommands(command: list[str]) -> tuple[list[str], list[str]]:
+    """Split HCCL P2P baseline from the strict HCOMM payload evidence run."""
+    p2p_baseline = _FilterCommandArgs(
+        command,
+        remove_exact={
+            "--hcomm-channel-probe",
+            "--hcomm-custom-op-launch-smoke",
+            "--hcomm-resource-descriptor-smoke",
+            "--hcomm-notify-only-smoke",
+            "--hcomm-payload-smoke",
+            "--hcomm-require-thread-export",
+            "--hcomm-require-payload-copy",
+            "--hcomm-payload-disable-batch",
+            "--hcomm-payload-recv-direct-output",
+            "--hcomm-payload-channel-fence",
+            "--hcomm-payload-write-path",
+            "--hcomm-payload-write-with-notify",
+            "--hcomm-payload-skip-comm-acquire",
+            "--storage-hbm-smoke",
+        },
+        remove_prefixes=(
+            "--hcomm-channel-engine=",
+            "--hcomm-channel-protocol=",
+            "--hcomm-notify-num=",
+            "--hcomm-timeout-sec=",
+            "--hcomm-payload-comm-binding=",
+            "--hcomm-payload-batch-tag=",
+            "--storage-smoke-file=",
+            "--storage-smoke-offset=",
+            "--storage-smoke-bytes=",
+            "--storage-smoke-checksum=",
+        ),
+    )
+    payload_only = _FilterCommandArgs(
+        command,
+        remove_exact={"--p2p-copy"},
+        remove_prefixes=(),
+    )
+    return p2p_baseline, payload_only
+
+
 def run_local(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -6985,21 +7037,41 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         allow_accepted_candidate = (
             step_name == primary_step_name and
             HasAcceptedPayloadCandidate(args, spec.command))
-        result = runner.run(step_name, spec.command,
-                            required=spec.required and
-                            not allow_accepted_candidate,
-                            timeout_seconds=timeout,
-                            env_updates=spec.env_updates)
-        if step_name == "acl-runtime-probe" and result.returncode != 0:
-            strict_tree_log = result.log_path
-            break
+        if step_name != primary_step_name:
+            result = runner.run(step_name, spec.command,
+                                required=spec.required,
+                                timeout_seconds=timeout,
+                                env_updates=spec.env_updates)
+            if step_name == "acl-runtime-probe" and result.returncode != 0:
+                strict_tree_log = result.log_path
+                break
+            continue
         if step_name == primary_step_name:
+            p2p_command, payload_command = SplitStrictPayloadSmokeCommands(
+                spec.command)
+            if "--p2p-copy" in spec.command:
+                baseline_result = runner.run(
+                    "hcomm-payload-hccl-p2p-baseline",
+                    p2p_command,
+                    required=spec.required,
+                    timeout_seconds=timeout,
+                    env_updates=spec.env_updates)
+                if baseline_result.returncode != 0:
+                    WriteHcclSmokeDiagnostics(
+                        runner.run_dir, baseline_result.log_path)
+                    strict_tree_log = baseline_result.log_path
+                    break
+            result = runner.run(step_name, payload_command,
+                                required=spec.required and
+                                not allow_accepted_candidate,
+                                timeout_seconds=timeout,
+                                env_updates=spec.env_updates)
             strict_result = result
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
                 candidate_log = RunHcommPayloadStrictFailureFollowups(
-                    runner, args, spec.command, spec.env_updates, timeout,
+                    runner, args, payload_command, spec.env_updates, timeout,
                     result.log_path, package_payload_ready=True)
                 if candidate_log is not None:
                     strict_tree_log = candidate_log
@@ -7029,8 +7101,9 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
     note.write_text(
         f"{gate_name} is the focused Stage 3B.3E gate. It "
         "requires a payload-ready Flume custom-op package, configures Flume "
-        "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline, and "
-        "then requires real HCOMM payload copy. Success requires both ranks "
+        "with FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline as a "
+        "separate health check, and then runs a payload-only strict smoke that "
+        "requires real HCOMM payload copy. Success requires both ranks "
         "to pass with stage3b3e_payload_copy=passed, direct ACL payload launch/"
         "sync passed, payload_kernel_status=success, payload_failure_step=none, "
         "payload_status_word=0, payload_kernel_hcomm_ret=0, status schema "
@@ -7194,21 +7267,41 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         allow_accepted_candidate = (
             step_name == "hcomm-storage-strict-positive" and
             HasAcceptedPayloadCandidate(args, spec.command))
-        result = runner.run(step_name, spec.command,
-                            required=spec.required and
-                            not allow_accepted_candidate,
-                            timeout_seconds=timeout,
-                            env_updates=spec.env_updates)
-        if step_name == "acl-runtime-probe" and result.returncode != 0:
-            strict_tree_log = result.log_path
-            break
+        if step_name != "hcomm-storage-strict-positive":
+            result = runner.run(step_name, spec.command,
+                                required=spec.required,
+                                timeout_seconds=timeout,
+                                env_updates=spec.env_updates)
+            if step_name == "acl-runtime-probe" and result.returncode != 0:
+                strict_tree_log = result.log_path
+                break
+            continue
         if step_name == "hcomm-storage-strict-positive":
+            p2p_command, payload_command = SplitStrictPayloadSmokeCommands(
+                spec.command)
+            if "--p2p-copy" in spec.command:
+                baseline_result = runner.run(
+                    "hcomm-storage-hccl-p2p-baseline",
+                    p2p_command,
+                    required=spec.required,
+                    timeout_seconds=timeout,
+                    env_updates=spec.env_updates)
+                if baseline_result.returncode != 0:
+                    WriteHcclSmokeDiagnostics(
+                        runner.run_dir, baseline_result.log_path)
+                    strict_tree_log = baseline_result.log_path
+                    break
+            result = runner.run(step_name, payload_command,
+                                required=spec.required and
+                                not allow_accepted_candidate,
+                                timeout_seconds=timeout,
+                                env_updates=spec.env_updates)
             strict_result = result
             strict_tree_log = result.log_path
             if result.returncode != 0:
                 WriteHcclSmokeDiagnostics(runner.run_dir, result.log_path)
                 candidate_log = RunHcommPayloadStrictFailureFollowups(
-                    runner, args, spec.command, spec.env_updates, timeout,
+                    runner, args, payload_command, spec.env_updates, timeout,
                     result.log_path, package_payload_ready=True)
                 if candidate_log is not None:
                     strict_tree_log = candidate_log
@@ -7238,9 +7331,10 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
     note.write_text(
         "hcomm-storage-strict-positive is the focused Stage 3B.4 gate. It "
         "requires a payload-ready Flume custom-op package, enables "
-        "FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline and "
-        "Stage 3B.3E strict HCOMM payload copy, then runs storage HBM smoke "
-        "through the HCOMM payload scheduler. Success requires the strict "
+        "FLUME_BUILD_HCOMM_CUSTOM_OP=ON, runs the HCCL P2P baseline as a "
+        "separate health check, and then runs a payload-only Stage 3B.3E "
+        "strict HCOMM payload copy wired into storage HBM smoke through the "
+        "HCOMM payload scheduler. Success requires the strict "
         "payload evidence to pass and rank1 storage verification to report "
         "storage_hbm=hcomm-payload-staging. A failed default "
         "comm-name storage run is followed by the built-in Stage 3B.4 "
