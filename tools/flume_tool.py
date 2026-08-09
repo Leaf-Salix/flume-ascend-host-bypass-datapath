@@ -2258,6 +2258,7 @@ STRICT_PAYLOAD_RANK_MARKERS = (
     "payload_trace_ret_order=passed",
     "payload_trace_count=",
     "payload_trace_primitive_path=",
+    "payload_trace_operand_layout=",
     "payload_trace_bytes=",
     "payload_trace_batch_mode=",
     "payload_trace_recv_path=",
@@ -2506,11 +2507,15 @@ def StrictPayloadTraceDescriptorPassed(
         payload_layout = MarkerValueFromLine(line, "payload_layout")
         trace_transfer = MarkerValueFromLine(
             line, "payload_trace_transfer_mode")
+        trace_path = MarkerValueFromLine(line, "payload_trace_primitive_path")
+        trace_operand = MarkerValueFromLine(
+            line, "payload_trace_operand_layout")
         values = (
             desc_bytes, trace_bytes, desc_ready, trace_ready, desc_done,
             trace_done, payload_batch, trace_batch, payload_recv, trace_recv,
             payload_binding, trace_binding, payload_acquire, trace_acquire,
-            payload_transfer, payload_layout, trace_transfer)
+            payload_transfer, payload_layout, trace_transfer, trace_path,
+            trace_operand)
         if any(value == "missing" for value in values):
             return False, f"rank{rank}-missing-trace-descriptor-field"
         if desc_bytes != trace_bytes:
@@ -2529,6 +2534,24 @@ def StrictPayloadTraceDescriptorPassed(
             return False, f"rank{rank}-trace-comm-acquire-mismatch"
         if payload_transfer != trace_transfer:
             return False, f"rank{rank}-trace-transfer-mismatch"
+        expected_operand_layout = {
+            "send-local-copy": "input-hbm->local-hccl-buffer",
+            "send-write":
+                "input-hbm->local-hccl-buffer->remote-hccl-buffer",
+            "send-write-with-notify":
+                "input-hbm->local-hccl-buffer->"
+                "remote-hccl-buffer+ready-notify",
+            "recv-read-local-copy":
+                "remote-hccl-buffer->local-hccl-buffer->output-hbm",
+            "recv-read-direct-output":
+                "remote-hccl-buffer->output-hbm",
+            "recv-write-local-copy": "local-hccl-buffer->output-hbm",
+            "recv-write-notify-local-copy": "local-hccl-buffer->output-hbm",
+        }.get(trace_path)
+        if expected_operand_layout is None:
+            return False, f"rank{rank}-trace-operand-path-unknown"
+        if trace_operand != expected_operand_layout:
+            return False, f"rank{rank}-trace-operand-layout-mismatch"
         expected_layout = "read-default"
         if payload_transfer == "write-with-notify":
             expected_layout = "write-with-notify"
@@ -2695,6 +2718,7 @@ def StrictPayloadOfficialP2pShapePassed(
             "payload_recv_path": "direct-output",
             "payload_trace_recv_path": "1",
             "payload_trace_primitive_path": "send-local-copy",
+            "payload_trace_operand_layout": "input-hbm->local-hccl-buffer",
             "payload_trace_count": "8",
             "payload_trace_write_notify_backend": "none",
             "payload_trace_expected_thread_notify": "off",
@@ -2710,6 +2734,7 @@ def StrictPayloadOfficialP2pShapePassed(
             "payload_recv_path": "direct-output",
             "payload_trace_recv_path": "1",
             "payload_trace_primitive_path": "recv-read-direct-output",
+            "payload_trace_operand_layout": "remote-hccl-buffer->output-hbm",
             "payload_trace_count": "8",
             "payload_trace_write_notify_backend": "none",
             "payload_trace_expected_thread_notify": "off",
@@ -5834,6 +5859,10 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
         strict_rank_lines[0], "payload_trace_primitive_path")
     strict_rank1_trace_path = marker_value_from_line(
         strict_rank_lines[1], "payload_trace_primitive_path")
+    strict_rank0_trace_operand_layout = marker_value_from_line(
+        strict_rank_lines[0], "payload_trace_operand_layout")
+    strict_rank1_trace_operand_layout = marker_value_from_line(
+        strict_rank_lines[1], "payload_trace_operand_layout")
     strict_trace_result = marker_value(strict, "payload_trace_result")
     strict_rank0_role = marker_value_from_line(strict_rank_lines[0],
                                                "payload_role")
@@ -6188,7 +6217,7 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             f"| payload host data | {'passed' if strict_host_data_ok else strict_host_data_reason} | host source={strict_rank0_host_source} sample={strict_rank0_host_sample_bytes}; host received/expected={strict_rank1_host_received}/{strict_rank1_host_expected} sample={strict_rank1_host_sample_bytes}; host fingerprints must match the device-side sampled fingerprints and checksum evidence |",
             f"| payload trace descriptor match | {'passed' if strict_trace_descriptor_ok else strict_trace_descriptor_reason} | trace bytes/batch/recv/comm/transfer fields and `payload_layout` must match the host descriptor on both ranks |",
             f"| payload trace count match | {'passed' if strict_trace_count_ok else strict_trace_count_reason} | `payload_trace_count` must equal the expected kernel event count derived from role, transfer mode, batch mode, comm binding, recv path, completion mode, and thread-notify mode |",
-            f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path and success. NBI write-with-notify evidence also requires channel-fence completion. |",
+            f"| payload primitive trace | {strict_trace} | schema={strict_trace_schema}/{strict_trace_word_count}, event={strict_trace_event}, order={strict_trace_order}, transfer=rank0:{strict_rank0_trace_transfer_mode}/rank1:{strict_rank1_trace_transfer_mode}, layout=rank0:{strict_rank0_layout}/rank1:{strict_rank1_layout}, path=rank0:{strict_rank0_trace_path}/rank1:{strict_rank1_trace_path}, operands=rank0:{strict_rank0_trace_operand_layout}/rank1:{strict_rank1_trace_operand_layout}, write_notify_backend=rank0:{strict_rank0_write_notify_backend}/rank1:{strict_rank1_write_notify_backend}, result={strict_trace_result}; trace must use the current device-side layout, end at `kernel-exit`, and show expected HCOMM primitive order/path, operand layout, and success. NBI write-with-notify evidence also requires channel-fence completion. |",
             f"| payload role evidence | rank0={strict_rank0_role}, rank1={strict_rank1_role} | rank0 must report `payload_role=send`; rank1 must report `payload_role=recv` |",
             f"| payload batch tag | {strict_desc_batch_tag} | expected `default` or an explicit `custom` tag; `missing` or `empty` means descriptor evidence is incomplete |",
             f"| payload test pattern | {strict_pattern} | `payload_pattern=strict-v1` proves strict smoke used its dedicated source data pattern |",

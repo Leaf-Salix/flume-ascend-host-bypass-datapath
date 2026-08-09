@@ -309,6 +309,7 @@ payload_trace_event=kernel-exit
 payload_trace_order=passed
 payload_trace_ret_order=passed
 payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy
+payload_trace_operand_layout=...
 payload_transfer_mode=read|write|write-with-notify
 payload_trace_result=success
 payload_trace_first_error_event=none

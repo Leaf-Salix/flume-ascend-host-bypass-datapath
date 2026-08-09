@@ -482,6 +482,16 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
        (write_path ? "recv-write-local-copy" :
         (effective_recv_direct_output ? "recv-read-direct-output" :
                                         "recv-read-local-copy")));
+  const char* operand_layout = send_role ?
+      (write_with_notify ?
+           "input-hbm->local-hccl-buffer->remote-hccl-buffer+ready-notify" :
+       (write_path ?
+           "input-hbm->local-hccl-buffer->remote-hccl-buffer" :
+           "input-hbm->local-hccl-buffer")) :
+      (write_path ? "local-hccl-buffer->output-hbm" :
+       (effective_recv_direct_output ?
+            "remote-hccl-buffer->output-hbm" :
+            "remote-hccl-buffer->local-hccl-buffer->output-hbm"));
   const char* available_write_notify_backend =
 #if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
       "blocking";
@@ -537,6 +547,7 @@ std::vector<std::string> RequiredHcommPayloadIoMarkers(
       "payload_trace_order=passed",
       "payload_trace_ret_order=passed",
       DetailValueMarker("payload_trace_primitive_path", primitive_path),
+      DetailValueMarker("payload_trace_operand_layout", operand_layout),
       "payload_trace_bytes=",
       std::string("payload_trace_batch_mode=") + (disable_batch ? "1" : "0"),
       DetailValueMarker("payload_trace_recv_path",

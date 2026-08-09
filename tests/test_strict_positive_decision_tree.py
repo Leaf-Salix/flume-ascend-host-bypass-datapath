@@ -163,7 +163,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_count=16 "
-        "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_primitive_path=send-local-copy payload_trace_operand_layout=input-hbm->local-hccl-buffer "
         "payload_trace_bytes=4096 "
         "payload_trace_batch_mode=0 "
         "payload_trace_recv_path=0 "
@@ -206,7 +206,7 @@ def strict_log(include_verify: bool) -> str:
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
         "payload_trace_count=18 "
-        "payload_trace_primitive_path=recv-read-local-copy "
+        "payload_trace_primitive_path=recv-read-local-copy payload_trace_operand_layout=remote-hccl-buffer->local-hccl-buffer->output-hbm "
         "payload_trace_bytes=4096 "
         "payload_trace_batch_mode=0 "
         "payload_trace_recv_path=0 "
@@ -252,7 +252,7 @@ def strict_log_with_cross_line_false_positive() -> str:
         "payload_trace_word_count=82 payload_trace_event=kernel-exit "
         "payload_trace_order=passed "
         "payload_trace_ret_order=passed "
-        "payload_trace_primitive_path=send-local-copy "
+        "payload_trace_primitive_path=send-local-copy payload_trace_operand_layout=input-hbm->local-hccl-buffer "
         "payload_trace_bytes=4096 "
         "payload_trace_batch_mode=0 "
         "payload_trace_recv_path=0 "
@@ -292,8 +292,16 @@ def strict_write_path_log(include_verify: bool) -> str:
                         "payload_layout=write")
     text = text.replace("payload_trace_primitive_path=send-local-copy",
                         "payload_trace_primitive_path=send-write")
+    text = text.replace(
+        "payload_trace_operand_layout=input-hbm->local-hccl-buffer",
+        "payload_trace_operand_layout=input-hbm->local-hccl-buffer->"
+        "remote-hccl-buffer")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-write-local-copy")
+    text = text.replace(
+        "payload_trace_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_trace_operand_layout=local-hccl-buffer->output-hbm")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -322,8 +330,16 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
         "payload_trace_primitive_path=send-local-copy",
         "payload_trace_primitive_path=send-write-with-notify")
     text = text.replace(
+        "payload_trace_operand_layout=input-hbm->local-hccl-buffer",
+        "payload_trace_operand_layout=input-hbm->local-hccl-buffer->"
+        "remote-hccl-buffer+ready-notify")
+    text = text.replace(
         "payload_trace_primitive_path=recv-read-local-copy",
         "payload_trace_primitive_path=recv-write-notify-local-copy")
+    text = text.replace(
+        "payload_trace_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_trace_operand_layout=local-hccl-buffer->output-hbm")
     marker = "payload_data_local_entry_fingerprint=111"
     first = text.find(marker)
     second = text.find(marker, first + len(marker))
@@ -363,7 +379,7 @@ def strict_write_with_notify_remote_write_failure_log() -> str:
         "payload_trace_first_error_event=send-remote-write-notify-done "
         "payload_trace_first_error_ret=62 "
         "payload_trace_first_error_index=5 "
-        "payload_trace_primitive_path=send-write-with-notify "
+        "payload_trace_primitive_path=send-write-with-notify payload_trace_operand_layout=input-hbm->local-hccl-buffer->remote-hccl-buffer+ready-notify "
         "payload_transfer_mode=write-with-notify "
         "payload_trace_transfer_mode=write-with-notify "
         "payload_trace_write_notify_backend=blocking "
@@ -376,7 +392,7 @@ def strict_write_with_notify_remote_write_failure_log() -> str:
         "payload_status_word_count=17 "
         "payload_trace_first_error_event=recv-ready-wait-done "
         "payload_trace_first_error_ret=110 "
-        "payload_trace_primitive_path=recv-write-notify-local-copy "
+        "payload_trace_primitive_path=recv-write-notify-local-copy payload_trace_operand_layout=local-hccl-buffer->output-hbm "
         "payload_transfer_mode=write-with-notify "
         "payload_trace_transfer_mode=write-with-notify "
         "payload_trace_write_notify_backend=blocking fallback=none\"",
@@ -696,6 +712,10 @@ def strict_log_with_recv_direct_output() -> str:
                         "payload_layout=read-direct-output")
     text = text.replace("payload_trace_primitive_path=recv-read-local-copy",
                         "payload_trace_primitive_path=recv-read-direct-output")
+    text = text.replace(
+        "payload_trace_operand_layout=remote-hccl-buffer->"
+        "local-hccl-buffer->output-hbm",
+        "payload_trace_operand_layout=remote-hccl-buffer->output-hbm")
     text = text.replace("payload_trace_recv_path=0",
                         "payload_trace_recv_path=1")
     return _adjust_trace_counts(text, 0, -2)
@@ -2286,6 +2306,21 @@ def main() -> int:
         assert "source=missing" in text
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_without_prime_source.read_text(encoding="utf-8"))[0]
+
+        strict_without_operand_layout = write(
+            tmp / "strict-without-operand-layout.log",
+            strict_log(True).replace(
+                "payload_trace_operand_layout=input-hbm->local-hccl-buffer ",
+                "", 1))
+        no_operand_layout_dir = tmp / "no-operand-layout"
+        no_operand_layout_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_operand_layout_dir, smoke, strict_without_operand_layout,
+            package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_without_operand_layout.read_text(encoding="utf-8"))[0]
 
         strict_missing_trace_first_error = write(
             tmp / "strict-missing-trace-first-error.log",

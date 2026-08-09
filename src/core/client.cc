@@ -3589,6 +3589,32 @@ std::string PayloadTracePrimitivePath(const uint32_t* trace_words) {
   return "unknown";
 }
 
+std::string PayloadTraceOperandLayout(const uint32_t* trace_words) {
+  const std::string primitive_path = PayloadTracePrimitivePath(trace_words);
+  if (primitive_path == "send-local-copy") {
+    return "input-hbm->local-hccl-buffer";
+  }
+  if (primitive_path == "send-write") {
+    return "input-hbm->local-hccl-buffer->remote-hccl-buffer";
+  }
+  if (primitive_path == "send-write-with-notify") {
+    return "input-hbm->local-hccl-buffer->remote-hccl-buffer+ready-notify";
+  }
+  if (primitive_path == "recv-read-local-copy") {
+    return "remote-hccl-buffer->local-hccl-buffer->output-hbm";
+  }
+  if (primitive_path == "recv-read-direct-output") {
+    return "remote-hccl-buffer->output-hbm";
+  }
+  if (primitive_path == "recv-write-local-copy") {
+    return "local-hccl-buffer->output-hbm";
+  }
+  if (primitive_path == "recv-write-notify-local-copy") {
+    return "local-hccl-buffer->output-hbm";
+  }
+  return "unknown";
+}
+
 std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
                                     aclError read_status = ACL_SUCCESS) {
   if (trace_words == nullptr) {
@@ -3659,6 +3685,8 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          PayloadTraceReturnOrderState(trace_words, events, returns) +
          " payload_trace_primitive_path=" +
          PayloadTracePrimitivePath(trace_words) +
+         " payload_trace_operand_layout=" +
+         PayloadTraceOperandLayout(trace_words) +
          " payload_trace_capacity=" +
          std::to_string(FLUME_HCOMM_PAYLOAD_TRACE_EVENT_CAPACITY) +
          " payload_trace_sequence=\"" + PayloadTraceEventSequence(events) +
