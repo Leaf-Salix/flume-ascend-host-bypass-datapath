@@ -234,6 +234,16 @@ constexpr bool HcommWriteWithNotifyUsesNbiBackend() {
 #endif
 }
 
+constexpr const char* HcommWriteWithNotifyBackendName() {
+#if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+  return "blocking";
+#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+  return "nbi";
+#else
+  return "missing";
+#endif
+}
+
 struct CommState {
   bool hccl_attached = false;
   void* hccl_comm = nullptr;
@@ -2864,6 +2874,8 @@ std::string PayloadDescriptorDetail(
          " payload_transfer_mode=" +
          (write_with_notify ? "write-with-notify" :
                               (write_path ? "write" : "read")) +
+         " payload_write_notify_backend=" +
+         (write_with_notify ? HcommWriteWithNotifyBackendName() : "none") +
          " payload_recv_path=" +
          (recv_direct_output ? "direct-output" : "local-buffer") +
          " payload_desc_local_hccl_buffer_bytes=" +

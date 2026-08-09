@@ -87,6 +87,14 @@ def main() -> int:
         print("NBI write-with-notify helper must drive both plan and desc "
               "completion-mode selection", file=sys.stderr)
         return 1
+    if "constexpr const char* HcommWriteWithNotifyBackendName()" not in client_text:
+        print("missing host write-with-notify backend marker helper",
+              file=sys.stderr)
+        return 1
+    if "payload_write_notify_backend=" not in client_text:
+        print("missing host write-with-notify backend marker",
+              file=sys.stderr)
+        return 1
     start = client_text.find("bool JsonLooksPayloadReady(")
     end = client_text.find("if (json_text.empty())", start)
     if start == -1 or end == -1:

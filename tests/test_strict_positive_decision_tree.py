@@ -39,6 +39,7 @@ def strict_log(include_verify: bool) -> str:
             "payload_desc_status_word_count=14 "
             "payload_desc_batch_tag=default "
             "payload_transfer_mode=read "
+            "payload_write_notify_backend=none "
             "payload_recv_path=local-buffer "
             "payload_desc_local_hccl_buffer_bytes=8192 "
             "payload_desc_remote_hccl_buffer_bytes=8192")
@@ -230,6 +231,8 @@ def strict_write_with_notify_path_log(include_verify: bool) -> str:
                         "payload_transfer_mode=write-with-notify")
     text = text.replace("payload_trace_transfer_mode=read",
                         "payload_trace_transfer_mode=write-with-notify")
+    text = text.replace("payload_write_notify_backend=none",
+                        "payload_write_notify_backend=blocking")
     text = text.replace("payload_trace_write_notify_backend=none",
                         "payload_trace_write_notify_backend=blocking", 1)
     text = text.replace("payload_trace_write_notify_backend=none",
@@ -958,6 +961,7 @@ def main() -> int:
         assert "| payload test pattern | strict-v1 |" in text
         assert ("| host descriptor fingerprint | bytes=4096, ready=0, "
                 "done=1, completion=0/ordered-notify, thread_notify=0, transfer=read, "
+                "write_notify_backend=rank0:none/rank1:none, "
                 "batch_tag=default, recv_path=local-buffer, local_buffer=8192, "
                 "remote_buffer=8192 |") in text
         assert "| payload batch tag | default |" in text
