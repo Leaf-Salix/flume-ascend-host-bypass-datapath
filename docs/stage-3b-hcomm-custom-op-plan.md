@@ -514,8 +514,9 @@ behavior as a candidate backend rather than a diagnostic, run the strict smoke
 with `--hcomm-payload-comm-binding=channel-handle`; that path can satisfy the
 final gate only if both ranks pass with checksum match and `fallback=none`.
 For one-shot remote collection, add
-`--auto-run-hcomm-payload-candidate-matrix`; if the default `comm-name` run
-fails, the tool reruns the same strict smoke across the official-p2p layout,
+`--auto-run-hcomm-payload-candidate-matrix`; the default strict-positive run
+now starts from the official-p2p shape unless explicit expert payload-shape
+flags were supplied. If it fails, the tool reruns the same strict smoke across
 ChannelHandle, write-path, write-with-notify, channel-fence, no-batch,
 tagged-batch, direct-output, and no-comm-acquire variants.
 

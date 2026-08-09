@@ -1117,6 +1117,42 @@ def main() -> int:
             ["flume-hccl-collective-smoke",
              "--hcomm-payload-write-path"])
 
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "build-strict-default"),
+                "--hccl-devices", "0,1",
+                "hcomm-payload-strict-positive",
+            ]
+            strict_default_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert strict_default_args.hcomm_payload_official_p2p_layout
+        assert strict_default_args.hcomm_payload_disable_batch
+        assert strict_default_args.hcomm_payload_recv_direct_output
+        assert strict_default_args.hcomm_payload_comm_binding == "channel-handle"
+        assert strict_default_args.hcomm_channel_engine == "aicpu"
+        flume_tool.ConfigureStrictPositiveCandidateMatrix(strict_default_args)
+        assert not strict_default_args.auto_run_hcomm_payload_official_p2p_candidate
+        assert strict_default_args.auto_run_hcomm_payload_channel_handle_candidate
+
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "build-strict-write"),
+                "--hccl-devices", "0,1",
+                "--hcomm-payload-write-path",
+                "hcomm-payload-strict-positive",
+            ]
+            strict_write_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        assert not strict_write_args.hcomm_payload_official_p2p_layout
+        assert strict_write_args.hcomm_payload_write_path
+        assert not strict_write_args.hcomm_payload_recv_direct_output
+
         normal_strict_args = type("Args", (), {
             "command": "hcomm-payload-strict-positive",
             "hcomm_payload_write_with_notify_available": False,

@@ -99,9 +99,9 @@ detail="... stage3b_plan=pair-copy ..."
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-strict --run-hcomm-payload-smoke --hcomm-require-payload-copy --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 先走 `HcommLocalCopyOnThread(input -> local_hccl_buffer)`。默认 read-path 下，rank1 走 `Notify + HcommReadOnThread(remote HCCL Buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`；追加 `--hcomm-payload-write-path` 后，rank0 走 `HcommWriteOnThread(local HCCL Buffer -> remote HCCL Buffer) + Notify`，rank1 等 ready 后本地 copy 自己的 HCCL Buffer 到 output；追加 `--hcomm-payload-write-with-notify` 后，rank0 走可选 `HcommWriteWithNotifyOnThread(local HCCL Buffer -> remote HCCL Buffer + ready notify)`，rank1 仍等 ready 后本地 copy。基础 payload-ready 不要求该可选 primitive，只有 write-with-notify 候选需要；该候选中 `payload_trace_write_notify_backend` 的语义是 send rank 报实际 backend `blocking|nbi`，recv rank 报 `peer`，因为 fused write-with-notify primitive 只在 send kernel 里执行。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_local_buffer_prime=passed`、`payload_status_schema=v7`、`payload_status_word_count=17`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`、`payload_data_remote_entry_fingerprint=...`, `payload_data_transfer_exit_fingerprint=...`、`payload_data_flow=passed`、`payload_host_data=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v3`、`payload_trace_word_count=82`、`payload_trace_status_word=0`、`payload_trace_hcomm_ret=0`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`、`payload_transfer_mode=read|write|write-with-notify`、`payload_trace_transfer_mode=read|write|write-with-notify`、`payload_trace_result=success`、`payload_trace_first_error_event=none`、`payload_trace_first_error_ret=0`、`payload_trace_first_error_index=-1`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
+严格模式会调用 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async`，rank0 先走 `HcommLocalCopyOnThread(input -> local_hccl_buffer)`。底层 `--run-hcomm-payload-smoke --hcomm-require-payload-copy` 保留 read-path/local-buffer 默认形态；focused `hcomm-payload-strict-positive` 则默认切到 official-p2p 形态：`aicpu + channel-handle + no-batch + direct-output + ordered-notify`。在 read-path/local-buffer 形态下，rank1 走 `Notify + HcommReadOnThread(remote HCCL Buffer -> local_hccl_buffer) + HcommLocalCopyOnThread(local_hccl_buffer -> output)`；official-p2p/direct-output 形态下，rank1 走 `Notify + HcommReadOnThread(remote HCCL Buffer -> output)`。追加 `--hcomm-payload-write-path` 后，rank0 走 `HcommWriteOnThread(local HCCL Buffer -> remote HCCL Buffer) + Notify`，rank1 等 ready 后本地 copy 自己的 HCCL Buffer 到 output；追加 `--hcomm-payload-write-with-notify` 后，rank0 走可选 `HcommWriteWithNotifyOnThread(local HCCL Buffer -> remote HCCL Buffer + ready notify)`，rank1 仍等 ready 后本地 copy。基础 payload-ready 不要求该可选 primitive，只有 write-with-notify 候选需要；该候选中 `payload_trace_write_notify_backend` 的语义是 send rank 报实际 backend `blocking|nbi`，recv rank 报 `peer`，因为 fused write-with-notify primitive 只在 send kernel 里执行。完整成功需要 rank0/rank1 都打印 passed，且 marker 同时包含 `stage3b3e_payload_copy=passed`、`stage3b3e_direct_aclrt_payload_launch=passed`、`stage3b3e_payload_sync=passed`、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_local_buffer_prime=passed`、`payload_status_schema=v7`、`payload_status_word_count=17`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_data_probe=observed`、`payload_data_remote_entry_fingerprint=...`, `payload_data_transfer_exit_fingerprint=...`、`payload_data_flow=passed`、`payload_host_data=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_schema=v3`、`payload_trace_word_count=82`、`payload_trace_status_word=0`、`payload_trace_hcomm_ret=0`、`payload_trace_event=kernel-exit`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy|send-write-with-notify|recv-write-notify-local-copy`、`payload_transfer_mode=read|write|write-with-notify`、`payload_trace_transfer_mode=read|write|write-with-notify`、`payload_trace_result=success`、`payload_trace_first_error_event=none`、`payload_trace_first_error_ret=0`、`payload_trace_first_error_index=-1`、`payload_comm_binding=channel-handle` 或显式专家 `comm-name`、`payload_comm_acquire=default|skipped|not-required`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`, `payload_semantic_v11=present`, `payload_semantic_v12=present`, `payload_semantic_v13=present`, `payload_semantic_v14=present`, `payload_semantic_v15=present`, `payload_semantic_v16=present`, `payload_semantic_v17=present`、`payload_copy_api=hcomm-direct-aclrt`、`payload_hccl_p2p_api=not-used`、`payload_no_hccl_sendrecv=passed`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。如果 payload custom-op package 或 kernel 函数缺失，严格模式应失败并输出 precise unsupported reason。
 
-如果默认 `comm-name` 路径卡在 `payload_failure_step=comm-acquire`，可以显式尝试 direct ACL 的 ChannelHandle backend：
+如果专家 `comm-name` 路径卡在 `payload_failure_step=comm-acquire`，可以显式尝试 direct ACL 的 ChannelHandle backend：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-channel \
@@ -119,8 +119,7 @@ checksum、trace 和 `fallback=none` 都通过时才算真实 HCOMM payload copy
 `diagnostic-skip` 只用于隔离问题。
 
 推荐让 focused gate 自动跑完整候选矩阵：
-`--auto-run-hcomm-payload-candidate-matrix`。当默认 `comm-name`
-strict-positive 失败时，工具会依次收集 ChannelHandle、write-path、
+`--auto-run-hcomm-payload-candidate-matrix`。当 strict-positive 主路径失败时，工具会依次收集 ChannelHandle、write-path、
 write-with-notify、channel-fence、no-batch、tagged-batch、direct-output 和 no-comm-acquire
 证据；只有给出完整 strict-positive、checksum、trace 和 `fallback=none`
 的候选才能通过最终 evidence gate。no-comm-acquire 仍然只是诊断，不会被
@@ -128,7 +127,7 @@ write-with-notify、channel-fence、no-batch、tagged-batch、direct-output 和 
 `--auto-run-hcomm-payload-channel-handle-candidate` 或
 `--auto-run-hcomm-payload-no-comm-acquire-diagnostic` 来缩小问题范围。
 
-如果默认 read-path 卡在 `payload_failure_step=remote-read`，可以追加
+如果 read-path/local-buffer 形态卡在 `payload_failure_step=remote-read`，可以追加
 `--hcomm-payload-write-path` 直接测试 send 端
 `HcommWriteOnThread(local_hccl_buffer -> remote_hccl_buffer)`。完整候选矩阵
 会自动覆盖 write-path 及其 ChannelHandle、channel-fence、no-batch
@@ -148,7 +147,7 @@ strict gate 仍要求 write-path 的 recv marker 为 `payload_recv_path=local-bu
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-direct-output --run-hcomm-payload-smoke --hcomm-require-payload-copy --hcomm-payload-recv-direct-output --hccl-devices <device-a>,<device-b> ascend-probe
 ```
 
-该模式让 recv kernel 直接执行 `HcommReadOnThread(remote_hccl_buffer -> output HBM)`，贴近公开 custom P2P 示例，用于判断失败是否来自第二段 `HcommLocalCopyOnThread(local_hccl_buffer -> output)`。默认 strict-positive 仍使用 local-buffer staging；日志中的 `payload_recv_path=local-buffer|direct-output` 会进入 decision tree 的 host descriptor fingerprint。
+该模式让 recv kernel 直接执行 `HcommReadOnThread(remote_hccl_buffer -> output HBM)`，贴近公开 custom P2P 示例，用于判断失败是否来自第二段 `HcommLocalCopyOnThread(local_hccl_buffer -> output)`。底层 read-default 形态使用 local-buffer staging；focused strict-positive 默认使用 direct-output official-p2p 形态。日志中的 `payload_recv_path=local-buffer|direct-output` 会进入 decision tree 的 host descriptor fingerprint。
 如果希望 strict-positive 失败时自动采集这个 A/B 证据，可以追加
 `--auto-run-hcomm-payload-candidate-matrix`，或者专家模式只打开
 `--auto-run-hcomm-payload-direct-output-diagnostic`。direct-output 日志包含完整
@@ -654,7 +653,11 @@ baseline。追加 `--auto-build-hcomm-payload-package` 后，full matrix 会先�
 payload-ready preflight，strict payload copy 会升级为 required positive。
 
 payload package 已经通过 preflight 后，可以用更窄的严格正例入口，只验证
-Stage 3B.3E 真实 HCOMM payload copy：
+Stage 3B.3E 真实 HCOMM payload copy。`hcomm-payload-strict-positive`
+默认选择最贴近公开 custom P2P 示例的 official-p2p 形态：
+`aicpu + channel-handle + no-batch + direct-output + ordered-notify`。
+如果显式传入 `--hcomm-payload-write-path`、`--hcomm-payload-comm-binding`
+等专家参数，工具会保留用户指定的诊断形态而不是覆盖成 official-p2p。
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
@@ -668,7 +671,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   hcomm-payload-strict-positive
 ```
 
-当前最贴近 CANN 公开 custom P2P 示例的 focused 入口是：
+如果希望日志步骤名也显式标注 official-p2p，可以使用等价 focused 入口：
 
 ```bash
 python3 tools/flume_tool.py --build-dir build-hcomm-official-p2p-positive \
@@ -680,7 +683,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-official-p2p-positive \
   hcomm-payload-official-p2p-positive
 ```
 
-它等价于 strict-positive 加 `--hcomm-payload-official-p2p-layout`，会强制
+它等价于 strict-positive 的默认 official-p2p 形态，并强制
 `aicpu + channel-handle + no-batch + direct-output + ordered-notify`。
 这个子命令不运行其它 fallback candidate；如果它通过，结论只归因于
 official-p2p 形态，如果失败则直接看该形态的 strict evidence。
@@ -699,7 +702,7 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
 `--auto-run-hcomm-payload-candidate-matrix` 是远端调试推荐开关：默认
-strict-positive 失败后，它会自动先尝试 official-p2p layout，然后尝试
+strict-positive 的 official-p2p 主路径失败后，它会继续尝试
 channel-handle、write-path、write-with-notify、channel-fence、no-batch、
 tagged-batch、direct-output 和 no-comm-acquire 组合。只有产生完整
 checksum/trace/`fallback=none` 证据的候选才能让最终 gate 通过；

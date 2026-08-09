@@ -2057,7 +2057,7 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         "--auto-build-hcomm-payload-package to build an isolated runtime "
         "package from the selected CANN toolkit before strict payload smoke, "
         "without installing into the system CANN/OPP tree. With "
-        "--auto-run-hcomm-payload-candidate-matrix, a failed default payload "
+        "--auto-run-hcomm-payload-candidate-matrix, a failed strict payload "
         "copy run can automatically explore channel-handle, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
         "direct-output, and no-comm-acquire isolation, but success still "
@@ -3110,6 +3110,30 @@ def ApplyOfficialP2pLayoutArgs(parser: argparse.ArgumentParser,
     args.hcomm_payload_comm_binding = "channel-handle"
 
 
+def PayloadShapeOverrideRequested(argv: list[str]) -> bool:
+    shape_prefixes = (
+        "--hcomm-channel-engine",
+        "--hcomm-payload-comm-binding",
+        "--hcomm-payload-batch-tag",
+    )
+    shape_flags = {
+        "--hcomm-payload-disable-batch",
+        "--hcomm-payload-recv-direct-output",
+        "--hcomm-payload-channel-fence",
+        "--hcomm-payload-write-path",
+        "--hcomm-payload-write-with-notify",
+        "--hcomm-payload-skip-comm-acquire",
+        "--hcomm-payload-official-p2p-layout",
+    }
+    for item in argv:
+        if item in shape_flags:
+            return True
+        if any(item == prefix or item.startswith(prefix + "=")
+               for prefix in shape_prefixes):
+            return True
+    return False
+
+
 def WriteWithNotifyCandidatesEnabled(args: argparse.Namespace) -> bool:
     return getattr(args, "hcomm_payload_write_with_notify_available", True)
 
@@ -3143,6 +3167,8 @@ def ConfigureStrictPositiveCandidateMatrix(args: argparse.Namespace) -> None:
         DisableHcommPayloadCandidateMatrix(args)
         return
     EnableHcommPayloadCandidateMatrix(args)
+    if getattr(args, "hcomm_payload_official_p2p_layout", False):
+        args.auto_run_hcomm_payload_official_p2p_candidate = False
 
 
 def HasAcceptedPayloadCandidate(args: argparse.Namespace,
@@ -6791,9 +6817,10 @@ def run_ascend_full_matrix(args: argparse.Namespace) -> int:
         "runs --hcomm-require-payload-copy as a required positive check when "
         "the Stage 3B.3E payload package is installed, or as an optional "
         "expected negative while the package is not ready. When the package "
-        "is payload-ready, a failed default comm-name strict run "
-        "automatically triggers the built-in Stage 3B.3E "
-        "candidate matrix: official-p2p layout, channel-handle binding, write-path, "
+        "is payload-ready, the strict run defaults to the official-p2p "
+        "layout unless explicit expert payload-shape flags were supplied. "
+        "A failed strict run automatically triggers the built-in Stage 3B.3E "
+        "candidate matrix: channel-handle binding, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
         "direct-output, and no-comm-acquire isolation. Channel-handle, "
         "write-path, write-with-notify, channel-fence, no-batch, "
@@ -7001,15 +7028,18 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "payload_semantic_v11=present, "
         "payload_thread_notify_order=..., "
         "source/received/expected checksum match, payload_verify=passed, and "
-        "fallback=none. If the package is payload-ready, a failed default "
-        "comm-name run is followed by the built-in Stage 3B.3E candidate "
-        "matrix: official-p2p layout, channel-handle binding, "
+        "fallback=none. If the package is payload-ready, the default "
+        "hcomm-payload-strict-positive run starts with the official-p2p "
+        "shape unless explicit expert payload-shape flags were supplied. "
+        "A failed strict run is followed by the built-in Stage 3B.3E candidate "
+        "matrix: channel-handle binding, "
         "write-path, write-with-notify, channel-fence, no-batch, "
         "tagged-batch, direct-output, and no-comm-acquire isolation. "
         "The official-p2p candidate is the public custom P2P shape and "
         "therefore excludes channel-fence, batch mode, and comm-name acquire. "
-        "The hcomm-payload-official-p2p-positive subcommand selects that "
-        "official-p2p shape directly before the first strict run. "
+        "The hcomm-payload-official-p2p-positive subcommand gives that "
+        "same shape a distinct step name and intentionally disables "
+        "fallback candidates. "
         "Only complete strict-positive "
         "evidence from an accepted candidate can make the required evidence "
         "gate pass; no-comm-acquire remains diagnostic-only. The write-path "
@@ -7017,9 +7047,8 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "can satisfy the gate only with payload_transfer_mode=write or "
         "write-with-notify, full "
         "trace/checksum evidence, and fallback=none. "
-        "The hcomm-payload-official-p2p-positive subcommand intentionally "
-        "does not run fallback candidates, so its pass/fail result is only "
-        "about the public custom P2P layout shape.\n",
+        "Its pass/fail result is only about the public custom P2P layout "
+        "shape.\n",
         encoding="utf-8",
     )
     print(f"[ok] strict-positive scope -> {note}")
@@ -9259,8 +9288,12 @@ def parse_args() -> argparse.Namespace:
                           help=("Inspect installed Flume HCOMM custom-op JSON "
                                 "and AICPU package"))
 
+    raw_argv = sys.argv[1:]
     args = parser.parse_args()
     if args.command == "hcomm-payload-official-p2p-positive":
+        args.hcomm_payload_official_p2p_layout = True
+    elif (args.command == "hcomm-payload-strict-positive" and
+          not PayloadShapeOverrideRequested(raw_argv)):
         args.hcomm_payload_official_p2p_layout = True
     if args.auto_run_hcomm_payload_candidate_matrix:
         EnableHcommPayloadCandidateMatrix(args)
