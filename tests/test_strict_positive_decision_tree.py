@@ -1085,6 +1085,8 @@ def main() -> int:
         assert "--hcomm-payload-write-path" not in official_smoke_command
         assert "--hcomm-payload-channel-fence" not in official_smoke_command
         assert flume_tool.CommandUsesOfficialP2pLayout(official_smoke_command)
+        assert not flume_tool.CommandUsesOfficialP2pLayout(
+            official_smoke_command + ["--hcomm-payload-channel-fence"])
 
         fake_binary = write(tmp / "flume-hccl-collective-smoke", "")
         old_argv = sys.argv[:]

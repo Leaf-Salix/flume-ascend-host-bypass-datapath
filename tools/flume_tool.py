@@ -3072,6 +3072,7 @@ def CommandUsesOfficialP2pLayout(command: list[str]) -> bool:
         CommandUsesChannelHandleBinding(command) and
         CommandUsesNoBatch(command) and
         CommandUsesDirectOutputRecv(command) and
+        not CommandUsesChannelFence(command) and
         not CommandUsesWritePath(command) and
         not CommandUsesWriteWithNotify(command))
 
@@ -6488,6 +6489,7 @@ def RecordStrictPositiveEvidenceGate(runner: Runner, tree: Path, passed: bool,
             "payload_trace_schema=v3,payload_trace_word_count=82,"
             "payload_trace_event=kernel-exit,payload_trace_order=passed,"
             "payload_trace_ret_order=passed,"
+            "payload_trace_count=,"
             "payload_trace_primitive_path=send-local-copy|recv-read-*"
             "|send-write|recv-write-local-copy|send-write-with-notify"
             "|recv-write-notify-local-copy,"
@@ -6959,9 +6961,11 @@ def run_hcomm_payload_strict_positive(args: argparse.Namespace) -> int:
         "source/received/expected checksum match, payload_verify=passed, and "
         "fallback=none. If the package is payload-ready, a failed default "
         "comm-name run is followed by the built-in Stage 3B.3E candidate "
-        "matrix: channel-handle binding, "
+        "matrix: official-p2p layout, channel-handle binding, "
         "write-path, write-with-notify, channel-fence, no-batch, "
         "tagged-batch, direct-output, and no-comm-acquire isolation. "
+        "The official-p2p candidate is the public custom P2P shape and "
+        "therefore excludes channel-fence, batch mode, and comm-name acquire. "
         "Only complete strict-positive "
         "evidence from an accepted candidate can make the required evidence "
         "gate pass; no-comm-acquire remains diagnostic-only. The write-path "
@@ -7130,9 +7134,12 @@ def run_hcomm_storage_strict_positive(args: argparse.Namespace) -> int:
         "payload evidence to pass and rank1 storage verification to report "
         "storage_hbm=hcomm-payload-staging. A failed default "
         "comm-name storage run is followed by the built-in Stage 3B.4 "
-        "storage candidate matrix: channel-handle binding, write-path, "
+        "storage candidate matrix: official-p2p layout, channel-handle "
+        "binding, write-path, "
         "write-with-notify, channel-fence, no-batch, tagged-batch, "
-        "direct-output, and no-comm-acquire isolation. The write-path matrix "
+        "direct-output, and no-comm-acquire isolation. The official-p2p "
+        "candidate excludes channel-fence, batch mode, and comm-name acquire. "
+        "The write-path matrix "
         "strips recv direct-output because it is read-path-only and still "
         "requires payload_transfer_mode=write or write-with-notify, full "
         "trace/checksum evidence, fallback=none, and storage verification. "

@@ -161,7 +161,9 @@ strict-positive 证据、checksum match 和 `fallback=none` 时，工具会把�
 `channel-handle + no-batch + direct-output`，用于贴齐 CANN 公开 custom
 P2P 示例里的 `HcclChannelAcquire(COMM_ENGINE_AICPU)` resource shape。若用户显式
 指定其它 channel engine，工具会拒绝运行，避免把非官方形态误判为
-official-p2p 证据。
+official-p2p 证据。该形态还要求 ordered notify completion，不允许组合
+`--hcomm-payload-channel-fence`；若 channel-fence 版本通过，它仍可作为
+HCOMM payload copy 诊断/候选证据，但不会被标记为 official-p2p 精确形态。
 
 若怀疑 `HcommReadOnThread` 返回后 local-buffer 数据尚未完成落地，可以显式加
 `--hcomm-payload-channel-fence`。该模式会让 recv kernel 在 remote read 后调用
@@ -676,10 +678,11 @@ custom-op package 是否 `payload-ready`，再跑 HCCL P2P baseline 和
 如果 preflight 失败，这个入口会在 launch 前停止，避免把 canary-only 包或旧
 entrypoint 包误判成 payload copy 失败。
 `--auto-run-hcomm-payload-candidate-matrix` 是远端调试推荐开关：默认
-strict-positive 失败后，它会自动尝试 channel-handle、write-path、
-channel-fence、no-batch、tagged-batch、direct-output 和 no-comm-acquire
-组合。只有产生完整 checksum/trace/`fallback=none` 证据的候选才能让最终
-gate 通过；诊断候选只用于定位失败 primitive，不会放宽成功标准。启用任一
+strict-positive 失败后，它会自动先尝试 official-p2p layout，然后尝试
+channel-handle、write-path、write-with-notify、channel-fence、no-batch、
+tagged-batch、direct-output 和 no-comm-acquire 组合。只有产生完整
+checksum/trace/`fallback=none` 证据的候选才能让最终 gate 通过；
+diagnostic-skip / no-comm-acquire 只用于定位失败 primitive，不会放宽成功标准。启用任一
 可作为证据的候选时，默认 strict run 的失败不会单独决定 summary，最终
 summary 以 strict evidence gate 的选择结果为准。
 
