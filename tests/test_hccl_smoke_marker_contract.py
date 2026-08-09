@@ -79,6 +79,14 @@ def main() -> int:
         return 1
     client = repo / "src" / "core" / "client.cc"
     client_text = client.read_text(encoding="utf-8")
+    if "constexpr bool HcommWriteWithNotifyUsesNbiBackend()" not in client_text:
+        print("missing NBI write-with-notify backend helper",
+              file=sys.stderr)
+        return 1
+    if client_text.count("HcommWriteWithNotifyUsesNbiBackend()") < 3:
+        print("NBI write-with-notify helper must drive both plan and desc "
+              "completion-mode selection", file=sys.stderr)
+        return 1
     start = client_text.find("bool JsonLooksPayloadReady(")
     end = client_text.find("if (json_text.empty())", start)
     if start == -1 or end == -1:

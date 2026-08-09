@@ -224,6 +224,16 @@ constexpr uint32_t kDefaultHcommTimeoutSeconds = 60;
 constexpr const char* kDefaultHcommPayloadBatchTag =
     FLUME_HCOMM_PAYLOAD_DEFAULT_BATCH_TAG;
 
+constexpr bool HcommWriteWithNotifyUsesNbiBackend() {
+#if FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
+  return false;
+#elif FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
+  return true;
+#else
+  return false;
+#endif
+}
+
 struct CommState {
   bool hccl_attached = false;
   void* hccl_comm = nullptr;
@@ -1989,6 +1999,8 @@ std::string MakeHcommPayloadPlanDetail(
         flume::hcomm_payload::PayloadCommBinding::kDiagnosticSkip;
   }
   if (options.payload_force_channel_fence ||
+      (options.payload_write_with_notify &&
+       HcommWriteWithNotifyUsesNbiBackend()) ||
       resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE) {
     plan_options.completion_mode =
         flume::hcomm_payload::PayloadCompletionMode::kChannelFence;
@@ -2202,6 +2214,7 @@ void FillFlumePayloadCopyDesc(flume::hcomm_payload::PayloadRole role,
       FLUME_HCOMM_PAYLOAD_THREAD_NOTIFY_NONE;
   desc->completion_mode =
       (payload_force_channel_fence ||
+       (payload_write_with_notify && HcommWriteWithNotifyUsesNbiBackend()) ||
        resource_info.resolved_protocol == FLUME_HCOMM_PROTOCOL_ROCE) ?
           FLUME_HCOMM_PAYLOAD_COMPLETION_CHANNEL_DRAIN :
           FLUME_HCOMM_PAYLOAD_COMPLETION_ORDERED_NOTIFY;
