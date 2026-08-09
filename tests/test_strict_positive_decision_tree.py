@@ -2157,6 +2157,35 @@ def main() -> int:
         assert not flume_tool.StrictPayloadRankEvidencePassed(
             strict_log_with_cross_line_false_positive())[0]
 
+        strict_with_hccl_payload_api = write(
+            tmp / "strict-with-hccl-p2p-payload-api.log",
+            strict_log(True).replace("payload_hccl_p2p_api=not-used",
+                                     "payload_hccl_p2p_api=used"))
+        hccl_payload_api_dir = tmp / "hccl-p2p-payload-api"
+        hccl_payload_api_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            hccl_payload_api_dir, smoke, strict_with_hccl_payload_api, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| HCCL P2P API in payload path | used |" in text
+        assert "remove HcclSend/HcclRecv fallback from strict payload path" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_with_hccl_payload_api.read_text(encoding="utf-8"))[0]
+
+        strict_without_no_hccl_marker = write(
+            tmp / "strict-without-no-hccl-sendrecv-marker.log",
+            strict_log(True).replace("payload_no_hccl_sendrecv=passed", ""))
+        no_hccl_marker_dir = tmp / "no-hccl-marker"
+        no_hccl_marker_dir.mkdir()
+        tree = flume_tool.WriteMatrixDecisionTree(
+            no_hccl_marker_dir, smoke, strict_without_no_hccl_marker, package)
+        text = tree.read_text(encoding="utf-8")
+        assert "| Strict payload positive passed? | no |" in text
+        assert "| no HCCL Send/Recv evidence | missing |" in text
+        assert "stale evidence cannot prove true HCOMM payload copy" in text
+        assert not flume_tool.StrictPayloadRankEvidencePassed(
+            strict_without_no_hccl_marker.read_text(encoding="utf-8"))[0]
+
         strict_missing_trace_first_error = write(
             tmp / "strict-missing-trace-first-error.log",
             strict_log_with_missing_trace_first_error_markers())

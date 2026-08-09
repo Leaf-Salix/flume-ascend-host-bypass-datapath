@@ -6198,6 +6198,18 @@ def WriteMatrixDecisionTree(run_dir: Path, smoke_log: Optional[Path],
             next_action = "inspect rank1 payload verification mismatch"
         elif strict_checksum_match not in ("yes", "missing"):
             next_action = "inspect payload checksum mismatch"
+        elif strict_copy_api not in ("hcomm-direct-aclrt", "missing"):
+            next_action = (
+                "remove non-HCOMM payload copy API from strict-positive; "
+                "strict evidence must use payload_copy_api=hcomm-direct-aclrt")
+        elif strict_hccl_p2p_api != "not-used":
+            next_action = (
+                "remove HcclSend/HcclRecv fallback from strict payload path; "
+                "strict evidence must report payload_hccl_p2p_api=not-used")
+        elif strict_no_hccl_sendrecv != "passed":
+            next_action = (
+                "rerun strict-positive with current no-HCCL-SendRecv evidence "
+                "markers; stale evidence cannot prove true HCOMM payload copy")
         elif strict_fallback not in ("none", "missing"):
             next_action = "remove unexpected fallback from strict payload path"
         elif strict_desc_batch_tag in ("missing", "empty"):
