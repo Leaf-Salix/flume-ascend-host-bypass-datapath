@@ -294,6 +294,8 @@ as a real payload package. Current payload-ready packages also export
 `FlumeHcommPayloadCopySemanticVersion13`,
 `FlumeHcommPayloadCopySemanticVersion14`,
 `FlumeHcommPayloadCopySemanticVersion15`,
+`FlumeHcommPayloadCopySemanticVersion16`,
+`FlumeHcommPayloadCopySemanticVersion17`,
 `FlumeHcommPayloadCopyRequiresCommAcquire`,
 `FlumeHcommPayloadCopySupportsOfficialP2pLayout`,
 `FlumeHcommPayloadStatusSchemaVersion`, and

@@ -408,13 +408,14 @@ canary-only 包或 payload 包不完整；如果同时出现
 `FlumeHcommPayloadCopySemanticVersion14`、
 `FlumeHcommPayloadCopySemanticVersion15`、
 `FlumeHcommPayloadCopySemanticVersion16`、
+`FlumeHcommPayloadCopySemanticVersion17`、
 `FlumeHcommPayloadCopyRequiresCommAcquire` 和
 `FlumeHcommPayloadCopySupportsOfficialP2pLayout`，以及当前 device-visible status ABI
 marker `FlumeHcommPayloadStatusSchemaVersion` 和
 `FlumeHcommPayloadStatusWordCount`、device-side trace ABI marker
 `FlumeHcommPayloadTraceSchemaVersion` 和
 `FlumeHcommPayloadTraceWordCount`。旧包只声明
-`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v16 / official-p2p
+`FlumeHcommPayloadCopyDirectAclrtKernel` 或缺 semantic v17 / official-p2p
 layout marker 时会被明确判为
 stale，需要用 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON` 重新打包安装后再跑
 strict payload smoke。该检查还会确认 AICPU tar
@@ -436,6 +437,7 @@ strict payload smoke。该检查还会确认 AICPU tar
 `FlumeHcommPayloadCopySemanticVersion14`、
 `FlumeHcommPayloadCopySemanticVersion15`、
 `FlumeHcommPayloadCopySemanticVersion16`、
+`FlumeHcommPayloadCopySemanticVersion17`、
 `FlumeHcommPayloadCopyRequiresCommAcquire`、
 `FlumeHcommPayloadCopySupportsOfficialP2pLayout`、
 `FlumeHcommPayloadStatusSchemaVersion`
@@ -446,7 +448,7 @@ payload-ready 还要求 SO 符号表能看到 `HcommLocalCopyOnThread`、
 Comm Acquire/Release 等 primitive 依赖；只导出 Flume marker 但没有引用
 HCOMM primitive 的 marker-only 包会被拒绝。如果当前机器能加载 tar 内
 SO，preflight 还会调用这些无参 metadata 函数并要求返回值匹配当前
-ABI：payload ABI v4、semantic v16、status schema v7、status word count
+ABI：payload ABI v4、semantic v17、status schema v7、status word count
 17、trace schema v3、trace word count 82、comm-acquire marker 1，以及
 official-p2p layout marker 1。
 上述条件共同作为当前
@@ -455,7 +457,7 @@ primitive trace、write-path candidate 与 HCOMM comm acquire/release 语义
 marker。
 默认 canary-only
 包可能为了 JSON/SO 兼容导出 V4 stub；没有 internal build-mode marker、
-ABI v4 marker、semantic v16 marker、official-p2p marker、comm-acquire marker、status schema marker
+ABI v4 marker、semantic v17 marker、official-p2p marker、comm-acquire marker、status schema marker
 或 HCOMM primitive 依赖时不会被判为 payload-ready，避免把空包、坏包、
 stub 包、旧 ABI 包、旧语义包、缺 HCOMM comm acquire/release、旧 status ABI、
 marker-only 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
