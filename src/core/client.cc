@@ -3275,6 +3275,21 @@ std::string PayloadTraceWordsDetail(const uint32_t* trace_words,
          PayloadTraceFirstErrorDetail(events, returns);
 }
 
+bool PayloadTracePassed(const uint32_t* trace_words, aclError read_status) {
+  if (read_status != ACL_SUCCESS || trace_words == nullptr) {
+    return false;
+  }
+  const std::vector<uint32_t> events = PayloadTraceEvents(trace_words);
+  const std::vector<uint32_t> returns = PayloadTraceReturns(trace_words);
+  return trace_words[0] == FLUME_HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION &&
+         trace_words[1] == FLUME_HCOMM_PAYLOAD_TRACE_WORD_COUNT &&
+         trace_words[2] == FLUME_HCOMM_PAYLOAD_TRACE_EVENT_KERNEL_EXIT &&
+         trace_words[3] == 0U &&
+         trace_words[15] == FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS &&
+         PayloadTraceOrderState(trace_words, events) == "passed" &&
+         PayloadTraceReturnOrderState(trace_words, events, returns) == "passed";
+}
+
 std::string NotifyKernelStatusName(uint32_t status) {
   switch (status) {
     case 0xFFFFFFFFU:
@@ -4272,6 +4287,30 @@ std::string TryLaunchHcommPayloadCopyDirectAclrt(
            std::to_string(expected_completion_mode) +
            " expected_desc_fingerprint=" +
            std::to_string(expected_desc_fingerprint) +
+           " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
+           HcommPayloadRuntimeDetail(desc, resource_info, decision);
+  }
+  if (!PayloadTracePassed(kernel_trace_words, trace_ret)) {
+    *status = FLUME_ERR_BACKEND;
+    return std::string("stage3b3e_payload_copy=failed "
+                       "stage3b3e_direct_aclrt_payload_loader=passed "
+                       "stage3b3e_payload_descriptor_handoff=passed "
+                       "stage3b3e_direct_aclrt_payload_launch=passed "
+                       "stage3b3e_payload_sync=passed "
+                       "payload_launch_api=") +
+           payload_launch_api + " " +
+                     PayloadBatchModeDetail(desc) +
+                     " payload_kernel_status=success "
+                     "payload_failure_step=none "
+                     "payload_status_word=0 payload_kernel_hcomm_ret=0 "
+                       "payload_echo=passed "
+                       "payload_descriptor_fingerprint=passed "
+                       "payload_trace_gate=failed") +
+           PayloadStatusSchemaDetail() +
+           PayloadPrimitiveStateDetail(kernel_status_words) +
+           PayloadEchoWordsDetail(kernel_status_words) +
+           PayloadDataProbeDetail(kernel_status_words) +
+           PayloadTraceWordsDetail(kernel_trace_words, trace_ret) +
            " kernel_func=" + FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC +
            HcommPayloadRuntimeDetail(desc, resource_info, decision);
   }
