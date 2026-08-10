@@ -17,12 +17,46 @@ python3 tools/flume_tool.py local
 - 执行 `ctest --output-on-failure`。
 - 执行 `flume-sim-demo`。
 - 执行 `flume-sim-collective-demo`，其中会注册 sim A3 symmetric memory window 后再跑 collective。
+- 执行 `flume-storage-direct-sim-smoke`，验证本地可模拟的
+  `storage block -> HCOMM payload sim -> target SIM_HBM` direct-storage
+  语义，并同时验证显式 host-staging fallback marker。
 - 如果 `refer/cann-src` 里存在 HCCL/HCOMM/runtime 参考头文件，执行
   `hccl-header-syntax` 和 `hcomm-payload-kernel-syntax` 作为 required
   步骤，用 `-fsyntax-only` 在无 NPU 环境提前检查 Ascend smoke app 和
   HCOMM payload kernel 的语法兼容性。
 
 macOS 或无 Ascend Linux 上的预期结果：HCCL 布局检查可以失败，但 configure、build、CTest、sim demo 和可用的 refer syntax gate 应通过。普通步骤默认 600 秒超时，可用 `--step-timeout-sec` 调整。
+
+### 本地 storage direct sim smoke
+
+`flume-storage-direct-sim-smoke` 不声明真实硬件 host-bypass。它验证的是
+Flume 上层需要的异步 direct-storage transfer 语义：
+
+```text
+storage extent -> storage direct plan -> HCOMM payload sim -> target SIM_HBM
+```
+
+成功路径必须打印：
+
+```text
+storage_direct_sim=on
+storage_hbm_path=sim-direct
+storage_host_payload_copy=not-used
+hcomm_payload_backend=sim
+fallback=none
+```
+
+fallback 路径必须打印：
+
+```text
+storage_hbm_path=host-staging
+storage_host_payload_copy=used
+fallback=host-staging
+```
+
+这两个 marker 的区别是刻意保留的：`sim-direct` 只证明 API、状态机、
+completion notify 和 HCOMM payload sim 路由正确；`host-staging` 明确表示
+payload 经 host staging，不能作为 host-bypass 成功证据。
 
 ## Ascend 主机探测
 

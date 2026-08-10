@@ -732,6 +732,10 @@ add_executable(flume-sim-collective-demo apps/flume-sim-collective-demo.cc)
 target_link_libraries(flume-sim-collective-demo PRIVATE flume)
 target_include_directories(flume-sim-collective-demo PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+add_executable(flume-storage-direct-sim-smoke apps/flume-storage-direct-sim-smoke.cc)
+target_link_libraries(flume-storage-direct-sim-smoke PRIVATE flume)
+target_include_directories(flume-storage-direct-sim-smoke PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
 if(FLUME_ENABLE_HCCL)
   add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
   target_link_libraries(flume-acl-runtime-probe PRIVATE flume)
@@ -793,6 +797,11 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_sim_hcomm_payload_failures PRIVATE flume)
   target_include_directories(test_sim_hcomm_payload_failures PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME sim_hcomm_payload_failures COMMAND test_sim_hcomm_payload_failures)
+
+  add_executable(test_storage_direct_sim tests/test_storage_direct_sim.cc)
+  target_link_libraries(test_storage_direct_sim PRIVATE flume)
+  target_include_directories(test_storage_direct_sim PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME storage_direct_sim COMMAND test_storage_direct_sim)
 
   add_executable(test_hcomm_payload_plan tests/test_hcomm_payload_plan.cc)
   target_link_libraries(test_hcomm_payload_plan PRIVATE flume)

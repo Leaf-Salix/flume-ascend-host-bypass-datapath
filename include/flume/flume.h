@@ -14,6 +14,7 @@ typedef struct flume_buffer flume_buffer_t;
 typedef struct flume_io flume_io_t;
 typedef struct flume_a3_symmetric_window flume_a3_symmetric_window_t;
 typedef struct flume_storage_block flume_storage_block_t;
+typedef struct flume_storage_direct_plan flume_storage_direct_plan_t;
 
 typedef enum {
   FLUME_OK = 0,
@@ -86,6 +87,38 @@ typedef enum {
   FLUME_HCOMM_PAYLOAD_COMM_BINDING_DIAGNOSTIC_SKIP = 1,
   FLUME_HCOMM_PAYLOAD_COMM_BINDING_CHANNEL_HANDLE = 2
 } flume_hcomm_payload_comm_binding_t;
+
+typedef enum {
+  FLUME_STORAGE_TRANSFER_AUTO = 0,
+  FLUME_STORAGE_TRANSFER_SIM_DIRECT = 1,
+  FLUME_STORAGE_TRANSFER_HOST_STAGING = 2
+} flume_storage_transfer_path_t;
+
+typedef enum {
+  FLUME_STORAGE_DIRECT_ROLE_AUTO = 0,
+  FLUME_STORAGE_DIRECT_ROLE_SOURCE_SEND = 1,
+  FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV = 2,
+  FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING = 3
+} flume_storage_direct_role_t;
+
+typedef struct {
+  uint32_t size;
+  uint32_t storage_direct_sim;
+  uint32_t storage_host_staging;
+  uint32_t hcomm_payload_sim;
+  uint32_t future_rdma_hbm;
+  flume_storage_transfer_path_t default_path;
+} flume_storage_transfer_caps_t;
+
+typedef struct {
+  uint32_t size;
+  flume_storage_transfer_path_t path;
+  flume_storage_direct_role_t role;
+  uint32_t peer_rank;
+  uint32_t require_direct;
+  uint32_t allow_host_staging;
+  size_t len;
+} flume_storage_direct_options_t;
 
 typedef struct {
   uint32_t size;
@@ -316,6 +349,24 @@ int flume_read_to_hbm_async(flume_client_t *client,
                            size_t dst_offset,
                            void *acl_stream,
                            flume_io_t **out);
+
+int flume_get_storage_transfer_caps(flume_client_t *client,
+                                    flume_storage_transfer_caps_t *out);
+
+int flume_storage_direct_plan_create(
+    flume_client_t *client,
+    flume_storage_block_t *block,
+    flume_buffer_t *dst,
+    size_t dst_offset,
+    const flume_storage_direct_options_t *options,
+    flume_storage_direct_plan_t **out);
+
+int flume_storage_direct_plan_release(flume_storage_direct_plan_t *plan);
+
+int flume_read_storage_to_hbm_async(flume_client_t *client,
+                                    flume_storage_direct_plan_t *plan,
+                                    void *acl_stream,
+                                    flume_io_t **out);
 
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,

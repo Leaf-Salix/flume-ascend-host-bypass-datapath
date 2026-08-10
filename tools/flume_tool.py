@@ -2007,6 +2007,10 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     sim_collective_demo = str(Path(build_dir) / "flume-sim-collective-demo")
     commands.append(CommandSpec("sim-collective-demo", [sim_collective_demo],
                                 True, cmake_env_updates))
+    storage_direct_sim = str(Path(build_dir) / "flume-storage-direct-sim-smoke")
+    commands.append(CommandSpec("storage-direct-sim-smoke",
+                                [storage_direct_sim], True,
+                                cmake_env_updates))
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
                         args.run_hcomm_channel_probe or

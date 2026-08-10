@@ -21,6 +21,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -192,6 +193,19 @@ struct flume_storage_block {
   std::vector<uint8_t> payload;
   uint64_t file_offset = 0;
   bool sim_partial = true;
+};
+
+struct flume_storage_direct_plan {
+  flume_client_t* client = nullptr;
+  flume_storage_block_t* block = nullptr;
+  flume_buffer_t* dst = nullptr;
+  size_t dst_offset = 0;
+  flume_storage_transfer_path_t path = FLUME_STORAGE_TRANSFER_AUTO;
+  flume_storage_direct_role_t role = FLUME_STORAGE_DIRECT_ROLE_AUTO;
+  uint32_t peer_rank = 0;
+  bool require_direct = false;
+  bool allow_host_staging = true;
+  size_t bytes = 0;
 };
 
 struct flume_io {
@@ -501,6 +515,20 @@ bool CheckedMul(size_t lhs, size_t rhs, size_t* out) {
   }
   *out = lhs * rhs;
   return true;
+}
+
+const char* StorageDirectRoleName(flume_storage_direct_role_t role) {
+  switch (role) {
+    case FLUME_STORAGE_DIRECT_ROLE_AUTO:
+      return "auto";
+    case FLUME_STORAGE_DIRECT_ROLE_SOURCE_SEND:
+      return "source-send";
+    case FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV:
+      return "target-recv";
+    case FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING:
+      return "host-staging";
+  }
+  return "unknown";
 }
 
 bool ValidateRange(const flume_buffer_t* buffer, size_t offset, size_t len) {
@@ -7424,6 +7452,254 @@ int flume_read_to_hbm_async(flume_client_t* client,
     return FLUME_OK;
   }
   return FLUME_ERR_INVALID_ARGUMENT;
+}
+
+int flume_get_storage_transfer_caps(flume_client_t* client,
+                                    flume_storage_transfer_caps_t* out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  flume_storage_transfer_caps_t caps = {};
+  caps.size = sizeof(flume_storage_transfer_caps_t);
+  caps.storage_host_staging = 1;
+  caps.future_rdma_hbm = 0;
+  {
+    std::lock_guard<std::mutex> lock(client->mu);
+    caps.storage_direct_sim = client->sim_comm_attached ? 1 : 0;
+    caps.hcomm_payload_sim = client->sim_comm_attached ? 1 : 0;
+  }
+  caps.default_path = caps.storage_direct_sim ?
+                          FLUME_STORAGE_TRANSFER_SIM_DIRECT :
+                          FLUME_STORAGE_TRANSFER_HOST_STAGING;
+  *out = caps;
+  return FLUME_OK;
+}
+
+int flume_storage_direct_plan_create(
+    flume_client_t* client,
+    flume_storage_block_t* block,
+    flume_buffer_t* dst,
+    size_t dst_offset,
+    const flume_storage_direct_options_t* options,
+    flume_storage_direct_plan_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+
+  flume_storage_direct_options_t normalized = {};
+  normalized.size = sizeof(flume_storage_direct_options_t);
+  normalized.path = FLUME_STORAGE_TRANSFER_AUTO;
+  normalized.role = FLUME_STORAGE_DIRECT_ROLE_AUTO;
+  normalized.allow_host_staging = 1;
+  if (options != nullptr) {
+    normalized = *options;
+  }
+
+  flume_storage_transfer_path_t path = normalized.path;
+  flume_storage_direct_role_t role = normalized.role;
+  if (path == FLUME_STORAGE_TRANSFER_AUTO) {
+    path = normalized.require_direct ? FLUME_STORAGE_TRANSFER_SIM_DIRECT :
+                                      FLUME_STORAGE_TRANSFER_HOST_STAGING;
+    std::lock_guard<std::mutex> lock(client->mu);
+    if (client->sim_comm_attached) {
+      path = FLUME_STORAGE_TRANSFER_SIM_DIRECT;
+    }
+  }
+  if (role == FLUME_STORAGE_DIRECT_ROLE_AUTO) {
+    role = path == FLUME_STORAGE_TRANSFER_HOST_STAGING ?
+               FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING :
+               (block != nullptr ? FLUME_STORAGE_DIRECT_ROLE_SOURCE_SEND :
+                                   FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV);
+  }
+  if (role == FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING) {
+    path = FLUME_STORAGE_TRANSFER_HOST_STAGING;
+  }
+  if (path == FLUME_STORAGE_TRANSFER_HOST_STAGING &&
+      role != FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (normalized.require_direct &&
+      path != FLUME_STORAGE_TRANSFER_SIM_DIRECT) {
+    return FLUME_ERR_UNSUPPORTED;
+  }
+  if (!normalized.allow_host_staging &&
+      path == FLUME_STORAGE_TRANSFER_HOST_STAGING) {
+    return FLUME_ERR_UNSUPPORTED;
+  }
+
+  size_t bytes = normalized.len;
+  if (role == FLUME_STORAGE_DIRECT_ROLE_SOURCE_SEND) {
+    if (block == nullptr || block->client != client || dst != nullptr) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    if (bytes == 0) {
+      bytes = block->payload.size();
+    }
+    if (bytes == 0 || bytes > block->payload.size()) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+  } else if (role == FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV) {
+    if (dst == nullptr || dst->client != client || block != nullptr) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    if (bytes == 0) {
+      if (dst_offset > dst->len) {
+        return FLUME_ERR_INVALID_ARGUMENT;
+      }
+      bytes = dst->len - dst_offset;
+    }
+    if (bytes == 0 || !ValidateRange(dst, dst_offset, bytes)) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+  } else if (role == FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING) {
+    if (block == nullptr || dst == nullptr || block->client != client ||
+        dst->client != client) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    if (bytes == 0) {
+      bytes = block->payload.size();
+    }
+    if (bytes == 0 || bytes > block->payload.size() ||
+        !ValidateRange(dst, dst_offset, bytes)) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    path = FLUME_STORAGE_TRANSFER_HOST_STAGING;
+  } else {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  if (path == FLUME_STORAGE_TRANSFER_SIM_DIRECT) {
+    std::lock_guard<std::mutex> lock(client->mu);
+    if (!client->sim_comm_attached) {
+      return FLUME_ERR_UNSUPPORTED;
+    }
+    if (client->rank_size != 2 || normalized.peer_rank >= client->rank_size ||
+        normalized.peer_rank == client->rank) {
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+  }
+  if (path == FLUME_STORAGE_TRANSFER_SIM_DIRECT &&
+      role == FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV &&
+      dst->type != FLUME_BUFFER_SIM_HBM) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+
+  auto* plan = new flume_storage_direct_plan;
+  plan->client = client;
+  plan->block = block;
+  plan->dst = dst;
+  plan->dst_offset = dst_offset;
+  plan->path = path;
+  plan->role = role;
+  plan->peer_rank = normalized.peer_rank;
+  plan->require_direct = normalized.require_direct != 0;
+  plan->allow_host_staging = normalized.allow_host_staging != 0;
+  plan->bytes = bytes;
+  *out = plan;
+  return FLUME_OK;
+}
+
+int flume_storage_direct_plan_release(flume_storage_direct_plan_t* plan) {
+  delete plan;
+  return FLUME_OK;
+}
+
+void CompleteStorageDirectFromInner(flume_io_t* wrapper,
+                                    flume_io_t* inner,
+                                    const std::string& marker) {
+  int status = flume_wait(inner, -1);
+  size_t bytes = flume_io_bytes(inner);
+  uint32_t checksum = flume_io_checksum(inner);
+  std::string detail = marker;
+  const char* inner_error = flume_io_error_message(inner);
+  if (inner_error != nullptr && inner_error[0] != '\0') {
+    detail += " inner_detail=\"";
+    detail += inner_error;
+    detail += "\"";
+  }
+  (void)flume_io_release(inner);
+  CompletePendingIo(wrapper, status, bytes, checksum, detail);
+}
+
+int flume_read_storage_to_hbm_async(flume_client_t* client,
+                                    flume_storage_direct_plan_t* plan,
+                                    void* acl_stream,
+                                    flume_io_t** out) {
+  if (client == nullptr || plan == nullptr || out == nullptr ||
+      plan->client != client) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  if (plan->path == FLUME_STORAGE_TRANSFER_HOST_STAGING) {
+    if (plan->require_direct || !plan->allow_host_staging) {
+      *out = MakeIo(
+          FLUME_ERR_UNSUPPORTED, 0, 0,
+          "storage_direct_sim=off storage_hbm_path=unsupported "
+          "storage_host_payload_copy=not-used hcomm_payload_backend=none "
+          "fallback=none reason=strict-direct-only-rejects-host-staging");
+      return FLUME_OK;
+    }
+    flume_io_t* inner = nullptr;
+    int ret = flume_read_to_hbm_async(client, plan->block, plan->dst,
+                                      plan->dst_offset, acl_stream, &inner);
+    if (ret != FLUME_OK) {
+      return ret;
+    }
+    auto* wrapper = MakePendingIo();
+    RetainPendingIo(wrapper);
+    *out = wrapper;
+    std::string marker =
+        "storage_direct_sim=off storage_hbm_path=host-staging "
+        "storage_host_payload_copy=used hcomm_payload_backend=none "
+        "fallback=host-staging completion_notify=local-complete";
+    std::thread(CompleteStorageDirectFromInner, wrapper, inner, marker).detach();
+    return FLUME_OK;
+  }
+
+  if (plan->path != FLUME_STORAGE_TRANSFER_SIM_DIRECT) {
+    *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                  "storage_direct_sim=off storage_hbm_path=unsupported "
+                  "storage_host_payload_copy=not-used "
+                  "hcomm_payload_backend=none fallback=none");
+    return FLUME_OK;
+  }
+
+  flume_io_t* inner = nullptr;
+  int submit_ret = FLUME_OK;
+  if (plan->role == FLUME_STORAGE_DIRECT_ROLE_SOURCE_SEND) {
+    flume_buffer temp;
+    temp.client = client;
+    temp.ptr = plan->block->payload.data();
+    temp.len = plan->block->payload.size();
+    temp.type = FLUME_BUFFER_SIM_HBM;
+    submit_ret = flume_hcomm_payload_send_async(
+        client, &temp, 0, static_cast<uint64_t>(plan->bytes),
+        FLUME_DTYPE_UINT8, plan->peer_rank, acl_stream, &inner);
+  } else if (plan->role == FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV) {
+    submit_ret = flume_hcomm_payload_recv_async(
+        client, plan->dst, plan->dst_offset, static_cast<uint64_t>(plan->bytes),
+        FLUME_DTYPE_UINT8, plan->peer_rank, acl_stream, &inner);
+  } else {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (submit_ret != FLUME_OK) {
+    return submit_ret;
+  }
+
+  auto* wrapper = MakePendingIo();
+  RetainPendingIo(wrapper);
+  *out = wrapper;
+  std::ostringstream marker;
+  marker << "storage_direct_sim=on storage_hbm_path=sim-direct "
+         << "storage_host_payload_copy=not-used hcomm_payload_backend=sim "
+         << "fallback=none completion_notify=sim-channel "
+         << "storage_direct_role=" << StorageDirectRoleName(plan->role)
+         << " storage_direct_peer_rank=" << plan->peer_rank
+         << " storage_direct_bytes=" << plan->bytes;
+  std::thread(CompleteStorageDirectFromInner, wrapper, inner,
+              marker.str()).detach();
+  return FLUME_OK;
 }
 
 int flume_allreduce_async(flume_client_t* client, flume_buffer_t* dst,

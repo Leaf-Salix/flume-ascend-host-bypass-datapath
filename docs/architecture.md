@@ -91,6 +91,7 @@ HcommReadOnThread
 | HCOMM Channel resource probe | CANN 8.5 真机已验证 resource path | `tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --hccl-devices 0,1 ascend-probe` | Flume 会探测 `HcclGetHcclBuffer`、CPU_TS/AICPU_TS thread resource、rank graph / legacy descriptor、可选 thread export、可配置 engine/protocol 的 `HcclChannelAcquire` 和 `HcclChannelGetHcclBuffer`；CANN 8.5 默认 `engine=auto -> cpu-ts`，严格 thread-export 返回 unsupported；默认成功只代表 channel resource path，尚未 launch AICPU kernel 或执行 `HcommReadOnThread` payload copy |
 | HCOMM payload copy sim | 本地已实现 rank-pair sim backend | `ctest --test-dir build-local-next -R sim_hcomm_payload` | `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` 验证 send-first / recv-first、peer 校验、pending IO 和 buffer 生命周期；真实 HCOMM primitive scheduler 仍返回 unsupported |
 | storage partial-direct sim | 本地已实现最小骨架 | `ctest --test-dir build-local-next -R sim_hcomm_payload_failures` | `flume_prepare_storage_block_async` / `flume_read_to_hbm_async` 当前模拟 `file offset -> SIM_HCCL_COMM -> SIM_HBM`；真实 storage->Ascend HBM direct path 仍返回 unsupported |
+| storage direct transfer sim | 本地已实现 host-bypass 语义骨架 | `ctest --test-dir build-local-direct -R storage_direct_sim` 或 `flume-storage-direct-sim-smoke` | `flume_storage_direct_plan_create` / `flume_read_storage_to_hbm_async` 当前模拟 `storage block -> HCOMM payload sim -> target SIM_HBM`，输出 `storage_hbm_path=sim-direct`、`storage_host_payload_copy=not-used`、`fallback=none`；这只证明 API / 状态机 / 路由语义，不声明真实 RDMA/HBM bypass |
 | Ascend full matrix | Host B (CANN 9.0) 真机已通过；CANN 8.5 构建和 feature probe 已通过，smoke 受 Host A 资源占用影响未完成 | `tools/flume_tool.py --build-dir build-full --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> --hccl-debug-logs ascend-full-matrix` | Host B HCCS_SW 卡对通过 required 步，包括 Stage 3A storage-HBM fallback；未安装 payload package 时 strict payload-copy 是 optional expected negative；package preflight 为 payload-ready 时 strict payload-copy 会升级为 required positive；Host A 当前因 NPU 任务占满导致 VNIC socket listen 失败，不归类为代码问题 |
 | storage/RDMA->NPU HBM | 待探索 | 暂不可真实测试 | 依赖外部 RDMA/NVMe-oF 与 NPU HBM/comm memory 的注册和同步能力 |
 
@@ -102,8 +103,9 @@ HCCL/HCOMM 已经拥有 NPU rank、通信域、HCCS/RoCE/PCIe、通信内存、C
 
 ```text
 storage data block
+  -> storage direct transfer plan
   -> HCCL/HCOMM 可识别或可访问的通信内存
-  -> HCOMM Channel 搬运
+  -> HCOMM payload / Channel 搬运
   -> target NPU HBM
 ```
 
@@ -760,6 +762,7 @@ store-agent pread
 - 已给 smoke 增加 `--hcomm-payload-smoke`，当前测试 Channel resource + HCOMM primitive call-shape / symbol capability，并在 custom-op/AICPU scheduler 未实现时输出 unsupported / `fallback=hccl-p2p`。
 - 已增加 `flume_get_backend_caps`，让 smoke app 和 tools 从库内结构化能力模型生成判断依据。
 - 已增加本地 `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` sim backend，以及 `file offset -> SIM_HCCL_COMM -> SIM_HBM` storage partial-direct 骨架。
+- 已增加本地 storage direct transfer skeleton：`flume_get_storage_transfer_caps`、`flume_storage_direct_plan_create` 和 `flume_read_storage_to_hbm_async` 可以在 Mac/无 NPU 环境模拟 `storage block -> HCOMM payload sim -> target SIM_HBM`，输出 `storage_direct_sim=on`、`storage_hbm_path=sim-direct`、`storage_host_payload_copy=not-used`、`hcomm_payload_backend=sim`、`fallback=none`；host-staging fallback 会显式输出 `storage_host_payload_copy=used` 和 `fallback=host-staging`。
 - 已增加 `ascend-full-matrix`，下一次真机会一次性收集 collective、P2P fallback、HCOMM Channel、payload readiness、Stage 3A storage-HBM fallback、strict payload-copy gate 和 decision tree；package payload-ready 时 strict gate 是 required positive，否则是 optional expected negative。
 - 已增加 Stage 3A `--run-storage-hbm-smoke`：rank0 作为 storage proxy，从本地文件切片读取数据，H2D 到 proxy HBM，再通过 `HcclSend` / `HcclRecv` 发送到 rank1 compute HBM 并按工具预计算 checksum 校验。该路径标记为 `storage_hbm=hccl-p2p-staging`，不声明 full storage direct；Host B (CANN 9.0) 已用本地 SSD 输入文件和 16 MiB payload 通过。
 - 已增加 Stage 3B HCOMM payload plan skeleton：库内固化 pair-copy 的 send/recv primitive 编排步骤，`custom_ops/hcomm_payload_copy/` 预留 host launcher 与 AICPU kernel 实现面；当前仍返回 unsupported，并通过 Stage 3B.3B launcher router 标明 public HCCL launch、direct ACL launch、HCOMM primitives、custom-op package 和可选 thread-export completion 的具体状态。
