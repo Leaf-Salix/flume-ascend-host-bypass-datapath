@@ -15,7 +15,7 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 - Stage 2.5 HCOMM payload readiness：已经新增 `--run-hcomm-payload-smoke` 骨架，复用 Channel resource probe 并检查 HCOMM primitive call-shape / 符号；当前预期输出 unsupported / `fallback=hccl-p2p`，不误报真实 payload copy。
 - Full matrix：Host B (CANN 9.0) 空闲主机上已通过 HCCS_SW 卡对 required 步；Host A (CANN 8.5) 构建、CTest、sim 和 feature probe 通过，但 smoke 因 NPU 被长任务占满导致 VNIC socket listen 失败，需卡空闲后复测。
 - Stage 3A：`storage_hbm=hccl-p2p-staging` 已在 Host B (CANN 9.0) 用本地 SSD 输入文件和 16 MiB byte payload 通过，路径为 `file -> host -> proxy HBM -> HcclSend/HcclRecv -> compute HBM`。
-- Local storage direct skeleton：已新增本地可验证的 `storage block -> HCOMM payload sim -> target SIM_HBM` direct-transfer plan。它输出 `storage_hbm_path=sim-direct`、`storage_host_payload_copy=not-used` 和 `fallback=none`，只证明 API/状态机/路由语义；fallback 路径会显式标记 `storage_hbm_path=host-staging`、`storage_host_payload_copy=used` 和 `fallback=host-staging`。
+- Local storage direct skeleton：已新增本地可验证的 `storage block -> registered target window -> storage fabric sim -> HCOMM payload sim -> target SIM_HBM` direct-transfer plan。它输出 `storage_hbm_path=sim-direct`、`storage_fabric=sim-rdma`、`storage_memory_registration=sim-hbm-window`、`storage_host_payload_copy=not-used` 和 `fallback=none`，只证明 API/状态机/路由语义；fallback 路径会显式标记 `storage_hbm_path=host-staging`、`storage_host_payload_copy=used` 和 `fallback=host-staging`；新增 `flume-storage-read-to-rank-demo` 从应用视角展示 `app_request=read_to_rank_hbm`。
 - 仍未实现：AICPU/HCOMM primitive payload copy scheduler，RDMA / NVMe-oF / SPDK -> NPU HBM full direct data path。
 
 当前最重要的工程判断是：
@@ -184,7 +184,7 @@ flowchart TB
 | sim HCOMM probe | `flume_hcomm_channel_probe` | 无 NPU 下覆盖 API、peer rank 校验和 IO 生命周期 | `test_sim_p2p_copy` |
 | sim HCOMM payload copy | `flume_hcomm_payload_send_async` / `flume_hcomm_payload_recv_async` | rank-pair HBM copy 语义；send-first / recv-first 均可；完成前保护 pending IO 和 recv buffer | `test_sim_hcomm_payload_copy` / `test_sim_hcomm_payload_failures` |
 | storage proxy sim path | `flume_prepare_storage_block_async` / `flume_read_to_hbm_async` | `file offset -> SIM_HCCL_COMM -> SIM_HBM` partial-direct 骨架；真实 Ascend direct path 仍返回 unsupported | `test_sim_hcomm_payload_failures` |
-| storage direct transfer sim | `flume_storage_direct_plan_create` / `flume_read_storage_to_hbm_async` | `storage block -> HCOMM payload sim -> target SIM_HBM` direct-transfer 语义骨架；成功 marker 为 `storage_host_payload_copy=not-used` / `fallback=none`，fallback marker 为 `storage_host_payload_copy=used` / `fallback=host-staging` | `test_storage_direct_sim` / `flume-storage-direct-sim-smoke` |
+| storage direct transfer sim | `flume_register_storage_target_memory` / `flume_storage_direct_plan_create` / `flume_read_storage_to_hbm_async` | `storage block -> registered target window -> storage fabric sim -> HCOMM payload sim -> target SIM_HBM` direct-transfer 语义骨架；成功 marker 为 `storage_fabric=sim-rdma` / `storage_memory_registration=sim-hbm-window` / `storage_host_payload_copy=not-used` / `fallback=none`，fallback marker 为 `storage_host_payload_copy=used` / `fallback=host-staging` | `test_storage_direct_sim` / `flume-storage-direct-sim-smoke` / `flume-storage-read-to-rank-demo` |
 | HCCL build path | `FLUME_ENABLE_HCCL=ON` | 查找 HCCL / HCOMM / ACL / securec / ascendcl | `tools/flume_tool.py ascend-probe` |
 | HCCL collective | `HcclAllReduce` / `HcclAllGather` | 已真机验证 root-info 和 init-all 路径 | `--run-hccl-smoke` |
 | HCCL P2P baseline | `HcclSend` / `HcclRecv` | 已真机验证 Host A HCCS_SW pair A | `--run-hccl-p2p-smoke` |

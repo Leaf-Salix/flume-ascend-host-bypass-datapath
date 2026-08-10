@@ -14,6 +14,7 @@ typedef struct flume_buffer flume_buffer_t;
 typedef struct flume_io flume_io_t;
 typedef struct flume_a3_symmetric_window flume_a3_symmetric_window_t;
 typedef struct flume_storage_block flume_storage_block_t;
+typedef struct flume_storage_target_window flume_storage_target_window_t;
 typedef struct flume_storage_direct_plan flume_storage_direct_plan_t;
 
 typedef enum {
@@ -118,6 +119,7 @@ typedef struct {
   uint32_t require_direct;
   uint32_t allow_host_staging;
   size_t len;
+  flume_storage_target_window_t *target_window;
 } flume_storage_direct_options_t;
 
 typedef struct {
@@ -349,6 +351,16 @@ int flume_read_to_hbm_async(flume_client_t *client,
                            size_t dst_offset,
                            void *acl_stream,
                            flume_io_t **out);
+
+int flume_register_storage_target_memory(
+    flume_client_t *client,
+    flume_buffer_t *buffer,
+    size_t offset,
+    size_t len,
+    flume_storage_target_window_t **out);
+
+int flume_storage_target_window_release(
+    flume_storage_target_window_t *window);
 
 int flume_get_storage_transfer_caps(flume_client_t *client,
                                     flume_storage_transfer_caps_t *out);

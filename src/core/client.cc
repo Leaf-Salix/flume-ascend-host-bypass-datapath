@@ -195,10 +195,21 @@ struct flume_storage_block {
   bool sim_partial = true;
 };
 
+struct flume_storage_target_window {
+  flume_client_t* client = nullptr;
+  flume_buffer_t* buffer = nullptr;
+  size_t offset = 0;
+  size_t len = 0;
+  uint64_t sim_lkey = 0;
+  uint64_t sim_rkey = 0;
+  std::atomic<size_t> plan_ref_count{0};
+};
+
 struct flume_storage_direct_plan {
   flume_client_t* client = nullptr;
   flume_storage_block_t* block = nullptr;
   flume_buffer_t* dst = nullptr;
+  flume_storage_target_window_t* target_window = nullptr;
   size_t dst_offset = 0;
   flume_storage_transfer_path_t path = FLUME_STORAGE_TRANSFER_AUTO;
   flume_storage_direct_role_t role = FLUME_STORAGE_DIRECT_ROLE_AUTO;
@@ -7454,6 +7465,46 @@ int flume_read_to_hbm_async(flume_client_t* client,
   return FLUME_ERR_INVALID_ARGUMENT;
 }
 
+int flume_register_storage_target_memory(
+    flume_client_t* client,
+    flume_buffer_t* buffer,
+    size_t offset,
+    size_t len,
+    flume_storage_target_window_t** out) {
+  if (client == nullptr || buffer == nullptr || out == nullptr || len == 0) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  if (buffer->client != client || buffer->type != FLUME_BUFFER_SIM_HBM ||
+      !ValidateRange(buffer, offset, len)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  auto* window = new flume_storage_target_window;
+  window->client = client;
+  window->buffer = buffer;
+  window->offset = offset;
+  window->len = len;
+  window->sim_lkey =
+      (static_cast<uint64_t>(offset) << 32) ^ static_cast<uint64_t>(len);
+  window->sim_rkey = window->sim_lkey ^ 0x5f1d000000000001ULL;
+  RetainPendingBuffer(buffer);
+  *out = window;
+  return FLUME_OK;
+}
+
+int flume_storage_target_window_release(
+    flume_storage_target_window_t* window) {
+  if (window == nullptr) {
+    return FLUME_OK;
+  }
+  if (window->plan_ref_count.load(std::memory_order_relaxed) != 0) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  ReleasePendingBuffer(window->buffer);
+  delete window;
+  return FLUME_OK;
+}
+
 int flume_get_storage_transfer_caps(flume_client_t* client,
                                     flume_storage_transfer_caps_t* out) {
   if (client == nullptr || out == nullptr) {
@@ -7552,6 +7603,18 @@ int flume_storage_direct_plan_create(
     if (bytes == 0 || !ValidateRange(dst, dst_offset, bytes)) {
       return FLUME_ERR_INVALID_ARGUMENT;
     }
+    if (path == FLUME_STORAGE_TRANSFER_SIM_DIRECT) {
+      auto* window = normalized.target_window;
+      if (window == nullptr || window->client != client ||
+          window->buffer != dst) {
+        return FLUME_ERR_INVALID_ARGUMENT;
+      }
+      if (dst_offset < window->offset ||
+          bytes > window->len ||
+          dst_offset - window->offset > window->len - bytes) {
+        return FLUME_ERR_INVALID_ARGUMENT;
+      }
+    }
   } else if (role == FLUME_STORAGE_DIRECT_ROLE_HOST_STAGING) {
     if (block == nullptr || dst == nullptr || block->client != client ||
         dst->client != client) {
@@ -7589,6 +7652,7 @@ int flume_storage_direct_plan_create(
   plan->client = client;
   plan->block = block;
   plan->dst = dst;
+  plan->target_window = normalized.target_window;
   plan->dst_offset = dst_offset;
   plan->path = path;
   plan->role = role;
@@ -7596,11 +7660,19 @@ int flume_storage_direct_plan_create(
   plan->require_direct = normalized.require_direct != 0;
   plan->allow_host_staging = normalized.allow_host_staging != 0;
   plan->bytes = bytes;
+  if (plan->target_window != nullptr) {
+    plan->target_window->plan_ref_count.fetch_add(
+        1, std::memory_order_relaxed);
+  }
   *out = plan;
   return FLUME_OK;
 }
 
 int flume_storage_direct_plan_release(flume_storage_direct_plan_t* plan) {
+  if (plan != nullptr && plan->target_window != nullptr) {
+    plan->target_window->plan_ref_count.fetch_sub(
+        1, std::memory_order_relaxed);
+  }
   delete plan;
   return FLUME_OK;
 }
@@ -7693,10 +7765,21 @@ int flume_read_storage_to_hbm_async(flume_client_t* client,
   std::ostringstream marker;
   marker << "storage_direct_sim=on storage_hbm_path=sim-direct "
          << "storage_host_payload_copy=not-used hcomm_payload_backend=sim "
+         << "storage_fabric=sim-rdma "
+         << "storage_memory_registration=sim-hbm-window "
+         << "storage_dma_direction=storage-to-hbm "
+         << "storage_submit=doorbell storage_completion_queue=sim "
+         << "storage_completion_status=success "
+         << "storage_notify_order=submit->fabric-write->cq-complete->target-visible "
          << "fallback=none completion_notify=sim-channel "
          << "storage_direct_role=" << StorageDirectRoleName(plan->role)
          << " storage_direct_peer_rank=" << plan->peer_rank
          << " storage_direct_bytes=" << plan->bytes;
+  if (plan->target_window != nullptr) {
+    marker << " storage_target_window=registered"
+           << " storage_target_lkey=" << plan->target_window->sim_lkey
+           << " storage_target_rkey=" << plan->target_window->sim_rkey;
+  }
   std::thread(CompleteStorageDirectFromInner, wrapper, inner,
               marker.str()).detach();
   return FLUME_OK;

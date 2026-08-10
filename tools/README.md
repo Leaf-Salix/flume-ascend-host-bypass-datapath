@@ -33,7 +33,12 @@ macOS 或无 Ascend Linux 上的预期结果：HCCL 布局检查可以失败，�
 Flume 上层需要的异步 direct-storage transfer 语义：
 
 ```text
-storage extent -> storage direct plan -> HCOMM payload sim -> target SIM_HBM
+storage extent
+  -> registered target window
+  -> storage fabric sim
+  -> storage direct plan
+  -> HCOMM payload sim
+  -> target SIM_HBM
 ```
 
 成功路径必须打印：
@@ -43,6 +48,12 @@ storage_direct_sim=on
 storage_hbm_path=sim-direct
 storage_host_payload_copy=not-used
 hcomm_payload_backend=sim
+storage_fabric=sim-rdma
+storage_memory_registration=sim-hbm-window
+storage_dma_direction=storage-to-hbm
+storage_submit=doorbell
+storage_completion_queue=sim
+storage_notify_order=submit->fabric-write->cq-complete->target-visible
 fallback=none
 ```
 
@@ -57,6 +68,35 @@ fallback=host-staging
 这两个 marker 的区别是刻意保留的：`sim-direct` 只证明 API、状态机、
 completion notify 和 HCOMM payload sim 路由正确；`host-staging` 明确表示
 payload 经 host staging，不能作为 host-bypass 成功证据。
+
+严格 direct-only 对照：
+
+```bash
+build-local-direct/flume-storage-direct-sim-smoke --strict-direct-only
+```
+
+该模式只允许 `sim-direct`，不会执行 host-staging fallback；输出应包含
+`strict_direct_only=on`、`storage_host_payload_copy=not-used` 和
+`fallback=none`。
+
+应用视角 demo：
+
+```bash
+build-local-direct/flume-storage-read-to-rank-demo
+```
+
+该 demo 模拟上层发起 “把文件切片读到目标 rank HBM”：
+
+```text
+app_request=read_to_rank_hbm
+selected_path=sim-direct
+host_payload_copy=not-used
+target_rank=1
+verdict=passed
+```
+
+它用于向应用/框架侧说明：最终希望暴露的是 read-to-rank-HBM 语义，
+而不是让算子进程直接打开 SSD 文件。
 
 ## Ascend 主机探测
 

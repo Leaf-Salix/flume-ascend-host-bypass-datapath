@@ -90,6 +90,10 @@ int main() {
   FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[1], kBytes,
                                           FLUME_BUFFER_SIM_HBM, &dst) ==
                    FLUME_OK);
+  flume_storage_target_window_t* dst_window = nullptr;
+  FLUME_TEST_CHECK(flume_register_storage_target_memory(
+                       clients[1], dst, 0, kBytes, &dst_window) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_buffer_release(dst) == FLUME_ERR_INVALID_ARGUMENT);
 
   flume_storage_direct_options_t send_options = {};
   send_options.size = sizeof(send_options);
@@ -112,10 +116,13 @@ int main() {
   recv_options.require_direct = 1;
   recv_options.allow_host_staging = 0;
   recv_options.len = kBytes;
+  recv_options.target_window = dst_window;
   flume_storage_direct_plan_t* recv_plan = nullptr;
   FLUME_TEST_CHECK(flume_storage_direct_plan_create(
                        clients[1], nullptr, dst, 0, &recv_options,
                        &recv_plan) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_storage_target_window_release(dst_window) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
 
   flume_io_t* send_io = nullptr;
   FLUME_TEST_CHECK(flume_read_storage_to_hbm_async(
@@ -138,12 +145,21 @@ int main() {
                    std::string::npos);
   FLUME_TEST_CHECK(std::string(flume_io_error_message(recv_io))
                        .find("fallback=none") != std::string::npos);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(recv_io))
+                       .find("storage_fabric=sim-rdma") != std::string::npos);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(recv_io))
+                       .find("storage_memory_registration=sim-hbm-window") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(std::string(flume_io_error_message(recv_io))
+                       .find("storage_completion_queue=sim") !=
+                   std::string::npos);
   VerifyPattern(dst, kBytes, kOffset);
 
   FLUME_TEST_CHECK(flume_io_release(send_io) == FLUME_OK);
   FLUME_TEST_CHECK(flume_io_release(recv_io) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_direct_plan_release(send_plan) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_direct_plan_release(recv_plan) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_storage_target_window_release(dst_window) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_block_release(block) == FLUME_OK);
   FLUME_TEST_CHECK(flume_buffer_release(dst) == FLUME_OK);
 
@@ -153,6 +169,11 @@ int main() {
   FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[1], kBytes,
                                           FLUME_BUFFER_SIM_HBM,
                                           &recv_first_dst) == FLUME_OK);
+  flume_storage_target_window_t* recv_first_window = nullptr;
+  FLUME_TEST_CHECK(flume_register_storage_target_memory(
+                       clients[1], recv_first_dst, 0, kBytes,
+                       &recv_first_window) == FLUME_OK);
+  recv_options.target_window = recv_first_window;
   FLUME_TEST_CHECK(flume_storage_direct_plan_create(
                        clients[0], recv_first_block, nullptr, 0, &send_options,
                        &send_plan) == FLUME_OK);
@@ -173,6 +194,8 @@ int main() {
   FLUME_TEST_CHECK(flume_io_release(recv_io) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_direct_plan_release(send_plan) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_direct_plan_release(recv_plan) == FLUME_OK);
+  FLUME_TEST_CHECK(flume_storage_target_window_release(recv_first_window) ==
+                   FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_block_release(recv_first_block) == FLUME_OK);
   FLUME_TEST_CHECK(flume_buffer_release(recv_first_dst) == FLUME_OK);
 
@@ -248,6 +271,31 @@ int main() {
                        clients[0], invalid_block, nullptr, 0, &bad_len,
                        &send_plan) == FLUME_ERR_INVALID_ARGUMENT);
   FLUME_TEST_CHECK(send_plan == nullptr);
+  flume_buffer_t* bad_window_dst = nullptr;
+  FLUME_TEST_CHECK(flume_sim_alloc_buffer(clients[1], kBytes,
+                                          FLUME_BUFFER_SIM_HBM,
+                                          &bad_window_dst) == FLUME_OK);
+  flume_storage_direct_options_t missing_window = recv_options;
+  missing_window.target_window = nullptr;
+  FLUME_TEST_CHECK(flume_storage_direct_plan_create(
+                       clients[1], nullptr, bad_window_dst, 0,
+                       &missing_window, &recv_plan) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(recv_plan == nullptr);
+  flume_storage_target_window_t* narrow_window = nullptr;
+  FLUME_TEST_CHECK(flume_register_storage_target_memory(
+                       clients[1], bad_window_dst, 0, kBytes - 1,
+                       &narrow_window) == FLUME_OK);
+  flume_storage_direct_options_t narrow_window_options = recv_options;
+  narrow_window_options.target_window = narrow_window;
+  FLUME_TEST_CHECK(flume_storage_direct_plan_create(
+                       clients[1], nullptr, bad_window_dst, 0,
+                       &narrow_window_options, &recv_plan) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(recv_plan == nullptr);
+  FLUME_TEST_CHECK(flume_storage_target_window_release(narrow_window) ==
+                   FLUME_OK);
+  FLUME_TEST_CHECK(flume_buffer_release(bad_window_dst) == FLUME_OK);
   FLUME_TEST_CHECK(flume_storage_block_release(invalid_block) == FLUME_OK);
 
   for (auto* client : clients) {

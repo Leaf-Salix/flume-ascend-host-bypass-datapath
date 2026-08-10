@@ -2011,6 +2011,13 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
     commands.append(CommandSpec("storage-direct-sim-smoke",
                                 [storage_direct_sim], True,
                                 cmake_env_updates))
+    commands.append(CommandSpec("storage-direct-strict-smoke",
+                                [storage_direct_sim, "--strict-direct-only"],
+                                True, cmake_env_updates))
+    read_to_rank_demo = str(Path(build_dir) / "flume-storage-read-to-rank-demo")
+    commands.append(CommandSpec("storage-read-to-rank-demo",
+                                [read_to_rank_demo], True,
+                                cmake_env_updates))
     if enable_hccl and (args.run_hccl_smoke or args.run_a3_symmetric_smoke or
                         args.run_hccl_p2p_smoke or
                         args.run_hcomm_channel_probe or

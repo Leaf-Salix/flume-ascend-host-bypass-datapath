@@ -58,11 +58,21 @@ flume_storage_block_t* PrepareBlock(flume_client_t* client,
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   namespace fs = std::filesystem;
   constexpr size_t kFileSize = 64 * 1024;
   constexpr size_t kOffset = 123;
   constexpr size_t kBytes = 4096;
+  bool strict_direct_only = false;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--strict-direct-only") {
+      strict_direct_only = true;
+    } else {
+      std::cerr << "unknown argument: " << arg << "\n";
+      return 2;
+    }
+  }
 
   fs::path root = fs::temp_directory_path() / "flume-storage-direct-sim-smoke";
   fs::remove_all(root);
@@ -97,6 +107,12 @@ int main() {
              "alloc target HBM")) {
     return 1;
   }
+  flume_storage_target_window_t* dst_window = nullptr;
+  if (!Check(flume_register_storage_target_memory(clients[1], dst, 0, kBytes,
+                                                  &dst_window),
+             "register target storage window")) {
+    return 1;
+  }
 
   flume_storage_direct_options_t send_options = {};
   send_options.size = sizeof(send_options);
@@ -109,6 +125,7 @@ int main() {
   flume_storage_direct_options_t recv_options = send_options;
   recv_options.role = FLUME_STORAGE_DIRECT_ROLE_TARGET_RECV;
   recv_options.peer_rank = 0;
+  recv_options.target_window = dst_window;
 
   flume_storage_direct_plan_t* send_plan = nullptr;
   flume_storage_direct_plan_t* recv_plan = nullptr;
@@ -146,8 +163,21 @@ int main() {
   flume_io_release(recv_io);
   flume_storage_direct_plan_release(send_plan);
   flume_storage_direct_plan_release(recv_plan);
+  flume_storage_target_window_release(dst_window);
   flume_storage_block_release(block);
   flume_buffer_release(dst);
+
+  if (strict_direct_only) {
+    std::cout << "storage strict direct-only smoke passed: "
+              << "strict_direct_only=on storage_hbm_path=sim-direct "
+              << "storage_host_payload_copy=not-used fallback=none\n";
+    for (auto* client : clients) {
+      flume_client_close(client);
+    }
+    agent.Stop();
+    fs::remove_all(root);
+    return 0;
+  }
 
   flume_storage_block_t* fallback_block =
       PrepareBlock(clients[0], "data.bin", kOffset + 17, kBytes);

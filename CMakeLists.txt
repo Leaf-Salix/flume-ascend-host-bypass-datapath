@@ -736,6 +736,10 @@ add_executable(flume-storage-direct-sim-smoke apps/flume-storage-direct-sim-smok
 target_link_libraries(flume-storage-direct-sim-smoke PRIVATE flume)
 target_include_directories(flume-storage-direct-sim-smoke PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+add_executable(flume-storage-read-to-rank-demo apps/flume-storage-read-to-rank-demo.cc)
+target_link_libraries(flume-storage-read-to-rank-demo PRIVATE flume)
+target_include_directories(flume-storage-read-to-rank-demo PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
 if(FLUME_ENABLE_HCCL)
   add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
   target_link_libraries(flume-acl-runtime-probe PRIVATE flume)
