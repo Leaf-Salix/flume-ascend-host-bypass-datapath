@@ -16,6 +16,7 @@ typedef struct flume_a3_symmetric_window flume_a3_symmetric_window_t;
 typedef struct flume_storage_block flume_storage_block_t;
 typedef struct flume_storage_target_window flume_storage_target_window_t;
 typedef struct flume_storage_direct_plan flume_storage_direct_plan_t;
+typedef struct flume_roce_storage_session flume_roce_storage_session_t;
 
 typedef enum {
   FLUME_OK = 0,
@@ -92,8 +93,23 @@ typedef enum {
 typedef enum {
   FLUME_STORAGE_TRANSFER_AUTO = 0,
   FLUME_STORAGE_TRANSFER_SIM_DIRECT = 1,
-  FLUME_STORAGE_TRANSFER_HOST_STAGING = 2
+  FLUME_STORAGE_TRANSFER_HOST_STAGING = 2,
+  FLUME_STORAGE_TRANSFER_ROCE_STAGED = 3,
+  FLUME_STORAGE_TRANSFER_ROCE_PROXY_HCCL = 4
 } flume_storage_transfer_path_t;
+
+typedef enum {
+  FLUME_ROCE_POST_AUTO = 0,
+  FLUME_ROCE_POST_HOST_RA = 1,
+  FLUME_ROCE_POST_AICPU = 2,
+  FLUME_ROCE_POST_AIV = 3
+} flume_roce_post_mode_t;
+
+typedef enum {
+  FLUME_ROCE_STORAGE_MEMORY = 0,
+  FLUME_ROCE_STORAGE_POSIX = 1,
+  FLUME_ROCE_STORAGE_SPDK = 2
+} flume_roce_storage_backend_t;
 
 typedef enum {
   FLUME_STORAGE_DIRECT_ROLE_AUTO = 0,
@@ -109,7 +125,23 @@ typedef struct {
   uint32_t hcomm_payload_sim;
   uint32_t future_rdma_hbm;
   flume_storage_transfer_path_t default_path;
+  uint32_t roce_storage_protocol;
+  uint32_t roce_storage_native;
 } flume_storage_transfer_caps_t;
+
+typedef struct {
+  uint32_t size;
+  const char *storage_server;
+  const char *npu_rnic_ip;
+  const char *storage_rnic_ip;
+  uint32_t npu_device;
+  uint32_t gid_index;
+  uint32_t bootstrap_port;
+  uint32_t timeout_ms;
+  flume_roce_post_mode_t post_mode;
+  flume_roce_storage_backend_t storage_backend;
+  uint32_t require_compute_host_bypass;
+} flume_roce_storage_options_t;
 
 typedef struct {
   uint32_t size;
@@ -159,6 +191,8 @@ typedef struct {
   uint32_t hcomm_payload_direct_aclrt_host_args;
   uint32_t hcomm_payload_thread_notify;
   uint32_t hcomm_write_with_notify;
+  uint32_t roce_storage_protocol;
+  uint32_t roce_storage_native;
 } flume_backend_caps_t;
 
 const char *flume_status_string(int status);
@@ -379,6 +413,32 @@ int flume_read_storage_to_hbm_async(flume_client_t *client,
                                     flume_storage_direct_plan_t *plan,
                                     void *acl_stream,
                                     flume_io_t **out);
+
+int flume_roce_storage_session_open(
+    flume_client_t *client,
+    const flume_roce_storage_options_t *options,
+    flume_roce_storage_session_t **out);
+int flume_roce_storage_session_close(flume_roce_storage_session_t *session);
+
+int flume_roce_storage_read_async(
+    flume_roce_storage_session_t *session,
+    uint64_t object_id,
+    uint64_t storage_offset,
+    flume_buffer_t *dst,
+    size_t dst_offset,
+    size_t len,
+    void *acl_stream,
+    flume_io_t **out);
+
+int flume_roce_storage_write_async(
+    flume_roce_storage_session_t *session,
+    uint64_t object_id,
+    uint64_t storage_offset,
+    flume_buffer_t *src,
+    size_t src_offset,
+    size_t len,
+    void *acl_stream,
+    flume_io_t **out);
 
 int flume_allreduce_async(flume_client_t *client,
                          flume_buffer_t *dst,

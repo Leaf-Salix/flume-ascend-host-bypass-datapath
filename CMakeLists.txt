@@ -9,14 +9,26 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(FLUME_ENABLE_HCCL "Enable the future HCCL/HCOMM-backed transport." OFF)
 option(FLUME_BUILD_TESTS "Build tests." ON)
 option(FLUME_BUILD_HCOMM_CUSTOM_OP "Build experimental HCOMM custom-op/AICPU payload scheduler." OFF)
+option(FLUME_ENABLE_ROCE_STORAGE "Enable the experimental NPU-RNIC RoCE storage API surface." OFF)
 
 find_package(Threads REQUIRED)
+
+find_path(IBVERBS_INCLUDE_DIR NAMES infiniband/verbs.h)
+find_library(IBVERBS_LIBRARY NAMES ibverbs)
+if(IBVERBS_INCLUDE_DIR AND IBVERBS_LIBRARY)
+  set(FLUME_HAVE_IBVERBS 1)
+else()
+  set(FLUME_HAVE_IBVERBS 0)
+endif()
 
 add_library(flume STATIC
   src/agent/storage_agent.cc
   src/core/client.cc
   src/hcomm_payload/payload_backend.cc
   src/protocol/framing.cc
+  src/roce_storage/roce_storage.cc
+  src/roce_storage/storage_backend.cc
+  src/roce_storage/verbs_backend.cc
   src/storage/posix_file.cc
 )
 
@@ -30,7 +42,14 @@ target_include_directories(flume
 target_link_libraries(flume PUBLIC Threads::Threads)
 target_compile_definitions(flume PUBLIC
   FLUME_BUILD_HCOMM_CUSTOM_OP=$<BOOL:${FLUME_BUILD_HCOMM_CUSTOM_OP}>
+  FLUME_ENABLE_ROCE_STORAGE=$<BOOL:${FLUME_ENABLE_ROCE_STORAGE}>
+  FLUME_HAVE_IBVERBS=${FLUME_HAVE_IBVERBS}
 )
+
+if(FLUME_HAVE_IBVERBS)
+  target_include_directories(flume PRIVATE ${IBVERBS_INCLUDE_DIR})
+  target_link_libraries(flume PUBLIC ${IBVERBS_LIBRARY})
+endif()
 
 if(FLUME_ENABLE_HCCL)
   include(CheckCXXSourceCompiles)
@@ -740,6 +759,10 @@ add_executable(flume-storage-read-to-rank-demo apps/flume-storage-read-to-rank-d
 target_link_libraries(flume-storage-read-to-rank-demo PRIVATE flume)
 target_include_directories(flume-storage-read-to-rank-demo PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+add_executable(flume-roce-storage-server apps/flume-roce-storage-server.cc)
+target_link_libraries(flume-roce-storage-server PRIVATE flume)
+target_include_directories(flume-roce-storage-server PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
 if(FLUME_ENABLE_HCCL)
   add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
   target_link_libraries(flume-acl-runtime-probe PRIVATE flume)
@@ -874,4 +897,9 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_sim_a3_symmetric_memory PRIVATE flume)
   target_include_directories(test_sim_a3_symmetric_memory PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME sim_a3_symmetric_memory COMMAND test_sim_a3_symmetric_memory)
+
+  add_executable(test_roce_storage_protocol tests/test_roce_storage_protocol.cc)
+  target_link_libraries(test_roce_storage_protocol PRIVATE flume)
+  target_include_directories(test_roce_storage_protocol PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME roce_storage_protocol COMMAND test_roce_storage_protocol)
 endif()
