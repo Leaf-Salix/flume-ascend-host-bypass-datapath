@@ -179,6 +179,17 @@ python3 tools/flume_tool.py \
 
 This validates the first real storage-integrated fallback path. Rank 0 acts as the storage proxy: it reads a file slice from local storage, copies that slice into proxy-rank HBM, then uses `HcclSend` to send bytes to rank 1 compute HBM. Rank 1 receives with `HcclRecv` and verifies the checksum that `flume_tool.py` computed before launch. The success marker is `storage_hbm=hccl-p2p-staging`. This is not full storage-direct DMA; host CPU still performs the SSD file read and H2D staging into proxy HBM.
 
+### Stage 4 Host-RA baseline
+
+With `-DFLUME_ENABLE_ROCE_STORAGE=ON`, Flume now includes an experimental
+protocol-v2 Host-RA path. TCP is used only to exchange RC-QP and completion
+window descriptors. Commands use NPU RA `SEND`; the storage server uses a
+standard RNIC to RDMA Write payload and completion records into registered NPU
+HBM. This bypasses compute-host payload staging, while the current POSIX/memory
+storage backend still stages payload in storage-server DRAM. See
+[`docs/stage-4-host-ra-baseline.md`](docs/stage-4-host-ra-baseline.md) for the
+exact boundary, clean-room provenance, and hardware checklist.
+
 If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
 
 Status: Host B (CANN 9.0) has validated this path with a local SSD input file and a 16 MiB byte payload. The marker `storage_hbm=hccl-p2p-staging` appeared on both ranks and the rank1 checksum matched the source slice.

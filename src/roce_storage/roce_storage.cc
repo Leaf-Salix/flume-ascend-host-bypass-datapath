@@ -1,5 +1,7 @@
 #include "roce_storage/roce_storage.h"
 
+#include "roce_storage/cann_ra_loader.h"
+
 #include <cstring>
 
 #ifndef FLUME_HAVE_IBVERBS
@@ -57,7 +59,12 @@ bool ReadU64(const uint8_t* wire, size_t len, size_t* offset, uint64_t* out) {
 }  // namespace
 
 bool EncodeCommand(const Command& command, std::vector<uint8_t>* wire) {
+  const uint32_t required_access = command.operation == Operation::kRead ?
+                                       kMemoryRemoteWrite :
+                                       kMemoryRemoteRead;
   if (wire == nullptr || command.request_id == 0 || command.length == 0 ||
+      command.npu_address == 0 || command.npu_rkey == 0 ||
+      (command.npu_access & required_access) == 0 ||
       (command.operation != Operation::kRead && command.operation != Operation::kWrite)) {
     return false;
   }
@@ -72,7 +79,8 @@ bool EncodeCommand(const Command& command, std::vector<uint8_t>* wire) {
   AppendU64(command.length, wire);
   AppendU64(command.npu_address, wire);
   AppendU32(command.npu_rkey, wire);
-  AppendU32(0, wire);
+  AppendU32(command.npu_access, wire);
+  AppendU64(0, wire);
   return true;
 }
 
@@ -82,7 +90,7 @@ bool DecodeCommand(const uint8_t* wire, size_t len, Command* command) {
   uint32_t magic = 0;
   uint16_t version = 0;
   uint16_t operation = 0;
-  uint32_t reserved = 0;
+  uint64_t reserved = 0;
   if (!ReadU32(wire, len, &offset, &magic) || !ReadU16(wire, len, &offset, &version) ||
       !ReadU16(wire, len, &offset, &operation) ||
       !ReadU64(wire, len, &offset, &command->request_id) ||
@@ -91,12 +99,18 @@ bool DecodeCommand(const uint8_t* wire, size_t len, Command* command) {
       !ReadU64(wire, len, &offset, &command->length) ||
       !ReadU64(wire, len, &offset, &command->npu_address) ||
       !ReadU32(wire, len, &offset, &command->npu_rkey) ||
-      !ReadU32(wire, len, &offset, &reserved)) {
+      !ReadU32(wire, len, &offset, &command->npu_access) ||
+      !ReadU64(wire, len, &offset, &reserved)) {
     return false;
   }
   command->operation = static_cast<Operation>(operation);
+  const uint32_t required_access = command->operation == Operation::kRead ?
+                                       kMemoryRemoteWrite :
+                                       kMemoryRemoteRead;
   return magic == kProtocolMagic && version == kProtocolVersion && reserved == 0 &&
          command->request_id != 0 && command->length != 0 &&
+         command->npu_address != 0 && command->npu_rkey != 0 &&
+         (command->npu_access & required_access) != 0 &&
          (command->operation == Operation::kRead || command->operation == Operation::kWrite);
 }
 
@@ -104,20 +118,37 @@ bool EncodeCompletion(const Completion& completion, std::vector<uint8_t>* wire) 
   if (wire == nullptr || completion.request_id == 0) return false;
   wire->clear();
   wire->reserve(kCompletionWireBytes);
+  AppendU32(kProtocolMagic, wire);
+  AppendU16(kProtocolVersion, wire);
+  AppendU16(static_cast<uint16_t>(completion.status), wire);
   AppendU64(completion.request_id, wire);
-  AppendU32(completion.status, wire);
   AppendU64(completion.bytes, wire);
   AppendU32(completion.checksum, wire);
+  AppendU32(completion.flags, wire);
+  AppendU64(0, wire);
   return true;
 }
 
 bool DecodeCompletion(const uint8_t* wire, size_t len, Completion* completion) {
   if (wire == nullptr || completion == nullptr || len != kCompletionWireBytes) return false;
   size_t offset = 0;
-  return ReadU64(wire, len, &offset, &completion->request_id) &&
-         ReadU32(wire, len, &offset, &completion->status) &&
-         ReadU64(wire, len, &offset, &completion->bytes) &&
-         ReadU32(wire, len, &offset, &completion->checksum) && completion->request_id != 0;
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  uint16_t status = 0;
+  uint64_t reserved = 0;
+  if (!ReadU32(wire, len, &offset, &magic) ||
+      !ReadU16(wire, len, &offset, &version) ||
+      !ReadU16(wire, len, &offset, &status) ||
+      !ReadU64(wire, len, &offset, &completion->request_id) ||
+      !ReadU64(wire, len, &offset, &completion->bytes) ||
+      !ReadU32(wire, len, &offset, &completion->checksum) ||
+      !ReadU32(wire, len, &offset, &completion->flags) ||
+      !ReadU64(wire, len, &offset, &reserved)) {
+    return false;
+  }
+  completion->status = status;
+  return magic == kProtocolMagic && version == kProtocolVersion &&
+         reserved == 0 && completion->request_id != 0;
 }
 
 bool EncodeEndpoint(const Endpoint& endpoint, std::vector<uint8_t>* wire) {
@@ -155,6 +186,138 @@ bool DecodeEndpoint(const uint8_t* wire, size_t len, Endpoint* endpoint) {
          padding[3] == 0 && padding[4] == 0;
 }
 
+bool EncodeSessionRequest(const SessionRequest& request, std::vector<uint8_t>* wire) {
+  if (wire == nullptr || request.completion.address == 0 ||
+      request.completion.length < kCompletionWireBytes ||
+      request.completion.rkey == 0 ||
+      (request.completion.access & kMemoryRemoteWrite) == 0) {
+    return false;
+  }
+  std::vector<uint8_t> endpoint;
+  if (!EncodeEndpoint(request.endpoint, &endpoint)) return false;
+  wire->clear();
+  wire->reserve(kSessionRequestWireBytes);
+  AppendU32(kProtocolMagic, wire);
+  AppendU16(kProtocolVersion, wire);
+  AppendU16(request.flags, wire);
+  wire->insert(wire->end(), endpoint.begin(), endpoint.end());
+  AppendU64(request.completion.address, wire);
+  AppendU64(request.completion.length, wire);
+  AppendU32(request.completion.rkey, wire);
+  AppendU32(request.completion.access, wire);
+  return wire->size() == kSessionRequestWireBytes;
+}
+
+bool DecodeSessionRequest(const uint8_t* wire, size_t len, SessionRequest* request) {
+  if (wire == nullptr || request == nullptr || len != kSessionRequestWireBytes) return false;
+  size_t offset = 0;
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  if (!ReadU32(wire, len, &offset, &magic) ||
+      !ReadU16(wire, len, &offset, &version) ||
+      !ReadU16(wire, len, &offset, &request->flags) ||
+      magic != kProtocolMagic || version != kProtocolVersion ||
+      !DecodeEndpoint(wire + offset, kEndpointWireBytes, &request->endpoint)) {
+    return false;
+  }
+  offset += kEndpointWireBytes;
+  return ReadU64(wire, len, &offset, &request->completion.address) &&
+         ReadU64(wire, len, &offset, &request->completion.length) &&
+         ReadU32(wire, len, &offset, &request->completion.rkey) &&
+         ReadU32(wire, len, &offset, &request->completion.access) &&
+         request->completion.address != 0 &&
+         request->completion.length >= kCompletionWireBytes &&
+         request->completion.rkey != 0 &&
+         (request->completion.access & kMemoryRemoteWrite) != 0;
+}
+
+bool EncodeSessionResponse(const SessionResponse& response, std::vector<uint8_t>* wire) {
+  std::vector<uint8_t> endpoint;
+  if (wire == nullptr || response.namespace_capacity == 0 ||
+      response.max_transfer_bytes == 0 ||
+      !EncodeEndpoint(response.endpoint, &endpoint)) {
+    return false;
+  }
+  wire->clear();
+  wire->reserve(kSessionResponseWireBytes);
+  AppendU32(kProtocolMagic, wire);
+  AppendU16(kProtocolVersion, wire);
+  AppendU16(response.status, wire);
+  wire->insert(wire->end(), endpoint.begin(), endpoint.end());
+  AppendU64(response.namespace_capacity, wire);
+  AppendU64(response.max_transfer_bytes, wire);
+  AppendU32(response.server_capabilities, wire);
+  AppendU32(0, wire);
+  return wire->size() == kSessionResponseWireBytes;
+}
+
+bool DecodeSessionResponse(const uint8_t* wire, size_t len, SessionResponse* response) {
+  if (wire == nullptr || response == nullptr || len != kSessionResponseWireBytes) return false;
+  size_t offset = 0;
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  uint32_t reserved = 0;
+  if (!ReadU32(wire, len, &offset, &magic) ||
+      !ReadU16(wire, len, &offset, &version) ||
+      !ReadU16(wire, len, &offset, &response->status) ||
+      magic != kProtocolMagic || version != kProtocolVersion ||
+      !DecodeEndpoint(wire + offset, kEndpointWireBytes, &response->endpoint)) {
+    return false;
+  }
+  offset += kEndpointWireBytes;
+  return ReadU64(wire, len, &offset, &response->namespace_capacity) &&
+         ReadU64(wire, len, &offset, &response->max_transfer_bytes) &&
+         ReadU32(wire, len, &offset, &response->server_capabilities) &&
+         ReadU32(wire, len, &offset, &reserved) && reserved == 0 &&
+         response->namespace_capacity != 0 && response->max_transfer_bytes != 0;
+}
+
+bool SessionLifecycle::LocalResourcesReady() {
+  if (state_ != SessionState::kCreated) return false;
+  state_ = SessionState::kLocalResourcesReady;
+  return true;
+}
+
+bool SessionLifecycle::Bootstrapped() {
+  if (state_ != SessionState::kLocalResourcesReady) return false;
+  state_ = SessionState::kBootstrapped;
+  return true;
+}
+
+bool SessionLifecycle::Connected() {
+  if (state_ != SessionState::kBootstrapped) return false;
+  state_ = SessionState::kConnected;
+  return true;
+}
+
+bool SessionLifecycle::BeginRequest(uint64_t request_id) {
+  if (state_ != SessionState::kConnected || request_id == 0) return false;
+  active_request_id_ = request_id;
+  state_ = SessionState::kRequestInFlight;
+  return true;
+}
+
+bool SessionLifecycle::CompleteRequest(uint64_t request_id) {
+  if (state_ != SessionState::kRequestInFlight || request_id != active_request_id_) return false;
+  active_request_id_ = 0;
+  state_ = SessionState::kConnected;
+  return true;
+}
+
+bool SessionLifecycle::Fail() {
+  if (state_ == SessionState::kClosed) return false;
+  active_request_id_ = 0;
+  state_ = SessionState::kFailed;
+  return true;
+}
+
+bool SessionLifecycle::Close() {
+  if (state_ == SessionState::kRequestInFlight || state_ == SessionState::kClosed) return false;
+  active_request_id_ = 0;
+  state_ = SessionState::kClosed;
+  return true;
+}
+
 uint32_t Checksum(const uint8_t* data, size_t len) {
   uint32_t value = 2166136261U;
   for (size_t index = 0; index < len; ++index) {
@@ -164,15 +327,22 @@ uint32_t Checksum(const uint8_t* data, size_t len) {
   return value;
 }
 
-bool NativeTransportCompiled() { return false; }
+bool NativeTransportCompiled() {
+#if FLUME_ENABLE_ROCE_STORAGE
+  return CannRaLoaderCompiled();
+#else
+  return false;
+#endif
+}
 
 const char* NativeTransportReason() {
-#if FLUME_HAVE_IBVERBS
-  return "RoCE protocol and optional standard libibverbs storage-server path are compiled, "
-         "but native CANN RA/HCCP, AICPU, and AIV posting are not enabled";
+#if !FLUME_ENABLE_ROCE_STORAGE
+  return "native CANN RA/HCCP storage support is disabled at CMake configure time";
+#elif FLUME_HAVE_IBVERBS
+  return "Host-RA loader and standard libibverbs storage-server path are compiled; "
+         "runtime availability is checked when a session opens";
 #else
-  return "RoCE protocol is compiled, but libibverbs and native CANN RA/HCCP, "
-         "AICPU, and AIV posting are not enabled";
+  return "Host-RA loader is compiled, but the storage server lacks libibverbs";
 #endif
 }
 

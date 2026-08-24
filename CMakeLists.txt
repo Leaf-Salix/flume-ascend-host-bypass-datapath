@@ -27,6 +27,8 @@ add_library(flume STATIC
   src/hcomm_payload/payload_backend.cc
   src/protocol/framing.cc
   src/roce_storage/roce_storage.cc
+  src/roce_storage/cann_ra_loader.cc
+  src/roce_storage/host_ra_session.cc
   src/roce_storage/storage_backend.cc
   src/roce_storage/verbs_backend.cc
   src/storage/posix_file.cc
@@ -40,6 +42,9 @@ target_include_directories(flume
 )
 
 target_link_libraries(flume PUBLIC Threads::Threads)
+if(CMAKE_DL_LIBS)
+  target_link_libraries(flume PRIVATE ${CMAKE_DL_LIBS})
+endif()
 target_compile_definitions(flume PUBLIC
   FLUME_BUILD_HCOMM_CUSTOM_OP=$<BOOL:${FLUME_BUILD_HCOMM_CUSTOM_OP}>
   FLUME_ENABLE_ROCE_STORAGE=$<BOOL:${FLUME_ENABLE_ROCE_STORAGE}>
@@ -778,6 +783,14 @@ if(FLUME_ENABLE_HCCL)
       ${ACL_INCLUDE_DIR}
       ${SECUREC_INCLUDE_DIR}
   )
+
+  if(FLUME_ENABLE_ROCE_STORAGE)
+    add_executable(flume-roce-storage-client apps/flume-roce-storage-client.cc)
+    target_link_libraries(flume-roce-storage-client PRIVATE flume)
+    target_include_directories(flume-roce-storage-client PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${ACL_INCLUDE_DIR})
+  endif()
 endif()
 
 if(FLUME_BUILD_TESTS)
@@ -902,4 +915,9 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_roce_storage_protocol PRIVATE flume)
   target_include_directories(test_roce_storage_protocol PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME roce_storage_protocol COMMAND test_roce_storage_protocol)
+
+  add_executable(test_cann_ra_loader tests/test_cann_ra_loader.cc)
+  target_link_libraries(test_cann_ra_loader PRIVATE flume)
+  target_include_directories(test_cann_ra_loader PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME cann_ra_loader COMMAND test_cann_ra_loader)
 endif()

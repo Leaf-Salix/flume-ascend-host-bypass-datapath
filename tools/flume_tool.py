@@ -1990,6 +1990,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         f"-DFLUME_BUILD_TESTS={'ON' if not args.skip_tests else 'OFF'}",
         f"-DFLUME_ENABLE_HCCL={'ON' if enable_hccl else 'OFF'}",
         f"-DFLUME_BUILD_HCOMM_CUSTOM_OP={'ON' if args.build_hcomm_custom_op else 'OFF'}",
+        f"-DFLUME_ENABLE_ROCE_STORAGE={'ON' if args.enable_roce_storage else 'OFF'}",
     ]
     commands: list[CommandSpec] = [
         CommandSpec("cmake-configure", configure, True, cmake_env_updates),
@@ -9983,6 +9984,11 @@ def parse_args() -> argparse.Namespace:
                               "This only enables the Stage 3B custom-op/AICPU "
                               "scheduler compile branch; the launcher is still "
                               "expected to report unsupported."))
+    parser.add_argument("--enable-roce-storage", action="store_true",
+                        help=("Build the experimental Stage 4 Host-RA client "
+                              "and standard-verbs storage server. Runtime "
+                              "CANN RA capability is checked when a session "
+                              "opens."))
     parser.add_argument("--step-timeout-sec", type=int, default=600,
                         help="Timeout for regular helper steps; 0 disables it")
     parser.add_argument("--run-hccl-smoke", action="store_true",

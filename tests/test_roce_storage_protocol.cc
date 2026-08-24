@@ -13,9 +13,10 @@ int main() {
   command.length = 8192;
   command.npu_address = 0x12340000ULL;
   command.npu_rkey = 99;
+  command.npu_access = flume::roce::kMemoryRemoteWrite;
   std::vector<uint8_t> wire;
   FLUME_TEST_CHECK(flume::roce::EncodeCommand(command, &wire));
-  FLUME_TEST_CHECK(wire.size() == 56);
+  FLUME_TEST_CHECK(wire.size() == flume::roce::kCommandWireBytes);
   flume::roce::Command decoded;
   FLUME_TEST_CHECK(flume::roce::DecodeCommand(wire.data(), wire.size(), &decoded));
   FLUME_TEST_CHECK(decoded.request_id == command.request_id);
@@ -25,13 +26,22 @@ int main() {
   FLUME_TEST_CHECK(decoded.length == command.length);
   FLUME_TEST_CHECK(decoded.npu_address == command.npu_address);
   FLUME_TEST_CHECK(decoded.npu_rkey == command.npu_rkey);
+  FLUME_TEST_CHECK(decoded.npu_access == command.npu_access);
   wire[0] = 0;
   FLUME_TEST_CHECK(!flume::roce::DecodeCommand(wire.data(), wire.size(), &decoded));
+  command.operation = flume::roce::Operation::kWrite;
+  command.npu_access = flume::roce::kMemoryRemoteRead;
+  FLUME_TEST_CHECK(flume::roce::EncodeCommand(command, &wire));
+  FLUME_TEST_CHECK(flume::roce::DecodeCommand(wire.data(), wire.size(), &decoded));
+  FLUME_TEST_CHECK(decoded.operation == flume::roce::Operation::kWrite);
+  command.npu_access = flume::roce::kMemoryRemoteWrite;
+  FLUME_TEST_CHECK(!flume::roce::EncodeCommand(command, &wire));
 
   flume::roce::Completion completion;
   completion.request_id = 42;
   completion.bytes = command.length;
   completion.checksum = flume::roce::Checksum(wire.data(), wire.size());
+  completion.flags = 7;
   FLUME_TEST_CHECK(flume::roce::EncodeCompletion(completion, &wire));
   FLUME_TEST_CHECK(wire.size() == flume::roce::kCompletionWireBytes);
   flume::roce::Completion decoded_completion;
@@ -39,6 +49,7 @@ int main() {
   FLUME_TEST_CHECK(decoded_completion.request_id == completion.request_id);
   FLUME_TEST_CHECK(decoded_completion.bytes == completion.bytes);
   FLUME_TEST_CHECK(decoded_completion.checksum == completion.checksum);
+  FLUME_TEST_CHECK(decoded_completion.flags == completion.flags);
 
   flume::roce::Endpoint endpoint;
   endpoint.gid[15] = 1;
@@ -54,7 +65,51 @@ int main() {
   FLUME_TEST_CHECK(decoded_endpoint.qpn == endpoint.qpn);
   FLUME_TEST_CHECK(decoded_endpoint.psn == endpoint.psn);
   FLUME_TEST_CHECK(decoded_endpoint.gid == endpoint.gid);
-  FLUME_TEST_CHECK(!flume::roce::NativeTransportCompiled());
+
+  flume::roce::SessionRequest request;
+  request.endpoint = endpoint;
+  request.completion.address = 0x56780000ULL;
+  request.completion.length = flume::roce::kCompletionWireBytes;
+  request.completion.rkey = 101;
+  request.completion.access = flume::roce::kMemoryRemoteWrite;
+  request.flags = 3;
+  FLUME_TEST_CHECK(flume::roce::EncodeSessionRequest(request, &wire));
+  FLUME_TEST_CHECK(wire.size() == flume::roce::kSessionRequestWireBytes);
+  flume::roce::SessionRequest decoded_request;
+  FLUME_TEST_CHECK(flume::roce::DecodeSessionRequest(wire.data(), wire.size(),
+                                                     &decoded_request));
+  FLUME_TEST_CHECK(decoded_request.endpoint.qpn == endpoint.qpn);
+  FLUME_TEST_CHECK(decoded_request.completion.address == request.completion.address);
+  FLUME_TEST_CHECK(decoded_request.completion.rkey == request.completion.rkey);
+  FLUME_TEST_CHECK(decoded_request.flags == request.flags);
+  request.completion.access = flume::roce::kMemoryRemoteRead;
+  FLUME_TEST_CHECK(!flume::roce::EncodeSessionRequest(request, &wire));
+
+  flume::roce::SessionResponse response;
+  response.endpoint = endpoint;
+  response.namespace_capacity = 64U * 1024U * 1024U;
+  response.max_transfer_bytes = 16U * 1024U * 1024U;
+  response.server_capabilities = flume::roce::kServerCapabilityMemoryNamespace;
+  FLUME_TEST_CHECK(flume::roce::EncodeSessionResponse(response, &wire));
+  FLUME_TEST_CHECK(wire.size() == flume::roce::kSessionResponseWireBytes);
+  flume::roce::SessionResponse decoded_response;
+  FLUME_TEST_CHECK(flume::roce::DecodeSessionResponse(wire.data(), wire.size(),
+                                                      &decoded_response));
+  FLUME_TEST_CHECK(decoded_response.namespace_capacity == response.namespace_capacity);
+  FLUME_TEST_CHECK(decoded_response.max_transfer_bytes == response.max_transfer_bytes);
+  FLUME_TEST_CHECK(decoded_response.server_capabilities == response.server_capabilities);
+
+  flume::roce::SessionLifecycle lifecycle;
+  FLUME_TEST_CHECK(lifecycle.LocalResourcesReady());
+  FLUME_TEST_CHECK(lifecycle.Bootstrapped());
+  FLUME_TEST_CHECK(lifecycle.Connected());
+  FLUME_TEST_CHECK(lifecycle.BeginRequest(42));
+  FLUME_TEST_CHECK(!lifecycle.BeginRequest(43));
+  FLUME_TEST_CHECK(!lifecycle.Close());
+  FLUME_TEST_CHECK(!lifecycle.CompleteRequest(43));
+  FLUME_TEST_CHECK(lifecycle.CompleteRequest(42));
+  FLUME_TEST_CHECK(lifecycle.Close());
+  FLUME_TEST_CHECK(!lifecycle.Close());
   std::cout << "roce storage protocol test passed\n";
   return 0;
 }
