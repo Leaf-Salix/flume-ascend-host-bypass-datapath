@@ -1718,7 +1718,7 @@ def main() -> int:
                                                       "cann-src" / "hccl")))
         build_steps_text = build_steps.read_text(encoding="utf-8")
         assert "hcomm-custom-op-direct-build" in build_steps_text
-        assert "--auto-build-hcomm-payload-package" in build_steps_text
+        assert "host-diagnostic" in build_steps_text
         assert "--custom-op-build-mode payload" in build_steps_text
         assert "--install-custom-op-package" in build_steps_text
         assert "hcomm-custom-op-build" in build_steps_text
@@ -1784,23 +1784,13 @@ def main() -> int:
                             hccl_smoke_timeout_sec=30,
                             step_timeout_sec=30),
             failed_package)
-        assert auto_package.returncode == 0
-        assert auto_runner.calls == [
-            "hcomm-payload-auto-direct-build",
-            "hcomm-custom-op-package-preflight-autobuilt",
-        ]
-        assert str(auto_runner.run_dir / "hcomm-payload-auto-runtime") == (
-            auto_args.custom_op_root)
+        assert auto_package.returncode == 1
+        assert auto_runner.calls == []
+        assert auto_args.custom_op_root == ""
         auto_note = auto_runner.run_dir / "HCOMM_PAYLOAD_AUTO_PACKAGE.txt"
         auto_note_text = auto_note.read_text(encoding="utf-8")
-        assert "Focused rerun command:" in auto_note_text
-        assert "Full-matrix rerun command:" in auto_note_text
-        assert "hcomm-payload-strict-positive" in auto_note_text
-        assert "ascend-full-matrix" in auto_note_text
-        assert "--auto-run-hcomm-payload-candidate-matrix" in auto_note_text
-        assert any(
-            f"--custom-op-root={auto_args.custom_op_root}" in command
-            for command in auto_runner.commands)
+        assert "Automatic host direct-build is disabled" in auto_note_text
+        assert "not an AICPU device-qualified package" in auto_note_text
 
         old_argv = sys.argv[:]
         try:
@@ -1822,8 +1812,7 @@ def main() -> int:
             run_dir=auto_runner.run_dir / "auto-smoke-run")
         auto_smoke = next(spec for spec in auto_specs
                           if spec.name == "hccl-collective-smoke")
-        assert auto_smoke.env_updates["FLUME_HCOMM_CUSTOM_OP_ROOT"] == (
-            auto_args.custom_op_root)
+        assert "FLUME_HCOMM_CUSTOM_OP_ROOT" not in auto_smoke.env_updates
         assert "--hcomm-require-payload-copy" in auto_smoke.command
 
         inferred_tar_preflight = subprocess.run(
@@ -2071,13 +2060,12 @@ def main() -> int:
             capture_output=True,
             check=False,
         )
-        if direct_preflight.returncode != 0:
-            print(direct_preflight.stdout)
-            print(direct_preflight.stderr, file=sys.stderr)
-            raise AssertionError("direct-build runtime package did not pass")
+        assert direct_preflight.returncode != 0
         assert f"json_path={direct_json}" in direct_preflight.stdout
         assert f"aicpu_tar_path={direct_tar}" in direct_preflight.stdout
-        assert "status=PASS" in direct_preflight.stdout
+        assert "package_provenance=host-diagnostic" in direct_preflight.stdout
+        assert "device_runnable=no" in direct_preflight.stdout
+        assert "host direct-build package is not AICPU" in direct_preflight.stdout
 
         fake_cann_canary = tmp / "fake-cann-canary"
         (fake_cann_canary / "aarch64-linux" / "include").mkdir(parents=True)

@@ -176,6 +176,10 @@ def main() -> int:
               file=sys.stderr)
         return 1
     package_ready_block = client_text[start:end]
+    if "host-diagnostic" not in package_ready_block:
+        print("runtime package-ready check does not reject host direct-build",
+              file=sys.stderr)
+        return 1
     missing_runtime = [
         marker for marker in RUNTIME_PACKAGE_READY_MARKERS
         if marker not in package_ready_block
@@ -207,6 +211,23 @@ def main() -> int:
     payload_lookup_block = client_text[payload_lookup_start:payload_lookup_end]
     if "FLUME_HCOMM_PAYLOAD_COPY_SEMANTIC_VERSION_V19_FUNC" not in payload_lookup_block:
         print("payload direct ACL loader does not require semantic v19",
+              file=sys.stderr)
+        return 1
+    launch_start = client_text.find("bool TryLaunchHcommNotifyOnlyKernel(")
+    launch_end = client_text.find("\n#endif\n\n}  // namespace",
+                                  launch_start)
+    if launch_start == -1 or launch_end == -1:
+        print("could not find notify-only launcher block", file=sys.stderr)
+        return 1
+    launch_block = client_text[launch_start:launch_end]
+    canary_pos = launch_block.find("TryLaunchHcommDirectAclrtCanary(")
+    notify_pos = launch_block.find("TryLaunchHcommNotifyOnlyDirectAclrt(")
+    if canary_pos == -1 or notify_pos == -1 or canary_pos > notify_pos:
+        print("notify-only launcher must pass the standalone canary gate "
+              "before launching the notify kernel", file=sys.stderr)
+        return 1
+    if "stage3b3d_canary_gate=passed" not in launch_block:
+        print("notify-only launcher is missing the canary gate marker",
               file=sys.stderr)
         return 1
     return 0

@@ -2408,6 +2408,13 @@ bool TextContains(const std::string& text, const char* needle) {
 
 bool JsonLooksPayloadReady(const std::string& json_text,
                            std::string* reason) {
+  if (TextContains(json_text,
+                   "\"packageProvenance\": \"host-diagnostic\"")) {
+    if (reason != nullptr) {
+      *reason = "host direct-build package is not AICPU device-qualified";
+    }
+    return false;
+  }
   const char* required[] = {
       FLUME_HCOMM_PAYLOAD_COPY_DIRECT_ACLRT_KERNEL_FUNC,
       FLUME_HCOMM_PAYLOAD_COPY_ABI_VERSION_V4_FUNC,
@@ -5680,52 +5687,67 @@ bool TryLaunchHcommNotifyOnlyKernel(
   HcommLauncherDecision launcher = DecideHcommLauncherBackend();
   std::string router_detail = DescribeHcommLauncherDecision(launcher);
   if (launcher.backend == HcommLauncherBackend::kUnsupported) {
+    int canary_status = FLUME_ERR_UNSUPPORTED;
+    std::string canary_detail = TryLaunchHcommDirectAclrtCanary(
+        state, peer_rank, acl_stream, launcher, &canary_status);
+    if (canary_status != FLUME_OK) {
+      *status = canary_status;
+      std::string direct_detail = MakeDirectAclrtBlockedDetail(
+          launcher, "standalone canary gate did not pass");
+      *detail = std::string("stage3b3a_kernel_launch=") +
+                (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+                " stage3b3d_canary_gate=" +
+                (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+                " " + router_detail + " " + canary_detail + " " +
+                direct_detail;
+      return false;
+    }
     int direct_status = FLUME_ERR_UNSUPPORTED;
     std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
         role, state, peer_rank, acl_stream, resource_info, launcher,
         &direct_status);
-    int canary_status = FLUME_ERR_UNSUPPORTED;
-    std::string canary_detail = TryLaunchHcommDirectAclrtCanary(
-        state, peer_rank, acl_stream, launcher, &canary_status);
     if (direct_status == FLUME_OK) {
       *status = FLUME_OK;
       *detail = std::string("stage3b3a_kernel_launch=passed ") +
-                router_detail + " " + direct_detail + " " + canary_detail;
+                "stage3b3d_canary_gate=passed " + router_detail + " " +
+                canary_detail + " " + direct_detail;
       return true;
     }
-    if (direct_status != FLUME_ERR_UNSUPPORTED) {
-      *status = direct_status;
-    } else if (canary_status != FLUME_OK &&
-               canary_status != FLUME_ERR_UNSUPPORTED) {
-      *status = canary_status;
-    } else {
-      *status = FLUME_ERR_UNSUPPORTED;
-    }
+    *status = direct_status;
     *detail = std::string("stage3b3a_kernel_launch=") +
               (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
-              " " + router_detail + " " + direct_detail + " " +
-              canary_detail;
+              " stage3b3d_canary_gate=passed " + router_detail + " " +
+              canary_detail + " " + direct_detail;
     return false;
   }
   if (launcher.backend == HcommLauncherBackend::kDirectAclrtPending) {
-    std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
-        role, state, peer_rank, acl_stream, resource_info, launcher, status);
     int canary_status = FLUME_ERR_UNSUPPORTED;
     std::string canary_detail = TryLaunchHcommDirectAclrtCanary(
         state, peer_rank, acl_stream, launcher, &canary_status);
+    if (canary_status != FLUME_OK) {
+      *status = canary_status;
+      std::string direct_detail = MakeDirectAclrtBlockedDetail(
+          launcher, "standalone canary gate did not pass");
+      *detail = std::string("stage3b3a_kernel_launch=") +
+                (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+                " stage3b3d_canary_gate=" +
+                (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
+                " " + router_detail + " " + canary_detail + " " +
+                direct_detail;
+      return false;
+    }
+    std::string direct_detail = TryLaunchHcommNotifyOnlyDirectAclrt(
+        role, state, peer_rank, acl_stream, resource_info, launcher, status);
     if (*status == FLUME_OK) {
       *detail = std::string("stage3b3a_kernel_launch=passed ") +
-                router_detail + " " + direct_detail + " " + canary_detail;
+                "stage3b3d_canary_gate=passed " + router_detail + " " +
+                canary_detail + " " + direct_detail;
       return true;
-    }
-    if (*status == FLUME_ERR_UNSUPPORTED && canary_status != FLUME_OK &&
-        canary_status != FLUME_ERR_UNSUPPORTED) {
-      *status = canary_status;
     }
     *detail = std::string("stage3b3a_kernel_launch=") +
               (*status == FLUME_ERR_UNSUPPORTED ? "unsupported" : "failed") +
-              " " + router_detail + " " + direct_detail + " " +
-              canary_detail;
+              " stage3b3d_canary_gate=passed " + router_detail + " " +
+              canary_detail + " " + direct_detail;
     return false;
   }
 #if FLUME_BUILD_HCOMM_CUSTOM_OP && FLUME_HAVE_HCCL_AICPU_KERNEL_LAUNCH

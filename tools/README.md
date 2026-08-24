@@ -366,11 +366,12 @@ semantic v10 payload 包还会输出 `payload_trace_*`。完整成功要求
 status word，应优先检查 descriptor handoff、status pointer 和 kernel
 是否实际执行，而不是先定位 HCOMM primitive。
 
-构建 Flume custom-op package 有三条路径。Host B 这类有 CANN toolkit、但没有
-HCCL source packaging flow 的环境，优先试 direct-build：
+构建 Flume custom-op package 有三条路径。`direct-build` 仅用于 host 侧 ABI、
+符号和 JSON/tar 结构诊断；设备可运行产物必须优先使用 HCCL source packaging
+flow：
 
 ```bash
-# 推荐优先：直接用已安装 CANN toolkit 编出 JSON/tar，并导出隔离 runtime layout
+# 仅诊断：直接用已安装 CANN toolkit 编出 host-diagnostic JSON/tar
 python3 tools/flume_tool.py \
   --custom-op-build-mode payload \
   --custom-op-export-root <temporary-custom-op-root> \
@@ -431,7 +432,10 @@ payload 模式需要当前 toolkit 的 `libhcomm.so` 导出 HCOMM primitive 符�
 本地 ACL/securec support include；运行时仍链接目标 CANN toolkit 的
 `libhcomm.so`。可选 `HcommWriteWithNotifyOnThread` 路径只有在 header
 声明且目标 `libhcomm.so` 实际导出符号时才会启用，产物说明里会记录
-`hcomm_write_with_notify_enabled: 0|1`。
+`hcomm_write_with_notify_enabled: 0|1`。该产物会显式标记
+`package_provenance=host-diagnostic device_runnable=no`，不能满足
+`--require-hcomm-payload-kernel`，也不能用于 strict-positive；host loader、
+`ldd` 或符号检查通过都不代表 AICPU OS 能够打开该 SO。
 
 `hcomm-custom-op-build` 默认使用 `payload` 模式，也就是打开
 `FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD=ON`，生成 Stage 3B.3E 所需的
@@ -588,11 +592,10 @@ marker-only 的包或 JSON/SO 不一致的包误判为可跑 strict payload。
 `hcomm-custom-op-package-preflight` 诊断步骤；`ascend-full-matrix` 会默认用
 payload-required 模式检查包体，并在
 `ASCEND_FULL_MATRIX_DECISION_TREE.md` 里标记 package 是 `not-ready`、
-`canary-ready` 还是 `payload-ready`。如果传入
-`--auto-build-hcomm-payload-package`，`ascend-full-matrix` 会在初始
-payload-required preflight 失败后先执行 isolated direct-build/export，再用
-导出的 `--custom-op-root` 重跑 preflight 和 strict payload gate；这个路径不安装
-或修改系统 CANN/OPP。
+`canary-ready` 还是 `payload-ready`。兼容参数
+`--auto-build-hcomm-payload-package` 不再自动构建或执行 host direct-build
+产物；初始 payload-required preflight 失败时，它会保留原失败并写出 blocked
+诊断，避免把 host ELF 误报为 AICPU device package。
 `--custom-op-root`、`--custom-op-json`、`--custom-op-aicpu-tar` 和
 `--custom-op-vendor` 也会传给真实 HCOMM smoke runtime；`--custom-op-json`
 是 authoritative，路径写错时 runtime 不会悄悄回退到系统安装目录。
@@ -776,9 +779,9 @@ package 还没 ready，则该步骤保留为 optional expected negative。当前
 payload package 时预期 readiness 返回 `unsupported` / `fallback=hccl-p2p`，
 strict negative 失败但在 summary 中标为 optional；这说明缺的是可安装的
 Flume custom-op/AICPU payload package，而不是 HCCL collective 或 HCCL P2P
-baseline。追加 `--auto-build-hcomm-payload-package` 后，full matrix 会先尝试
-从当前 toolkit 直接构建并导出 isolated payload package；若导出包通过
-payload-ready preflight，strict payload copy 会升级为 required positive。
+baseline。要把 strict payload copy 升级为 required positive，必须先通过
+HCCL/CANN device custom-op packaging flow 生成 device candidate；host
+direct-build 不再参与自动升级。
 
 payload package 已经通过 preflight 后，可以用更窄的严格正例入口，只验证
 Stage 3B.3E 真实 HCOMM payload copy。`hcomm-payload-strict-positive`
@@ -793,7 +796,6 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
-  --auto-build-hcomm-payload-package \
   --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
@@ -807,7 +809,6 @@ python3 tools/flume_tool.py --build-dir build-hcomm-official-p2p-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
-  --auto-build-hcomm-payload-package \
   hcomm-payload-official-p2p-positive
 ```
 

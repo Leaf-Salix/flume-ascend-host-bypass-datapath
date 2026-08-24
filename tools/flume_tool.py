@@ -580,78 +580,19 @@ def MaybeAutoBuildPayloadPackage(
             not getattr(args, "auto_build_hcomm_payload_package", False)):
         return args, original_package_result
 
-    export_root = runner.run_dir / "hcomm-payload-auto-runtime"
-    build_result = runner.run(
-        "hcomm-payload-auto-direct-build",
-        HcommPayloadAutoDirectBuildCommand(args, runner, export_root),
-        required=True,
-        timeout_seconds=args.hccl_smoke_timeout_sec,
-    )
-    if build_result.returncode != 0:
-        return args, original_package_result
-
-    auto_args = copy.copy(args)
-    auto_args.custom_op_root = str(export_root)
-    auto_args.custom_op_json = ""
-    auto_args.custom_op_aicpu_tar = ""
-    package_result = runner.run(
-        "hcomm-custom-op-package-preflight-autobuilt",
-        HcommCustomOpPackageCommand(auto_args, require_payload=True),
-        required=True,
-        timeout_seconds=args.step_timeout_sec,
-    )
-    if package_result.returncode != 0:
-        return args, package_result
     note = runner.run_dir / "HCOMM_PAYLOAD_AUTO_PACKAGE.txt"
-    rerun_command = [
-        "python3 tools/flume_tool.py",
-        f"  --build-dir {Path(args.build_dir)}",
-        "  --hccl-devices <device-a>,<device-b>",
-        "  --hccl-host-ifname <host-ifname>",
-        "  --hccl-host-ip <host-ip>",
-        "  --build-hcomm-custom-op",
-        f"  --custom-op-root {export_root}",
-        "  --hcomm-require-payload-copy",
-        "  --hccl-debug-logs",
-        "  hcomm-payload-strict-positive",
-    ]
-    matrix_rerun_command = [
-        "python3 tools/flume_tool.py",
-        f"  --build-dir {Path(args.build_dir)}",
-        "  --hccl-devices <device-a>,<device-b>",
-        "  --hccl-host-ifname <host-ifname>",
-        "  --hccl-host-ip <host-ip>",
-        "  --build-hcomm-custom-op",
-        f"  --custom-op-root {export_root}",
-        "  --auto-run-hcomm-payload-candidate-matrix",
-        "  --hccl-debug-logs",
-        "  ascend-full-matrix",
-    ]
+    note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(
-        "Flume auto-built an isolated direct ACL HCOMM payload package for "
-        "this run.\n"
-        f"custom_op_root: {export_root}\n"
-        "package_preflight: payload-ready\n"
-        "The package was built with hcomm-custom-op-direct-build and exported "
-        "under this log directory; no system CANN/OPP installation was "
-        "modified. Reuse it with --custom-op-root if the strict smoke needs "
-        "to be rerun against the same artifacts.\n"
-        "\n"
-        "Focused rerun command:\n"
-        + " \\\n".join(rerun_command) + "\n"
-        "\n"
-        "Full-matrix rerun command:\n"
-        + " \\\n".join(matrix_rerun_command) + "\n"
-        "\n"
-        "The run is only a true HCOMM payload-copy success when the strict "
-        "decision tree reports both ranks passed with fallback=none, "
-        "stage3b3e_payload_copy=passed, payload_semantic_v11=present, and "
-        "payload_trace_order=passed plus payload_trace_ret_order=passed plus "
-        "payload_trace_primitive_counts=passed.\n",
+        "Automatic host direct-build is disabled for strict HCOMM payload "
+        "validation.\n"
+        "hcomm-custom-op-direct-build produces a host-diagnostic shared "
+        "library; it is not an AICPU device-qualified package and must not "
+        "be reported as payload-ready. Build through the official HCCL/CANN "
+        "device custom-op flow before rerunning the strict gate.\n",
         encoding="utf-8",
     )
-    print(f"[ok] payload auto package -> {note}")
-    return auto_args, package_result
+    print(f"[blocked] payload auto package -> {note}")
+    return args, original_package_result
 
 
 def MaybeExportExplicitCustomOpRuntime(
@@ -8306,23 +8247,19 @@ def WritePayloadPackageBuildNextSteps(run_dir: Path,
     lines = [
         "Flume HCOMM payload package is not ready",
         "",
-        "Preferred no-install path for hosts with an installed CANN toolkit:",
+        "Host-only diagnostic path:",
         "",
         "python3 tools/flume_tool.py \\",
         "  --custom-op-build-mode payload \\",
         "  --custom-op-export-root <temporary-custom-op-root> \\",
         "  hcomm-custom-op-direct-build",
         "",
-        "Then rerun hcomm-payload-strict-positive with "
-        "--custom-op-root <temporary-custom-op-root>.",
+        "This output is marked package_provenance=host-diagnostic. It may be "
+        "used for ABI and symbol inspection, but it cannot satisfy "
+        "hcomm-payload-strict-positive.",
         "",
-        "For a one-command retry, add --auto-build-hcomm-payload-package to "
-        "hcomm-payload-strict-positive. It runs the same direct build/export "
-        "flow into an isolated runtime root under the current log directory "
-        "and does not modify the system CANN/OPP installation.",
-        "",
-        "If the target environment requires the HCCL source-tree packaging "
-        "flow, build and install the primitive payload custom-op package, "
+        "For a device-runnable candidate, use the HCCL source-tree packaging "
+        "flow to build and install the primitive payload custom-op package, "
         "then rerun hcomm-payload-strict-positive:",
         "",
         "python3 tools/flume_tool.py \\",
@@ -8585,6 +8522,18 @@ def _WriteAicpuTar(so_path: Path, tar_path: Path) -> None:
                 arcname=f"aicpu_kernels_device/{HCOMM_CUSTOM_OP_KERNEL_SO}")
 
 
+def _WriteHostDiagnosticJson(source: Path, destination: Path) -> None:
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("custom-op JSON root must be an object")
+    payload["_flumePackage"] = {
+        "packageProvenance": "host-diagnostic",
+        "deviceRunnable": False,
+    }
+    destination.write_text(json.dumps(payload, indent=2) + "\n",
+                           encoding="utf-8")
+
+
 def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -8690,7 +8639,7 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
              if args.custom_op_build_mode == "payload"
              else "libflume_hcomm_payload_aicpu_kernel_canary.json")
         )
-        shutil.copy2(json_source, output_json)
+        _WriteHostDiagnosticJson(json_source, output_json)
         artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_DIRECT_BUILD_ARTIFACTS.txt"
         hcomm_header = FindHcommPrimitivesHeader(
             cann_root, args.hcomm_primitives_include_root)
@@ -8705,6 +8654,8 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
             write_with_notify_nbi_enabled)
         artifact_note.write_text(
             "Flume HCOMM direct custom-op build artifacts\n"
+            "package_provenance: host-diagnostic\n"
+            "device_runnable: no\n"
             f"cann_binary_root: {cann_root}\n"
             f"mode: {args.custom_op_build_mode}\n"
             f"hcomm_primitives_header: {hcomm_header if hcomm_header else '<not-found>'}\n"
@@ -8730,9 +8681,7 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         preflight_args.custom_op_root = ""
         preflight_result = runner.run(
             "hcomm-custom-op-direct-build-preflight",
-            HcommCustomOpPackageCommand(
-                preflight_args,
-                require_payload=args.custom_op_build_mode == "payload"),
+            HcommCustomOpPackageCommand(preflight_args, require_payload=False),
             required=True,
             timeout_seconds=args.step_timeout_sec,
         )
@@ -8763,9 +8712,8 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
             installed_args.custom_op_root = str(export_root)
             runner.run(
                 "hcomm-custom-op-direct-build-exported-preflight",
-                HcommCustomOpPackageCommand(
-                    installed_args,
-                    require_payload=args.custom_op_build_mode == "payload"),
+                HcommCustomOpPackageCommand(installed_args,
+                                            require_payload=False),
                 required=True,
                 timeout_seconds=args.step_timeout_sec,
             )
@@ -8981,6 +8929,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_trace_word_count_marker = False
     found_payload_primitive_deps_marker = False
     found_payload_no_hccl_sendrecv_deps_marker = False
+    found_host_diagnostic_package = False
     found_payload_metadata_values_valid = False
     found_payload_metadata_value_mismatch = False
     print("HCOMM custom-op package inspection")
@@ -9086,6 +9035,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         forbidden_hccl_p2p_absent = False
         metadata_values_valid = False
         legacy_payload_present = False
+        host_diagnostic = False
         if json_exists and json_path is not None:
             found_any_json = True
             try:
@@ -9093,6 +9043,17 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             except (OSError, json.JSONDecodeError) as exc:
                 print(f"json_error={exc}")
                 payload = {}
+            package_meta = payload.get("_flumePackage", {}) if isinstance(
+                payload, dict) else {}
+            host_diagnostic = (
+                isinstance(package_meta, dict) and
+                package_meta.get("packageProvenance") == "host-diagnostic")
+            found_host_diagnostic_package = (
+                found_host_diagnostic_package or host_diagnostic)
+            print("package_provenance=" +
+                  ("host-diagnostic" if host_diagnostic else "unknown"))
+            print("device_runnable=" +
+                  ("no" if host_diagnostic else "unknown"))
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
                 ok = JsonDeclaresFunction(
                     payload, function_name, HCOMM_CUSTOM_OP_KERNEL_SO)
@@ -9473,6 +9434,8 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                         "payload_primitive_deps",
                         "payload_no_hccl_sendrecv_deps",
                         "payload_no_hccl_payload_api_deps")))
+        if args.require_hcomm_payload_kernel and host_diagnostic:
+            required_ok = False
         if symbol_state in ("unreadable", "not-checked"):
             required_ok = False
         elif symbol_state == "present":
@@ -9576,6 +9539,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     if not found_required:
         print("status=FAIL")
         if args.require_hcomm_payload_kernel:
+            if found_host_diagnostic_package:
+                print("reason=host direct-build package is not AICPU "
+                      "device-qualified")
+                print("action=build with the official HCCL/CANN device "
+                      "custom-op toolchain")
+                return 1
             if found_legacy_payload:
                 print("reason=payload kernel package uses stale legacy "
                       "entrypoint")
@@ -10413,16 +10382,11 @@ def parse_args() -> argparse.Namespace:
                               "to the selected CANN toolkit."))
     parser.add_argument("--auto-build-hcomm-payload-package",
                         action="store_true",
-                        help=("For ascend-probe payload-copy smoke, "
-                              "ascend-full-matrix, "
-                              "hcomm-payload-strict-positive, and "
-                              "hcomm-storage-strict-positive, if the payload "
-                              "custom-op package preflight fails, build the "
-                              "direct ACL payload package from the installed "
-                              "CANN toolkit and export an isolated runtime "
-                              "package under the current log directory before "
-                              "retrying the strict gate. This never installs "
-                              "into the system CANN/OPP tree."))
+                        help=("Deprecated safety switch retained for CLI "
+                              "compatibility. Host direct-build artifacts are "
+                              "not AICPU device-qualified, so this option now "
+                              "records a blocked diagnostic and never retries "
+                              "a strict payload gate with those artifacts."))
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("env", help="Only collect environment and HCCL layout information")

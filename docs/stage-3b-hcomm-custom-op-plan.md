@@ -401,7 +401,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-payload-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
-  --auto-build-hcomm-payload-package \
+  # host direct-build cannot satisfy strict payload qualification
   --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-payload-strict-positive
@@ -744,7 +744,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm-storage-positive \
   --hccl-host-ifname <host-ifname> \
   --hccl-host-ip <host-ip> \
   --hccl-debug-logs \
-  --auto-build-hcomm-payload-package \
+  # provide a package built by the HCCL/CANN device custom-op flow
   --auto-run-hcomm-payload-candidate-matrix \
   --collect-cann-compat-label host-b-cann \
   hcomm-storage-strict-positive
