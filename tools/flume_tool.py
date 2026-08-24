@@ -201,6 +201,8 @@ HCOMM_PAYLOAD_HOST_SOURCE_RANGES = (
 )
 HCOMM_CUSTOM_OP_NAME = "hcomm_payload"
 HCOMM_CUSTOM_OP_PATH = REPO_ROOT / "custom_ops" / "hcomm_payload_copy"
+HCOMM_CUSTOM_OP_STAGE_ROOT = ".flume-managed-custom-ops"
+HCOMM_CUSTOM_OP_STAGE_MARKER = ".flume-staging-owner"
 LOCAL_HCOMM_PRIMITIVES_INCLUDE_ROOT = (
     REPO_ROOT / "refer" / "cann-src" / "hcomm" / "include")
 LOCAL_HCOMM_PRIMITIVES_SUPPORT_INCLUDE_ROOTS = (
@@ -1099,6 +1101,56 @@ def PrepareHcclSource(args: argparse.Namespace, runner: Runner) -> Optional[Path
         required=True,
     )
     return source_root
+
+
+def StageHcommCustomOpSource(hccl_source_root: Path,
+                             run_dir: Path) -> Path:
+    """Copy Flume's custom-op into a managed HCCL in-tree source directory."""
+    managed_root = hccl_source_root / HCOMM_CUSTOM_OP_STAGE_ROOT
+    token = re.sub(r"[^A-Za-z0-9_.-]", "-", run_dir.name).strip(".-")
+    if not token:
+        token = "run"
+    stage_root = managed_root / f"{token}-{os.getpid()}"
+    if stage_root.exists():
+        raise RuntimeError(f"managed custom-op staging path already exists: {stage_root}")
+    stage_root.mkdir(parents=True)
+    marker = stage_root / HCOMM_CUSTOM_OP_STAGE_MARKER
+    marker.write_text(
+        "owned-by=flume_tool.py\n"
+        f"source={HCOMM_CUSTOM_OP_PATH.resolve()}\n",
+        encoding="utf-8",
+    )
+    destination = stage_root / HCOMM_CUSTOM_OP_PATH.name
+    try:
+        shutil.copytree(HCOMM_CUSTOM_OP_PATH, destination)
+    except BaseException:
+        CleanupHcommCustomOpSource(hccl_source_root, destination)
+        raise
+    return destination
+
+
+def CleanupHcommCustomOpSource(hccl_source_root: Path,
+                               staged_source: Path) -> None:
+    """Remove only a staging directory carrying Flume's ownership marker."""
+    managed_root = (hccl_source_root / HCOMM_CUSTOM_OP_STAGE_ROOT).resolve()
+    stage_root = staged_source.resolve().parent
+    try:
+        stage_root.relative_to(managed_root)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"refusing to clean custom-op path outside managed root: {stage_root}"
+        ) from exc
+    marker = stage_root / HCOMM_CUSTOM_OP_STAGE_MARKER
+    if not marker.is_file() or "owned-by=flume_tool.py" not in marker.read_text(
+            encoding="utf-8"):
+        raise RuntimeError(
+            f"refusing to clean custom-op staging without ownership marker: {stage_root}"
+        )
+    shutil.rmtree(stage_root)
+    try:
+        managed_root.rmdir()
+    except OSError:
+        pass
 
 
 def CannToolkitCustomOpTemplateBuildScripts(
@@ -9133,6 +9185,32 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
         return 1
 
     vendor = args.custom_op_vendor.split(",")[0].strip() or "flume"
+    try:
+        staged_custom_op = StageHcommCustomOpSource(
+            hccl_source_root, runner.run_dir)
+    except (OSError, RuntimeError) as exc:
+        runner.record_static(
+            "hcomm-custom-op-stage",
+            [
+                "custom_ops_staging=failed",
+                f"hccl_source_root={hccl_source_root}",
+                f"reason={exc}",
+            ],
+            returncode=1,
+            required=True,
+        )
+        return runner.write_summary()
+    runner.record_static(
+        "hcomm-custom-op-stage",
+        [
+            "custom_ops_staging=in-tree-managed",
+            f"hccl_source_root={hccl_source_root}",
+            f"staged_custom_ops_path={staged_custom_op}",
+            "source_checkout_modified=temporary-untracked-only",
+        ],
+        returncode=0,
+        required=True,
+    )
     env_updates: dict[str, str] = {}
     if args.custom_op_build_mode == "payload":
         env_updates["FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD"] = "ON"
@@ -9148,23 +9226,45 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
         str(build_sh),
         f"--vendor={vendor}",
         f"--ops={HCOMM_CUSTOM_OP_NAME}",
-        f"--custom_ops_path={HCOMM_CUSTOM_OP_PATH}",
+        f"--custom_ops_path={staged_custom_op}",
         "--pkg-type=run",
     ]
-    result = runner.run(
-        "hcomm-custom-op-build",
-        command,
+    cleanup_error = ""
+    try:
+        result = runner.run(
+            "hcomm-custom-op-build",
+            command,
+            required=True,
+            timeout_seconds=args.hccl_smoke_timeout_sec,
+            env_updates=env_updates,
+        )
+    finally:
+        try:
+            CleanupHcommCustomOpSource(hccl_source_root, staged_custom_op)
+        except (OSError, RuntimeError) as exc:
+            cleanup_error = str(exc)
+    runner.record_static(
+        "hcomm-custom-op-stage-cleanup",
+        [
+            "custom_ops_staging_cleanup=" +
+            ("passed" if not cleanup_error else "failed"),
+            f"staged_custom_ops_path={staged_custom_op}",
+            *([f"reason={cleanup_error}"] if cleanup_error else []),
+        ],
+        returncode=0 if not cleanup_error else 1,
         required=True,
-        timeout_seconds=args.hccl_smoke_timeout_sec,
-        env_updates=env_updates,
     )
+    if cleanup_error:
+        return runner.write_summary()
 
     artifact_note = runner.run_dir / "HCOMM_CUSTOM_OP_BUILD_ARTIFACTS.txt"
     json_path, tar_path, run_files = FindBuiltCustomOpArtifacts(
         hccl_source_root, vendor)
     lines = [
         f"hccl_source_root: {hccl_source_root}",
-        f"custom_ops_path: {HCOMM_CUSTOM_OP_PATH}",
+        f"custom_ops_source_path: {HCOMM_CUSTOM_OP_PATH}",
+        "custom_ops_staging: in-tree-managed",
+        "custom_ops_staging_cleanup: passed",
         f"vendor: {vendor}",
         f"mode: {args.custom_op_build_mode}",
         f"json: {json_path if json_path else '<not-found>'}",

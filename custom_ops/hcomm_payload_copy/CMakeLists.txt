@@ -182,8 +182,38 @@ if(KERNEL_MODE)
     ${ASCEND_CANN_PACKAGE_PATH}/devlib/device
   )
   if(FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD)
+    set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE "unresolved")
+    if(TARGET ccl_kernel)
+      set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE "existing-target")
+      set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_ITEM ccl_kernel)
+    else()
+      find_library(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LIBRARY
+        NAMES ccl_kernel
+        PATHS
+          ${ASCEND_CANN_PACKAGE_PATH}/lib64/device/lib64
+          ${ASCEND_CANN_PACKAGE_PATH}/devlib/device
+        NO_DEFAULT_PATH
+      )
+      if(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LIBRARY)
+        set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE "installed-library")
+        set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_ITEM
+          ${FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LIBRARY})
+      elseif(COMMAND generate_stub)
+        # CANN 9.0 packages may omit the link-time device library. Reuse the
+        # official HCCL source build's empty import stub in that layout.
+        generate_stub(ccl_kernel)
+        set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE "generated-stub")
+        set(FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_ITEM ccl_kernel)
+      else()
+        message(FATAL_ERROR
+          "HCOMM payload requires ccl_kernel, but no target/library exists "
+          "and the HCCL generate_stub helper is unavailable")
+      endif()
+    endif()
+    message(STATUS
+      "ccl_kernel_link_mode=${FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE}")
     target_link_libraries(flume_hcomm_payload_aicpu_kernel PRIVATE
-      ccl_kernel
+      ${FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_ITEM}
     )
   endif()
   if(FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH)

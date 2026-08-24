@@ -927,6 +927,102 @@ def main() -> int:
             check=True, text=True, capture_output=True).stdout.strip() == (
                 source_revision)
 
+        custom_op_fixture = tmp / "custom-op-fixture"
+        custom_op_fixture.mkdir()
+        (custom_op_fixture / "CMakeLists.txt").write_text(
+            "add_library(flume_fixture INTERFACE)\n", encoding="utf-8")
+        (custom_op_fixture / "payload.cc").write_text(
+            "int flume_fixture = 1;\n", encoding="utf-8")
+        staging_run_dir = tmp / "logs" / "flume-check-stage"
+        staging_run_dir.mkdir(parents=True)
+        with mock.patch.object(flume_tool, "HCOMM_CUSTOM_OP_PATH",
+                               custom_op_fixture):
+            staged = flume_tool.StageHcommCustomOpSource(
+                source_target, staging_run_dir)
+            assert staged.is_relative_to(source_target)
+            assert staged.name == custom_op_fixture.name
+            assert (staged / "CMakeLists.txt").read_text(
+                encoding="utf-8") == "add_library(flume_fixture INTERFACE)\n"
+            stage_root = staged.parent
+            marker = stage_root / flume_tool.HCOMM_CUSTOM_OP_STAGE_MARKER
+            assert marker.is_file()
+            flume_tool.CleanupHcommCustomOpSource(source_target, staged)
+            assert not stage_root.exists()
+            assert not (source_target /
+                        flume_tool.HCOMM_CUSTOM_OP_STAGE_ROOT).exists()
+
+        unmanaged_stage = (source_target /
+                           flume_tool.HCOMM_CUSTOM_OP_STAGE_ROOT /
+                           "unmanaged" / "custom-op-fixture")
+        unmanaged_stage.mkdir(parents=True)
+        try:
+            flume_tool.CleanupHcommCustomOpSource(
+                source_target, unmanaged_stage)
+        except RuntimeError as exc:
+            assert "ownership marker" in str(exc)
+        else:
+            raise AssertionError("unmanaged staging cleanup was not rejected")
+        assert unmanaged_stage.exists()
+
+        custom_op_cmake = (repo / "custom_ops" / "hcomm_payload_copy" /
+                           "CMakeLists.txt").read_text(encoding="utf-8")
+        assert "FLUME_HCOMM_PAYLOAD_CCL_KERNEL_LINK_MODE" in custom_op_cmake
+        assert '"existing-target"' in custom_op_cmake
+        assert '"installed-library"' in custom_op_cmake
+        assert '"generated-stub"' in custom_op_cmake
+        assert "elseif(COMMAND generate_stub)" in custom_op_cmake
+        assert "generate_stub(ccl_kernel)" in custom_op_cmake
+        assert "ccl_kernel_link_mode=${" in custom_op_cmake
+
+        build_hccl = tmp / "build-hccl"
+        build_hccl.mkdir()
+        seen_custom_op = build_hccl / "seen-custom-op-path.txt"
+        fake_build = build_hccl / "build.sh"
+        fake_build.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            "for arg in \"$@\"; do\n"
+            "  case \"$arg\" in\n"
+            "    --custom_ops_path=*) path=${arg#*=} ;;\n"
+            "  esac\n"
+            "done\n"
+            "test -f \"${path}/CMakeLists.txt\"\n"
+            f"printf '%s\\n' \"${{path}}\" > {seen_custom_op}\n"
+            "exit 7\n",
+            encoding="utf-8")
+        fake_build.chmod(0o755)
+        build_args = SimpleNamespace(
+            log_root=str(tmp / "source-build-logs"),
+            hccl_source_root=str(build_hccl),
+            build_dir=str(tmp / "source-build-work"),
+            prepare_hccl_source=False,
+            custom_op_vendor="flume,cust",
+            custom_op_build_mode="payload",
+            build_public_hccl_launch=False,
+            hccl_smoke_timeout_sec=30,
+            step_timeout_sec=30,
+            install_custom_op_package=False,
+            custom_op_root="",
+        )
+        with mock.patch.object(flume_tool, "HCOMM_CUSTOM_OP_PATH",
+                               custom_op_fixture):
+            build_result = flume_tool.run_hcomm_custom_op_build(build_args)
+        assert build_result != 0
+        staged_argument = Path(seen_custom_op.read_text(
+            encoding="utf-8").strip())
+        assert staged_argument.resolve().is_relative_to(build_hccl.resolve())
+        assert not staged_argument.exists()
+        assert not (build_hccl /
+                    flume_tool.HCOMM_CUSTOM_OP_STAGE_ROOT).exists()
+        build_logs = sorted((tmp / "source-build-logs").glob(
+            "flume-check-*"))[-1]
+        assert "custom_ops_staging=in-tree-managed" in (
+            build_logs / "01-hcomm-custom-op-stage.log").read_text(
+                encoding="utf-8")
+        assert "custom_ops_staging_cleanup=passed" in (
+            build_logs / "03-hcomm-custom-op-stage-cleanup.log").read_text(
+                encoding="utf-8")
+
         policy_cann = tmp / "policy-cann"
         (policy_cann / "aarch64-linux" / "include").mkdir(parents=True)
         (policy_cann / "aarch64-linux" / "lib64").mkdir()

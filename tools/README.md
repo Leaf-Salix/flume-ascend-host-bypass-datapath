@@ -457,6 +457,13 @@ AICPU tar、V4 payload entrypoint 或 primitive-payload marker 不完整，工�
 的官方 HCCL 仓库准备到 `<build-dir>/deps/hccl`，作为外部构建依赖使用，不会
 把 HCCL 源码提交到 Flume。可通过 `--hccl-source-url` 和
 `--hccl-source-revision` 显式覆盖，但兼容性测试必须记录实际 revision。
+构建时 Flume 会把自身 custom-op 临时复制到 HCCL checkout 内带 ownership
+marker 的 staging 目录，兼容 CMake 4.x 对跨树 `add_subdirectory` 的限制；
+`build.sh` 返回后会自动清理，且不会删除不带 marker 的目录。若目标 CANN
+不提供 link-time `libccl_kernel.so`，构建会复用官方 HCCL
+`generate_stub(ccl_kernel)`，并打印
+`ccl_kernel_link_mode=generated-stub`。该 stub 只解决构建
+边界，不能替代后续 standalone canary 和 strict payload 真机验证。
 
 package preflight 会输出 `package_provenance`、`package_qualification`、
 `package_manifest`、`package_elf_machine`、`package_needed` 和
