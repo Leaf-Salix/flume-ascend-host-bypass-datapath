@@ -31,9 +31,8 @@ HCCL_SOURCE_URL = "https://gitcode.com/cann/hccl.git"
 HCCL_SOURCE_REVISION = "31f6001549ca3d192d9368d478f9e403747a01e8"
 HCOMM_HOST_DIAGNOSTIC_NEEDED = {
     "libascendcl.so",
-    "libc.so",
+    "libc_sec.so",
     "libhcomm.so",
-    "libstdc++.so",
 }
 HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
@@ -668,7 +667,8 @@ def InspectAicpuTarFunctionValues(
 
 
 def HcommCustomOpPackageCommand(args: argparse.Namespace,
-                                require_payload: bool) -> list[str]:
+                                require_payload: bool,
+                                require_device: bool = False) -> list[str]:
     command = [sys.executable, "tools/flume_tool.py"]
     if args.custom_op_vendor:
         command.append(f"--custom-op-vendor={args.custom_op_vendor}")
@@ -680,6 +680,8 @@ def HcommCustomOpPackageCommand(args: argparse.Namespace,
         command.append(f"--custom-op-aicpu-tar={args.custom_op_aicpu_tar}")
     if require_payload:
         command.append("--require-hcomm-payload-kernel")
+    if require_device:
+        command.append("--require-aicpu-device-package")
     command.append("hcomm-custom-op-package")
     return command
 
@@ -1361,6 +1363,154 @@ def CannRuntimeEnvUpdates(args: argparse.Namespace) -> dict[str, str]:
         updates["LD_LIBRARY_PATH"] = (
             ":".join(lib_paths + ([existing] if existing else [])))
     return updates
+
+
+@dataclass
+class AicpuRuntimePolicy:
+    whitelist: str = "unknown"
+    whitelist_path: str = "not-found"
+    security: str = "unknown"
+    secverify_enable: str = "unknown"
+    secverify_mode: str = "unknown"
+    gate: str = "candidate"
+
+
+def AicpuWhitelistCandidates(args: argparse.Namespace) -> list[Path]:
+    roots: list[Path] = []
+    pair = ResolveCannRootPair(getattr(args, "cann_package_root", ""))
+    if pair is not None:
+        package_root = pair[0]
+        roots.extend([package_root, package_root.parent,
+                      package_root.parent.parent])
+    roots.extend(AscendHomeCandidates(
+        [getattr(args, "cann_package_root", "")]))
+    roots.append(Path("/usr/local/Ascend/cann"))
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        path = root / "conf" / "ascend_package_load.ini"
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(path)
+    return candidates
+
+
+def InspectAicpuWhitelist(
+        candidates: Iterable[Path], package_name: str
+) -> tuple[str, str]:
+    found_readable = False
+    readable_path = "not-found"
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        found_readable = True
+        readable_path = str(path)
+        current_name = ""
+        current_path = ""
+        for raw_line in text.splitlines() + ["name:"]:
+            line = raw_line.split("#", 1)[0].strip()
+            if line.startswith("name:"):
+                if current_name == package_name and current_path:
+                    return "ready", str(path)
+                current_name = line.split(":", 1)[1].strip()
+                current_path = ""
+            elif line.startswith("package_path:"):
+                current_path = line.split(":", 1)[1].strip()
+    return ("missing" if found_readable else "unknown", readable_path)
+
+
+def _ParseNpuSmiProperty(text: str, property_name: str) -> str:
+    pattern = re.compile(
+        rf"{re.escape(property_name)}\s*[:=]\s*([0-9]+)", re.IGNORECASE)
+    match = pattern.search(text)
+    return match.group(1) if match else "unknown"
+
+
+def WriteAicpuRuntimeAdminNote(run_dir: Path,
+                               policy: AicpuRuntimePolicy) -> Path:
+    note = run_dir / "AICPU_RUNTIME_ADMIN_ACTIONS.txt"
+    note.write_text(
+        "Flume did not modify CANN, OPP, driver security policy, or the AICPU "
+        "package whitelist.\n"
+        f"aicpu_whitelist={policy.whitelist}\n"
+        f"aicpu_whitelist_path={policy.whitelist_path}\n"
+        f"custom_op_secverify={policy.security}\n"
+        f"custom_op_secverify_enable={policy.secverify_enable}\n"
+        f"custom_op_secverify_mode={policy.secverify_mode}\n"
+        "\n"
+        "For source-built unsigned AICPU packages, an administrator must "
+        "review the target driver policy and the official HCCL custom-op "
+        "instructions before changing custom-op-secverify-enable or "
+        "custom-op-secverify-mode. Flume never runs npu-smi set.\n"
+        "The package whitelist must contain an entry for:\n"
+        f"  name:{HCOMM_CUSTOM_OP_TAR}\n"
+        "with install_path:2 and the package_path matching the approved "
+        "CANN/OPP vendor installation.\n",
+        encoding="utf-8",
+    )
+    return note
+
+
+def RunAicpuRuntimePolicyPreflight(
+        runner: Runner, args: argparse.Namespace, required: bool
+) -> tuple[AicpuRuntimePolicy, StepResult]:
+    policy = AicpuRuntimePolicy()
+    policy.whitelist, policy.whitelist_path = InspectAicpuWhitelist(
+        AicpuWhitelistCandidates(args), HCOMM_CUSTOM_OP_TAR)
+    devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    if shutil.which("npu-smi") and devices:
+        outputs: dict[str, str] = {}
+        for property_name in (
+                "custom-op-secverify-enable", "custom-op-secverify-mode"):
+            result = runner.run(
+                f"npu-smi-{property_name}",
+                ["npu-smi", "info", "-t", property_name, "-i", devices[0]],
+                required=False,
+                timeout_seconds=args.step_timeout_sec,
+            )
+            try:
+                outputs[property_name] = result.log_path.read_text(
+                    encoding="utf-8", errors="replace")
+            except OSError:
+                outputs[property_name] = ""
+        policy.secverify_enable = _ParseNpuSmiProperty(
+            outputs["custom-op-secverify-enable"],
+            "custom-op-secverify-enable")
+        policy.secverify_mode = _ParseNpuSmiProperty(
+            outputs["custom-op-secverify-mode"],
+            "custom-op-secverify-mode")
+    if policy.secverify_enable == "1" and policy.secverify_mode == "0":
+        policy.security = "ready-for-source-built-unsigned"
+    elif (policy.secverify_enable != "unknown" and
+          policy.secverify_mode != "unknown"):
+        policy.security = "blocked"
+    if policy.whitelist == "missing" or policy.security == "blocked":
+        policy.gate = "blocked"
+    elif policy.whitelist == "ready":
+        policy.gate = "candidate"
+    result = runner.record_static(
+        "aicpu-runtime-policy-preflight",
+        [
+            "aicpu_runtime_policy=read-only",
+            f"aicpu_whitelist={policy.whitelist}",
+            f"aicpu_whitelist_path={policy.whitelist_path}",
+            f"custom_op_secverify={policy.security}",
+            f"custom_op_secverify_enable={policy.secverify_enable}",
+            f"custom_op_secverify_mode={policy.secverify_mode}",
+            f"aicpu_runtime_gate={policy.gate}",
+            "system_changes=none",
+        ],
+        returncode=1 if policy.gate == "blocked" else 0,
+        required=required,
+    )
+    if policy.gate == "blocked" or policy.security == "unknown":
+        WriteAicpuRuntimeAdminNote(runner.run_dir, policy)
+    return policy, result
 
 
 @dataclass
@@ -2185,6 +2335,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
                         args.run_hcomm_channel_probe or
                         args.run_hcomm_custom_op_launch_smoke or
                         args.run_hcomm_resource_descriptor_smoke or
+                        args.run_hcomm_aicpu_canary_smoke or
                         args.run_hcomm_notify_only_smoke or
                         args.run_hcomm_payload_smoke or
                         args.run_storage_hbm_smoke):
@@ -2304,6 +2455,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
             command.append("--hcomm-custom-op-launch-smoke")
         if args.run_hcomm_resource_descriptor_smoke:
             command.append("--hcomm-resource-descriptor-smoke")
+        if args.run_hcomm_aicpu_canary_smoke:
+            command.append("--hcomm-aicpu-canary-smoke")
         if args.run_hcomm_notify_only_smoke:
             command.append("--hcomm-notify-only-smoke")
         if args.run_hcomm_payload_smoke:
@@ -2319,6 +2472,7 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         if (args.run_hcomm_channel_probe or
                 args.run_hcomm_custom_op_launch_smoke or
                 args.run_hcomm_resource_descriptor_smoke or
+                args.run_hcomm_aicpu_canary_smoke or
                 args.run_hcomm_notify_only_smoke or
                 args.run_hcomm_payload_smoke or
                 (args.run_storage_hbm_smoke and args.hcomm_require_payload_copy)):
@@ -2442,6 +2596,7 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                             args.run_hcomm_channel_probe or
                             args.run_hcomm_custom_op_launch_smoke or
                             args.run_hcomm_resource_descriptor_smoke or
+                            args.run_hcomm_aicpu_canary_smoke or
                             args.run_hcomm_notify_only_smoke or
                             args.run_hcomm_payload_smoke or
                             args.run_storage_hbm_smoke)
@@ -2460,7 +2615,8 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
                 required=False,
                 timeout_seconds=args.step_timeout_sec,
             )
-    if args.run_hcomm_payload_smoke or args.run_hcomm_notify_only_smoke:
+    if (args.run_hcomm_payload_smoke or args.run_hcomm_notify_only_smoke or
+            args.run_hcomm_aicpu_canary_smoke):
         args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
         if export_result is not None and export_result.returncode != 0:
             return runner.write_summary()
@@ -9109,6 +9265,171 @@ def run_hcomm_custom_op_source_prepare(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def run_hcomm_aicpu_runtime_preflight(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    RunAicpuRuntimePolicyPreflight(runner, args, required=True)
+    return runner.write_summary()
+
+
+def _SetQualificationSmokeMode(args: argparse.Namespace, mode: str) -> None:
+    args.run_hccl_smoke = False
+    args.run_a3_symmetric_smoke = False
+    args.run_hccl_p2p_smoke = False
+    args.run_hcomm_channel_probe = False
+    args.run_hcomm_custom_op_launch_smoke = False
+    args.run_hcomm_resource_descriptor_smoke = False
+    args.run_hcomm_aicpu_canary_smoke = mode == "canary"
+    args.run_hcomm_notify_only_smoke = mode == "notify"
+    args.run_hcomm_payload_smoke = mode == "payload"
+    args.run_storage_hbm_smoke = False
+    args.hcomm_require_payload_copy = mode == "payload"
+
+
+def _ReplaceQualificationSmokeMode(command: list[str], mode: str) -> list[str]:
+    flags = {
+        "--hcomm-aicpu-canary-smoke",
+        "--hcomm-notify-only-smoke",
+        "--hcomm-payload-smoke",
+        "--hcomm-require-payload-copy",
+    }
+    updated = [item for item in command if item not in flags]
+    if mode == "canary":
+        updated.append("--hcomm-aicpu-canary-smoke")
+    elif mode == "notify":
+        updated.append("--hcomm-notify-only-smoke")
+    elif mode == "payload":
+        updated.extend(["--hcomm-payload-smoke",
+                        "--hcomm-require-payload-copy"])
+    else:
+        raise ValueError(f"unsupported qualification smoke mode: {mode}")
+    return updated
+
+
+def run_hcomm_aicpu_qualification_gate(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
+    if len(devices) != 2:
+        runner.record_static(
+            "aicpu-qualification-setup",
+            ["aicpu_qualification_gate=failed",
+             "reason=exactly two --hccl-devices entries required"],
+            returncode=1, required=True)
+        return runner.write_summary()
+    args, export_result = MaybeExportExplicitCustomOpRuntime(runner, args)
+    if export_result is not None and export_result.returncode != 0:
+        return runner.write_summary()
+    package_result = runner.run(
+        "aicpu-device-package-qualification",
+        HcommCustomOpPackageCommand(
+            args, require_payload=True, require_device=True),
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if package_result.returncode != 0:
+        return runner.write_summary()
+    policy, policy_result = RunAicpuRuntimePolicyPreflight(
+        runner, args, required=True)
+    if policy_result.returncode != 0:
+        return runner.write_summary()
+
+    gate_args = copy.copy(args)
+    gate_args.build_hcomm_custom_op = True
+    _SetQualificationSmokeMode(gate_args, "canary")
+    try:
+        command_specs = build_commands(
+            gate_args, enable_hccl=True, run_dir=runner.run_dir)
+    except RuntimeError as exc:
+        runner.record_static(
+            "aicpu-qualification-setup",
+            ["aicpu_qualification_gate=failed", f"reason={exc}"],
+            returncode=1, required=True)
+        return runner.write_summary()
+
+    smoke_spec: Optional[CommandSpec] = None
+    canary_result: Optional[StepResult] = None
+    for spec in command_specs:
+        timeout = (args.hccl_smoke_timeout_sec
+                   if spec.name == "hccl-collective-smoke"
+                   else args.step_timeout_sec)
+        step_name = ("hcomm-aicpu-standalone-canary"
+                     if spec.name == "hccl-collective-smoke" else spec.name)
+        result = runner.run(step_name, spec.command, required=True,
+                            timeout_seconds=timeout,
+                            env_updates=spec.env_updates)
+        if spec.name == "hccl-collective-smoke":
+            smoke_spec = spec
+            canary_result = result
+        if result.returncode != 0:
+            return runner.write_summary()
+    if smoke_spec is None or canary_result is None:
+        runner.record_static(
+            "aicpu-qualification-setup",
+            ["aicpu_qualification_gate=failed",
+             "reason=HCCL smoke command was not generated"],
+            returncode=1, required=True)
+        return runner.write_summary()
+    runner.record_static(
+        "aicpu-standalone-canary-evidence",
+        [
+            "aicpu_runtime_admission=passed",
+            "aicpu_kernel_execution=passed",
+            "package_runtime_qualification=kernel-executed",
+            "next_gate=notify-only",
+        ],
+        returncode=0, required=True)
+
+    notify_result = runner.run(
+        "hcomm-notify-only-after-canary",
+        _ReplaceQualificationSmokeMode(smoke_spec.command, "notify"),
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+        env_updates=smoke_spec.env_updates,
+    )
+    if notify_result.returncode != 0:
+        return runner.write_summary()
+    runner.record_static(
+        "aicpu-notify-only-evidence",
+        ["hcomm_notify_only=passed", "next_gate=strict-payload"],
+        returncode=0, required=True)
+    payload_result = runner.run(
+        "hcomm-payload-strict-after-notify",
+        _ReplaceQualificationSmokeMode(smoke_spec.command, "payload"),
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+        env_updates=smoke_spec.env_updates,
+    )
+    gate_note = runner.run_dir / "AICPU_DEVICE_QUALIFICATION_GATE.md"
+    gate_note.write_text(
+        "# AICPU Device Qualification Gate\n\n"
+        "| Gate | Result |\n|---|---|\n"
+        "| static device package | passed |\n"
+        f"| runtime policy | {policy.gate} |\n"
+        "| standalone canary | passed |\n"
+        "| notify-only | passed |\n"
+        f"| strict payload | {'passed' if payload_result.returncode == 0 else 'failed'} |\n\n"
+        "All device execution stages ran in separate smoke processes. Flume "
+        "made no system configuration changes.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] AICPU qualification gate -> {gate_note}")
+    runner.record_static(
+        "aicpu-qualification-result",
+        [
+            "aicpu_device_qualification_gate=" +
+            ("passed" if payload_result.returncode == 0 else "failed"),
+            "package_runtime_qualification=kernel-executed",
+            "hcomm_notify_only=passed",
+            "hcomm_payload_strict=" +
+            ("passed" if payload_result.returncode == 0 else "failed"),
+            "system_changes=none",
+        ],
+        returncode=payload_result.returncode,
+        required=True)
+    return runner.write_summary()
+
+
 def run_env(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -9160,6 +9481,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
     found_payload_primitive_deps_marker = False
     found_payload_no_hccl_sendrecv_deps_marker = False
     found_host_diagnostic_package = False
+    found_device_candidate = False
     found_payload_metadata_values_valid = False
     found_payload_metadata_value_mismatch = False
     print("HCOMM custom-op package inspection")
@@ -9209,6 +9531,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             print(f"aicpu_tar_error={tar_error}")
         qualification = InspectAicpuDevicePackage(
             tar_path, candidate_provenance)
+        found_device_candidate = (
+            found_device_candidate or
+            qualification.qualification == "device-candidate")
         print(f"package_provenance={qualification.provenance}")
         print(f"package_qualification={qualification.qualification}")
         print(f"package_manifest={qualification.manifest}")
@@ -9676,6 +10001,9 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                         "payload_no_hccl_payload_api_deps")))
         if args.require_hcomm_payload_kernel and host_diagnostic:
             required_ok = False
+        if (args.require_aicpu_device_package and
+                qualification.qualification != "device-candidate"):
+            required_ok = False
         if symbol_state in ("unreadable", "not-checked"):
             required_ok = False
         elif symbol_state == "present":
@@ -9778,6 +10106,12 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         return 1
     if not found_required:
         print("status=FAIL")
+        if (args.require_aicpu_device_package and
+                not found_device_candidate):
+            print("reason=no AICPU device-qualified package candidate found")
+            print("action=build with the official HCCL/CANN device custom-op "
+                  "toolchain and inspect package_qualification_reason")
+            return 1
         if args.require_hcomm_payload_kernel:
             if found_host_diagnostic_package:
                 print("reason=host direct-build package is not AICPU "
@@ -10275,6 +10609,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-hcomm-notify-only-smoke", action="store_true",
                         help=("Run the optional Stage 3B.2-complete HCOMM "
                               "notify-only kernel-consume readiness smoke"))
+    parser.add_argument("--run-hcomm-aicpu-canary-smoke", action="store_true",
+                        help=("Run only the standalone direct ACL AICPU canary "
+                              "in a fresh smoke process; no notify or payload "
+                              "kernel is launched."))
     parser.add_argument("--run-hcomm-payload-smoke", action="store_true",
                         help=("Run the optional Stage 2.5 HCOMM payload "
                               "readiness probe after the collective smoke"))
@@ -10577,6 +10915,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-hcomm-payload-kernel", action="store_true",
                         help=("Require the Stage 3B.3E payload-copy kernel "
                               "function in hcomm-custom-op-package"))
+    parser.add_argument("--require-aicpu-device-package", action="store_true",
+                        help=("Require static AICPU device-candidate "
+                              "qualification in hcomm-custom-op-package."))
     parser.add_argument("--hccl-source-root", default="",
                         help=("HCCL source tree used by hcomm-custom-op-build. "
                               "Defaults to FLUME_HCCL_SOURCE_ROOT or the local "
@@ -10681,6 +11022,15 @@ def parse_args() -> argparse.Namespace:
         help=("Prepare pinned official HCCL source as an external build "
               "dependency"))
     subparsers.add_parser(
+        "hcomm-aicpu-runtime-preflight",
+        help=("Read-only inspection of AICPU package whitelist and custom-op "
+              "signature policy"))
+    subparsers.add_parser(
+        "hcomm-aicpu-qualification-gate",
+        help=("Run static package qualification, read-only runtime policy "
+              "preflight, standalone canary, notify-only, and strict payload "
+              "as separate processes"))
+    subparsers.add_parser(
         "hcomm-custom-op-export-runtime",
         help=("Copy a preflight-passing Flume custom-op JSON/AICPU tar into "
               "a runtime-loadable OPP layout under --custom-op-export-root"))
@@ -10750,6 +11100,7 @@ def parse_args() -> argparse.Namespace:
     if ((args.run_hccl_p2p_smoke or args.run_hcomm_channel_probe or
          args.run_hcomm_custom_op_launch_smoke or
          args.run_hcomm_resource_descriptor_smoke or
+         args.run_hcomm_aicpu_canary_smoke or
          args.run_hcomm_notify_only_smoke or
          args.run_hcomm_payload_smoke or
          args.run_storage_hbm_smoke) and
@@ -10757,6 +11108,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--run-hccl-p2p-smoke, --run-hcomm-channel-probe, and "
                      "--run-hcomm-custom-op-launch-smoke, "
                      "--run-hcomm-resource-descriptor-smoke, "
+                     "--run-hcomm-aicpu-canary-smoke, "
                      "--run-hcomm-notify-only-smoke, "
                      "--run-hcomm-payload-smoke, --run-storage-hbm-smoke "
                      "require exactly two --hccl-devices entries")
@@ -10787,6 +11139,10 @@ def main() -> int:
         return run_hcomm_custom_op_build(args)
     if args.command == "hcomm-custom-op-source-prepare":
         return run_hcomm_custom_op_source_prepare(args)
+    if args.command == "hcomm-aicpu-runtime-preflight":
+        return run_hcomm_aicpu_runtime_preflight(args)
+    if args.command == "hcomm-aicpu-qualification-gate":
+        return run_hcomm_aicpu_qualification_gate(args)
     if args.command == "hcomm-custom-op-export-runtime":
         return run_hcomm_custom_op_export_runtime(args)
     if args.command == "hcomm-custom-op-direct-build":

@@ -47,3 +47,42 @@ python3 tools/flume_tool.py \
 Static qualification only yields `device-candidate`. Runtime security policy,
 AICPU package admission, standalone canary execution, notify-only execution,
 and strict payload transfer remain separate gates.
+
+## Read-only runtime gate
+
+Flume can inspect the package whitelist and query the driver custom-op
+signature properties without changing either one:
+
+```bash
+python3 tools/flume_tool.py \
+  --cann-package-root <cann-root> \
+  --hccl-devices <device-a>,<device-b> \
+  hcomm-aicpu-runtime-preflight
+```
+
+The tool never runs `npu-smi set` and never edits
+`ascend_package_load.ini`. A missing whitelist entry or a known blocking
+signature policy stops the device gate and produces
+`AICPU_RUNTIME_ADMIN_ACTIONS.txt`.
+
+After an administrator-approved device package is installed or supplied, the
+one-shot gate is:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-aicpu-gate \
+  --hccl-devices <device-a>,<device-b> \
+  --hccl-host-ifname <host-ifname> \
+  --hccl-host-ip <host-ip> \
+  --build-hcomm-custom-op \
+  hcomm-aicpu-qualification-gate
+```
+
+It requires static `device-candidate` evidence, performs the read-only policy
+preflight, and then starts three independent smoke processes:
+
+```text
+standalone canary -> notify-only -> strict payload
+```
+
+No later process is started when an earlier gate fails.

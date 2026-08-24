@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 REQUIRED_MARKERS = (
+    "hcomm standalone AICPU canary passed",
     "payload_status_schema=v7",
     "payload_status_word_count=17",
     "payload_local_buffer_prime=passed",

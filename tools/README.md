@@ -463,6 +463,13 @@ package preflight 会输出 `package_provenance`、`package_qualification`、
 `package_host_dependencies`。只有带 device manifest、确认是 AArch64 ELF 且
 没有已知 host runtime 依赖的产物会得到 `device-candidate`；该标记仍不等于
 runtime admission 或 kernel execution 成功。
+
+Stage 3B.3G 提供两个额外入口。`hcomm-aicpu-runtime-preflight` 只读检查
+`ascend_package_load.ini` 中的 AICPU package whitelist，并尝试通过
+`npu-smi info` 查询 custom-op 验签属性；它不会执行 `npu-smi set`，也不会写
+CANN/OPP。`hcomm-aicpu-qualification-gate` 要求静态
+`device-candidate`，然后按独立进程顺序运行 standalone canary、notify-only
+和 strict payload。任一步失败都会阻止后续步骤，避免错误 stream 污染诊断。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，

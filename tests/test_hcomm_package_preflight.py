@@ -926,6 +926,64 @@ def main() -> int:
             ["git", "-C", str(source_target), "rev-parse", "HEAD"],
             check=True, text=True, capture_output=True).stdout.strip() == (
                 source_revision)
+
+        policy_cann = tmp / "policy-cann"
+        (policy_cann / "aarch64-linux" / "include").mkdir(parents=True)
+        (policy_cann / "aarch64-linux" / "lib64").mkdir()
+        (policy_cann / "conf").mkdir()
+        whitelist = policy_cann / "conf" / "ascend_package_load.ini"
+        whitelist.write_text(
+            "name:aicpu_flume_hcomm_payload.tar.gz\n"
+            "install_path:2\n"
+            "optional:true\n"
+            "package_path:opp/vendors/flume/aicpu/kernel\n"
+            "load_as_per_soc:false\n",
+            encoding="utf-8")
+        whitelist_state, whitelist_path = flume_tool.InspectAicpuWhitelist(
+            [whitelist], flume_tool.HCOMM_CUSTOM_OP_TAR)
+        assert whitelist_state == "ready"
+        assert whitelist_path == str(whitelist)
+        policy_runner = flume_tool.Runner(tmp / "policy-logs")
+        with mock.patch.object(flume_tool.shutil, "which", return_value=None):
+            policy, policy_result = flume_tool.RunAicpuRuntimePolicyPreflight(
+                policy_runner,
+                SimpleNamespace(cann_package_root=str(policy_cann),
+                                hccl_devices="0,1", step_timeout_sec=30),
+                required=True)
+        assert policy.whitelist == "ready"
+        assert policy.security == "unknown"
+        assert policy.gate == "candidate"
+        assert policy_result.returncode == 0
+        whitelist.write_text(
+            "name:unrelated_aicpu_package.tar.gz\n"
+            "package_path:opp/vendors/other/aicpu/kernel\n",
+            encoding="utf-8")
+        blocked_runner = flume_tool.Runner(tmp / "policy-blocked-logs")
+        with mock.patch.object(flume_tool.shutil, "which", return_value=None):
+            blocked_policy, blocked_result = (
+                flume_tool.RunAicpuRuntimePolicyPreflight(
+                    blocked_runner,
+                    SimpleNamespace(cann_package_root=str(policy_cann),
+                                    hccl_devices="0,1",
+                                    step_timeout_sec=30),
+                    required=True))
+        assert blocked_policy.whitelist == "missing"
+        assert blocked_policy.gate == "blocked"
+        assert blocked_result.returncode == 1
+        assert (blocked_runner.run_dir /
+                "AICPU_RUNTIME_ADMIN_ACTIONS.txt").exists()
+        base_smoke = ["launcher", "--hcomm-aicpu-canary-smoke"]
+        notify_smoke = flume_tool._ReplaceQualificationSmokeMode(
+            base_smoke, "notify")
+        payload_smoke = flume_tool._ReplaceQualificationSmokeMode(
+            base_smoke, "payload")
+        assert "--hcomm-aicpu-canary-smoke" not in notify_smoke
+        assert notify_smoke[-1] == "--hcomm-notify-only-smoke"
+        assert payload_smoke[-2:] == ["--hcomm-payload-smoke",
+                                     "--hcomm-require-payload-copy"]
+        tool_source = (repo / "tools" / "flume_tool.py").read_text(
+            encoding="utf-8")
+        assert '"npu-smi", "set"' not in tool_source
         forbidden_source = tmp / "forbidden_payload_source.cc"
         forbidden_source.write_text(
             "const char* bad_send = \"HcclSend\";\n"
@@ -1873,6 +1931,29 @@ def main() -> int:
                           if spec.name == "hccl-collective-smoke")
         assert "FLUME_HCOMM_CUSTOM_OP_ROOT" not in auto_smoke.env_updates
         assert "--hcomm-require-payload-copy" in auto_smoke.command
+
+        old_argv = sys.argv[:]
+        try:
+            sys.argv = [
+                "flume_tool.py",
+                "--build-dir", str(tmp / "canary-smoke-build"),
+                "--hccl-devices", "0,1",
+                "--run-hcomm-aicpu-canary-smoke",
+                "--build-hcomm-custom-op",
+                "ascend-probe",
+            ]
+            canary_smoke_args = flume_tool.parse_args()
+        finally:
+            sys.argv = old_argv
+        canary_specs = flume_tool.build_commands(
+            canary_smoke_args, enable_hccl=True,
+            run_dir=tmp / "canary-smoke-run")
+        canary_smoke = next(
+            spec for spec in canary_specs
+            if spec.name == "hccl-collective-smoke")
+        assert "--hcomm-aicpu-canary-smoke" in canary_smoke.command
+        assert "--hcomm-notify-only-smoke" not in canary_smoke.command
+        assert "--hcomm-payload-smoke" not in canary_smoke.command
 
         inferred_tar_preflight = subprocess.run(
             [

@@ -7024,6 +7024,36 @@ int flume_hcomm_notify_only_smoke(flume_client_t* client,
                                           acl_stream, out);
 }
 
+int flume_hcomm_aicpu_canary_smoke(flume_client_t* client,
+                                   uint32_t peer_rank,
+                                   void* acl_stream,
+                                   flume_io_t** out) {
+  if (client == nullptr || out == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  *out = nullptr;
+  CommState state = SnapshotCommState(client);
+  if (!state.hccl_attached || state.hccl_comm == nullptr ||
+      state.rank_size != 2 || peer_rank >= state.rank_size ||
+      peer_rank == state.rank || acl_stream == nullptr) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+#if FLUME_ENABLE_HCCL
+  HcommLauncherDecision launcher = DecideHcommLauncherBackend();
+  int status = FLUME_ERR_UNSUPPORTED;
+  std::string detail = TryLaunchHcommDirectAclrtCanary(
+      state, peer_rank, acl_stream, launcher, &status);
+  *out = MakeIo(
+      status, 0, 0,
+      std::string("HCOMM standalone AICPU canary ") +
+          (status == FLUME_OK ? "passed; " : "did not complete; ") + detail);
+#else
+  *out = MakeIo(FLUME_ERR_UNSUPPORTED, 0, 0,
+                "HCOMM standalone AICPU canary requires an HCCL build");
+#endif
+  return FLUME_OK;
+}
+
 int flume_hcomm_notify_only_smoke_ex(
     flume_client_t* client,
     uint32_t peer_rank,
