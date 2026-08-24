@@ -57,9 +57,13 @@ HCOMM_PRIMITIVE_NAMES = [
     "HcommWriteOnThread",
     "HcommChannelNotifyRecordOnThread",
     "HcommChannelNotifyWaitOnThread",
-    "HcommChannelFenceOnThread",
     "HcommThreadNotifyRecordOnThread",
     "HcommThreadNotifyWaitOnThread",
+]
+
+HCOMM_CHANNEL_FENCE_NAMES = [
+    "HcommChannelFenceOnThread",
+    "HcommChannelFence",
 ]
 
 HCOMM_OPTIONAL_PRIMITIVE_NAMES = [
@@ -97,7 +101,6 @@ int main() {
       HcommChannelNotifyRecordOnThread(thread, channel, notify_idx);
   auto wait_ret =
       HcommChannelNotifyWaitOnThread(thread, channel, notify_idx, timeout_sec);
-  auto fence_ret = HcommChannelFenceOnThread(thread, channel);
   auto thread_record_ret =
       HcommThreadNotifyRecordOnThread(thread, peer_thread, notify_idx);
   auto thread_wait_ret =
@@ -111,13 +114,45 @@ int main() {
   (void)write_ret;
   (void)record_ret;
   (void)wait_ret;
-  (void)fence_ret;
   (void)thread_record_ret;
   (void)thread_wait_ret;
   (void)batch_start_ret;
   (void)batch_end_ret;
   (void)release_ret;
   return 0;
+}
+"""
+
+HCOMM_CHANNEL_FENCE_ON_THREAD_PROBE = r"""
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  return HcommChannelFenceOnThread(thread, channel);
+}
+"""
+
+HCOMM_CHANNEL_FENCE_LEGACY_PROBE = r"""
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+int main() {
+  ChannelHandle channel = 0;
+  return HcommChannelFence(channel);
 }
 """
 
@@ -446,7 +481,8 @@ def collect_hcomm_primitive_headers(include_roots: list[Path]) -> str:
             lines.append("### handle type lines")
             lines.extend(type_lines)
         declarations = extract_declaration_blocks(
-            text, HCOMM_PRIMITIVE_NAMES + HCOMM_OPTIONAL_PRIMITIVE_NAMES)
+            text, HCOMM_PRIMITIVE_NAMES + HCOMM_CHANNEL_FENCE_NAMES +
+            HCOMM_OPTIONAL_PRIMITIVE_NAMES)
         if declarations:
             lines.append("### primitive declarations")
             lines.extend(declarations)
@@ -470,7 +506,7 @@ def collect_hcomm_primitive_symbols(lib_roots: list[Path]) -> str:
         "",
         "# HCOMM primitive symbol presence",
     ]
-    for name in HCOMM_PRIMITIVE_NAMES:
+    for name in HCOMM_PRIMITIVE_NAMES + HCOMM_CHANNEL_FENCE_NAMES:
         matches = [
             line for line in symbols.splitlines()
             if name in line
@@ -537,6 +573,27 @@ def collect_hcomm_primitive_compile_probe(include_roots: list[Path]) -> str:
     ]
     lines.append(compile_probe_text(include_roots, HCOMM_CALL_SHAPE_PROBE,
                                     "hcomm_call_shape_probe"))
+    lines.extend([
+        "",
+        "## channel fence API variants",
+        "",
+        "Flume prefers the thread-scoped API and falls back to the legacy "
+        "channel-scoped API when the installed CANN headers only expose it.",
+        "",
+        "### HcommChannelFenceOnThread",
+        "",
+    ])
+    lines.append(compile_probe_text(
+        include_roots, HCOMM_CHANNEL_FENCE_ON_THREAD_PROBE,
+        "hcomm_channel_fence_on_thread_probe"))
+    lines.extend([
+        "",
+        "### HcommChannelFence (legacy)",
+        "",
+    ])
+    lines.append(compile_probe_text(
+        include_roots, HCOMM_CHANNEL_FENCE_LEGACY_PROBE,
+        "hcomm_channel_fence_legacy_probe"))
     lines.extend([
         "",
         "## optional HcommWriteWithNotifyOnThread",

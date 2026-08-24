@@ -113,7 +113,7 @@ python3 tools/flume_tool.py --build-dir build-ascend ascend-probe
 - 强制检查 CANN/HCCL 布局。
 - 以 `FLUME_ENABLE_HCCL=ON` 配置 CMake。
 - 编译并链接 HCCL/HCOMM；HCOMM public header 依赖的 `securec.h` 也需要在 CANN include 路径下可见。
-- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。其中 `FLUME_HAVE_HCOMM_PRIMITIVES` 是 compile-only call-shape probe，要求真实头文件接受 Flume payload kernel 当前使用的 `HcommAcquireComm`、`HcommLocalCopyOnThread`、`HcommReadOnThread`、`HcommWriteOnThread`、Notify、Batch 调用形状。
+- 在 CMake configure 日志里打印可选能力位，例如 `FLUME_HAVE_HCCL_SYM_WINDOW`、`FLUME_HAVE_HCCL_P2P`、`FLUME_HAVE_HCOMM_CHANNEL_RES`、`FLUME_HAVE_HCOMM_THREAD_EXPORT`、`FLUME_HAVE_HCOMM_PRIMITIVES`、`FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD`、`FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY`、`FLUME_HAVE_HCOMM_RANK_GRAPH`、`FLUME_HAVE_ACL_VMM`。其中 `FLUME_HAVE_HCOMM_PRIMITIVES` 是基础 primitive 的 compile-only call-shape probe；channel fence 单独探测。Flume 优先使用 `HcommChannelFenceOnThread(thread, channel)`，旧版 CANN 只有 `HcommChannelFence(channel)` 时自动使用 legacy fallback。
 - 执行当前 CTest、storage sim demo 和 collective sim demo。
 
 默认边界：`ascend-probe` 只验证环境发现、编译和链接，以及当前 mock/sim 回归。它不会默认跑真实 HCCL 数据面，也不会要求 A3 试用 API 必须存在。
@@ -240,7 +240,8 @@ HCOMM payload copy 诊断/候选证据，但不会被标记为 official-p2p 精�
 
 若怀疑 `HcommReadOnThread` 返回后 local-buffer 数据尚未完成落地，可以显式加
 `--hcomm-payload-channel-fence`。该模式会让 recv kernel 在 remote read 后调用
-`HcommChannelFenceOnThread`，即使当前协议不是 RoCE；日志会出现
+构建时选中的 HCOMM channel fence（优先 OnThread，旧版 CANN fallback 到
+`HcommChannelFence`），即使当前协议不是 RoCE；日志会出现
 `payload_completion_mode=channel-fence` 和
 `payload_trace_primitive_path=recv-read-local-copy|recv-read-direct-output`。
 如果希望 strict-positive 失败时自动采集这个 completion 语义对照，可以追加
@@ -318,7 +319,7 @@ recv rank 的 device-side fingerprint 和 host checksum match 提供。
 用于核对 payload bytes、local/remote HCCL Buffer size、engine/protocol、
 Channel desc source、channel count 和 notify 数量是否符合预期。
 
-payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`。read-path 会在 recv kernel 的 `HcommReadOnThread` 后调用公开 `HcommChannelFenceOnThread` 再 record done；write-path 会在 send kernel 的 `HcommWriteOnThread` 后 fence 再 record ready，避免把“请求已提交”误当成“payload 已落到目标 HBM”。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
+payload completion 语义会用 `payload_completion_mode` 标出：HCCS/SIO 路径使用 `ordered-notify`，RoCE 路径使用 `channel-fence`。read-path 会在 recv kernel 的 `HcommReadOnThread` 后调用构建时选择的 channel fence 再 record done；write-path 会在 send kernel 的 `HcommWriteOnThread` 后 fence 再 record ready，避免把“请求已提交”误当成“payload 已落到目标 HBM”。新头文件优先使用 `HcommChannelFenceOnThread`；旧版头文件 fallback 到 `HcommChannelFence`。legacy fallback 只表示 ABI/构建兼容，仍需真机 checksum、trace 和 completion-order 验证。ABI 常量名里保留 `CHANNEL_DRAIN` 是历史兼容命名，runtime marker 以 `channel-fence` 为准。
 成功日志还会包含 `payload_batch_mode=on|off`、`payload_comm_binding=...` 和
 `payload_kernel_status=success`。payload kernel 默认使用稳定非空 batch tag
 `flume_hcomm_payload`，对齐公开 HCCL custom P2P 示例里用 tag 绑定 batch

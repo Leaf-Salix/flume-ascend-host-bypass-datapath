@@ -2,6 +2,8 @@
 
 #if __has_include(<hccl/hcomm_primitives.h>)
 #include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
 #else
 #include <hcomm_primitives.h>
 #endif
@@ -12,8 +14,28 @@
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY 0
+#endif
+
+#if !FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD && \
+    !FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
+#error "HCOMM payload kernel requires a supported channel fence API"
+#endif
 
 namespace {
+
+int32_t HcommChannelFenceCompat(ThreadHandle thread, ChannelHandle channel) {
+#if FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+  return HcommChannelFenceOnThread(thread, channel);
+#else
+  (void)thread;
+  return HcommChannelFence(channel);
+#endif
+}
 
 constexpr unsigned int kFlumePayloadSuccess =
     FLUME_HCOMM_PAYLOAD_STATUS_SUCCESS;
@@ -386,7 +408,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         TracePayloadEvent(
             desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_ENTER,
             -1);
-        ret = HcommChannelFenceOnThread(thread, channel);
+        ret = HcommChannelFenceCompat(thread, channel);
         TracePayloadEvent(
             desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_SEND_CHANNEL_FENCE_DONE,
             ret);
@@ -471,7 +493,7 @@ unsigned int RunPayloadCopyBody(const flume_hcomm_payload_copy_desc_v1& desc) {
         TracePayloadEvent(
             desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_ENTER,
             -1);
-        ret = HcommChannelFenceOnThread(thread, channel);
+        ret = HcommChannelFenceCompat(thread, channel);
         TracePayloadEvent(
             desc, FLUME_HCOMM_PAYLOAD_TRACE_EVENT_RECV_CHANNEL_FENCE_DONE,
             ret);

@@ -67,6 +67,12 @@
 #ifndef FLUME_HAVE_HCOMM_PRIMITIVES
 #define FLUME_HAVE_HCOMM_PRIMITIVES 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
 #endif
@@ -5961,7 +5967,9 @@ int flume_get_backend_caps(flume_client_t* client, flume_backend_caps_t* out) {
   caps.hcomm_thread_export = FLUME_HAVE_HCOMM_THREAD_EXPORT ? 1U : 0U;
   caps.hcomm_rank_graph = FLUME_HAVE_HCOMM_RANK_GRAPH ? 1U : 0U;
   caps.hcomm_payload_probe =
-      ((FLUME_HAVE_HCOMM_CHANNEL_RES && FLUME_HAVE_HCOMM_PRIMITIVES) ||
+      ((FLUME_HAVE_HCOMM_CHANNEL_RES && FLUME_HAVE_HCOMM_PRIMITIVES &&
+        (FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD ||
+         FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY)) ||
        sim_attached) ? 1U : 0U;
   caps.hcomm_payload_scheduler = sim_attached ? 1U : 0U;
   caps.storage_hbm = sim_attached ? 1U : 0U;
@@ -6731,7 +6739,12 @@ int flume_hcomm_payload_probe_ex(
 #if FLUME_HAVE_HCOMM_PRIMITIVES
   *out = MakeIo(
       FLUME_ERR_UNSUPPORTED, usable_buffer_bytes, 0,
-      std::string("host HCOMM payload primitive symbols are available; "
+      std::string("host HCOMM payload base primitive symbols are available; "
+                  "channel_fence=") +
+          (FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD ? "on-thread" :
+           (FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY ? "legacy" : "missing")) +
+          "; " +
+          std::string(
                   "run strict payload smoke to verify the direct ACL "
                   "custom-op payload scheduler; "
                   "fallback=") +

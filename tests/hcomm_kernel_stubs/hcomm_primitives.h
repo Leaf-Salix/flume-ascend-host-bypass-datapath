@@ -183,7 +183,15 @@ inline int32_t HcommChannelNotifyWaitOnThread(ThreadHandle, ChannelHandle,
   return notify_wait_ret;
 }
 
+#ifndef FLUME_TEST_DISABLE_HCOMM_CHANNEL_FENCE_ON_THREAD
 inline int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle) {
+  using namespace flume_hcomm_payload_kernel_mock;
+  RecordCall(kChannelFence);
+  return channel_drain_ret;
+}
+#endif
+
+inline int32_t HcommChannelFence(ChannelHandle) {
   using namespace flume_hcomm_payload_kernel_mock;
   RecordCall(kChannelFence);
   return channel_drain_ret;

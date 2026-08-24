@@ -444,7 +444,9 @@ when you intentionally want to isolate the write-path branch.
 If the recv side appears to need stronger read completion semantics, pass
 `--hcomm-payload-channel-fence` or enable
 `--auto-run-hcomm-payload-candidate-matrix`. Its channel-fence variant keeps the same
-payload path but forces `HcommChannelFenceOnThread` after `HcommReadOnThread`,
+payload path but forces the selected HCOMM channel fence after
+`HcommReadOnThread` (`HcommChannelFenceOnThread` when available, otherwise
+legacy `HcommChannelFence`),
 including on HCCS/SIO protocols where the default is ordered notify. A complete
 channel-fence pass is accepted as HCOMM payload-copy evidence and is recorded as
 `payload_completion_mode=channel-fence`.

@@ -66,6 +66,12 @@
 #ifndef FLUME_HAVE_HCOMM_PRIMITIVES
 #define FLUME_HAVE_HCOMM_PRIMITIVES 0
 #endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD 0
+#endif
+#ifndef FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
+#define FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY 0
+#endif
 #ifndef FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
 #define FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY 0
 #endif
@@ -2677,6 +2683,10 @@ int main(int argc, char** argv) {
             << " hcomm_channel_res=" << FLUME_HAVE_HCOMM_CHANNEL_RES
             << " hcomm_thread_export=" << FLUME_HAVE_HCOMM_THREAD_EXPORT
             << " hcomm_primitives=" << FLUME_HAVE_HCOMM_PRIMITIVES
+            << " hcomm_channel_fence_on_thread="
+            << FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+            << " hcomm_channel_fence_legacy="
+            << FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
             << " hcomm_write_with_notify="
             << ((FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY ||
                  FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI) ? 1 : 0)

@@ -4,6 +4,8 @@ find_package(ASC REQUIRED)
 find_package(AICPU REQUIRED)
 project(flume_hcomm_payload_copy LANGUAGES CXX AICPU ASC)
 
+include(CheckCXXSourceCompiles)
+
 set(FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD_DEFAULT OFF)
 foreach(_flume_payload_env
         FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD
@@ -38,6 +40,67 @@ set(FLUME_HCOMM_PAYLOAD_INCLUDE_LIST
   ${ASCEND_CANN_PACKAGE_PATH}/include/hcomm
   ${ASCEND_CANN_PACKAGE_PATH}/asc/include/aicpu_api
 )
+
+set(FLUME_HCOMM_PAYLOAD_CHANNEL_FENCE_API "not-required")
+if(FLUME_HCOMM_PAYLOAD_BUILD_PRIMITIVE_PAYLOAD)
+  if(NOT FLUME_HCOMM_PAYLOAD_FENCE_PROBE_REVISION STREQUAL "1")
+    unset(FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD CACHE)
+    unset(FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY CACHE)
+    set(FLUME_HCOMM_PAYLOAD_FENCE_PROBE_REVISION "1" CACHE INTERNAL
+      "Flume custom-op HCOMM channel fence probe revision" FORCE)
+  endif()
+  set(_FLUME_HCOMM_PAYLOAD_OLD_REQUIRED_INCLUDES
+    "${CMAKE_REQUIRED_INCLUDES}")
+  set(_FLUME_HCOMM_PAYLOAD_OLD_TRY_COMPILE_TARGET_TYPE
+    "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+  set(CMAKE_REQUIRED_INCLUDES "${FLUME_HCOMM_PAYLOAD_INCLUDE_LIST}")
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+  set(_FLUME_HCOMM_PAYLOAD_PRIMITIVES_INCLUDE [[
+#if __has_include(<hccl/hcomm_primitives.h>)
+#include <hccl/hcomm_primitives.h>
+#elif __has_include(<hcomm/hcomm_primitives.h>)
+#include <hcomm/hcomm_primitives.h>
+#elif __has_include(<hcomm_primitives.h>)
+#include <hcomm_primitives.h>
+#else
+#error no hcomm_primitives header
+#endif
+]])
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_PAYLOAD_PRIMITIVES_INCLUDE}
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  return HcommChannelFenceOnThread(thread, channel);
+}
+" FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD)
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_PAYLOAD_PRIMITIVES_INCLUDE}
+int main() {
+  ChannelHandle channel = 0;
+  return HcommChannelFence(channel);
+}
+" FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY)
+  set(CMAKE_REQUIRED_INCLUDES
+    "${_FLUME_HCOMM_PAYLOAD_OLD_REQUIRED_INCLUDES}")
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE
+    "${_FLUME_HCOMM_PAYLOAD_OLD_TRY_COMPILE_TARGET_TYPE}")
+
+  if(FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD)
+    set(FLUME_HCOMM_PAYLOAD_CHANNEL_FENCE_API "on-thread")
+  elseif(FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY)
+    set(FLUME_HCOMM_PAYLOAD_CHANNEL_FENCE_API "legacy")
+  else()
+    message(FATAL_ERROR
+      "HCOMM primitive payload requires HcommChannelFenceOnThread(thread, channel) "
+      "or legacy HcommChannelFence(channel), but neither call shape is available")
+  endif()
+else()
+  set(FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD 0)
+  set(FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY 0)
+endif()
+message(STATUS
+  "FLUME_HCOMM_PAYLOAD_CHANNEL_FENCE_API: ${FLUME_HCOMM_PAYLOAD_CHANNEL_FENCE_API}")
 add_library(flume_hcomm_payload_host SHARED)
 set_target_properties(flume_hcomm_payload_host PROPERTIES LINKER_LANGUAGE CXX)
 target_sources(flume_hcomm_payload_host PRIVATE
@@ -99,6 +162,8 @@ if(KERNEL_MODE)
     target_compile_definitions(flume_hcomm_payload_aicpu_kernel PRIVATE
       FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1
       FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1
+      FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=$<BOOL:${FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD}>
+      FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=$<BOOL:${FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY}>
     )
   else()
     target_include_directories(flume_hcomm_payload_aicpu_kernel PRIVATE

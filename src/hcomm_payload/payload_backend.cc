@@ -66,7 +66,7 @@ const char* PayloadStepName(PayloadStep step) {
     case PayloadStep::kChannelWriteWithNotifyLocalToRemoteHcclBuffer:
       return "HcommWriteWithNotifyOnThread(local_hccl_buffer->remote_hccl_buffer,ready)";
     case PayloadStep::kChannelFence:
-      return "HcommChannelFenceOnThread(channel)";
+      return "HCOMM channel fence (on-thread or legacy)";
   }
   return "unknown";
 }

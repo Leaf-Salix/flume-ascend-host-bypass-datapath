@@ -138,9 +138,12 @@ HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS = (
     "HcommWriteOnThread",
     "HcommChannelNotifyRecordOnThread",
     "HcommChannelNotifyWaitOnThread",
-    "HcommChannelFenceOnThread",
     "HcommThreadNotifyRecordOnThread",
     "HcommThreadNotifyWaitOnThread",
+)
+HCOMM_PAYLOAD_CHANNEL_FENCE_SYMBOLS = (
+    "HcommChannelFenceOnThread",
+    "HcommChannelFence",
 )
 HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS = (
     "HcommWriteWithNotifyOnThread",
@@ -5861,7 +5864,8 @@ def StrictPayloadFirstErrorAction(first_error_event: str) -> str:
     if "recv-remote-read" in first_error_event:
         return "HcommReadOnThread remote HCCL Buffer to local HCCL Buffer path"
     if "channel-fence" in first_error_event:
-        return "HcommChannelFenceOnThread completion for channel-drain mode"
+        return ("selected HCOMM channel fence completion "
+                "(on-thread or legacy) for channel-drain mode")
     if "ready-record" in first_error_event:
         return "HCOMM ready notify record index and Channel descriptor"
     if "ready-wait" in first_error_event:
@@ -6000,7 +6004,7 @@ def StrictPayloadFailureAction(rank: int, failure_step: str,
         "remote-read":
             "HcommReadOnThread remote HCCL Buffer to local HCCL Buffer path",
         "channel-fence":
-            "HcommChannelFenceOnThread completion for RoCE/channel-drain mode",
+            "selected HCOMM channel fence completion for RoCE/channel-drain mode",
         "output-copy":
             "local HCCL Buffer to user HBM output copy",
         "done-notify-record":
@@ -8494,6 +8498,13 @@ def _DirectBuildSharedLibraryCommand(
     if args.custom_op_build_mode == "payload":
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_PRIMITIVE_PAYLOAD=1")
         defines.append("FLUME_HCOMM_PAYLOAD_ENABLE_INTERNAL_NOTIFY=1")
+        channel_fence_api = HcommChannelFenceApi(args, cann_root)
+        defines.append(
+            "FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=" +
+            ("1" if channel_fence_api == "on-thread" else "0"))
+        defines.append(
+            "FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=" +
+            ("1" if channel_fence_api == "legacy" else "0"))
         if HcommWriteWithNotifySupported(args, cann_root):
             defines.append("FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1")
         if HcommWriteWithNotifyNbiSupported(args, cann_root):
@@ -8547,6 +8558,18 @@ def HcommWriteWithNotifyNbiSupported(args: argparse.Namespace,
         HcommPrimitiveLibraryExportsSymbol(
             cann_root, args.hcomm_primitives_lib_root,
             "HcommWriteWithNotifyNbiOnThread"))
+
+
+def HcommChannelFenceApi(args: argparse.Namespace, cann_root: Path) -> str:
+    for api, symbol in (
+            ("on-thread", "HcommChannelFenceOnThread"),
+            ("legacy", "HcommChannelFence")):
+        if (HcommPrimitivesHeaderContains(
+                cann_root, args.hcomm_primitives_include_root, symbol) and
+                HcommPrimitiveLibraryExportsSymbol(
+                    cann_root, args.hcomm_primitives_lib_root, symbol)):
+            return api
+    return "missing"
 
 
 def HcommAnyWriteWithNotifySupported(args: argparse.Namespace,
@@ -8612,6 +8635,21 @@ def run_hcomm_custom_op_direct_build(args: argparse.Namespace) -> int:
         )
         print(f"[failed] command setup -> {setup_log}")
         return 1
+    if args.custom_op_build_mode == "payload":
+        channel_fence_api = HcommChannelFenceApi(args, cann_root)
+        print(f"hcomm_channel_fence_api={channel_fence_api}")
+        if channel_fence_api == "missing":
+            setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
+            setup_log.write_text(
+                "missing compatible HCOMM channel fence API\n"
+                "Payload direct build requires either "
+                "HcommChannelFenceOnThread(thread, channel) or legacy "
+                "HcommChannelFence(channel) in both hcomm_primitives.h and "
+                "libhcomm.\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] command setup -> {setup_log}")
+            return 1
 
     build_root = Path(args.build_dir) / "hcomm-custom-op-direct-build"
     build_root.mkdir(parents=True, exist_ok=True)
@@ -9018,6 +9056,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             HCOMM_PAYLOAD_TRACE_SCHEMA_VERSION,
             HCOMM_PAYLOAD_TRACE_WORD_COUNT,
         ] + list(HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS) + list(
+            HCOMM_PAYLOAD_CHANNEL_FENCE_SYMBOLS) + list(
             HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS) + list(
                 HCOMM_PAYLOAD_FORBIDDEN_HCCL_P2P_SYMBOLS)
         symbol_state, symbols_present, symbol_error = InspectAicpuTarSymbols(
@@ -9336,9 +9375,17 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print("function_so.payload_trace_word_count."
                       f"{HCOMM_PAYLOAD_TRACE_WORD_COUNT}="
                       f"{'present' if symbols_present.get(HCOMM_PAYLOAD_TRACE_WORD_COUNT, False) else 'missing'}")
-                primitive_deps_present = all(
+                base_primitive_deps_present = all(
                     symbols_present.get(name, False)
                     for name in HCOMM_PAYLOAD_PRIMITIVE_SYMBOLS)
+                channel_fence_api = "missing"
+                if symbols_present.get("HcommChannelFenceOnThread", False):
+                    channel_fence_api = "on-thread"
+                elif symbols_present.get("HcommChannelFence", False):
+                    channel_fence_api = "legacy"
+                primitive_deps_present = (
+                    base_primitive_deps_present and
+                    channel_fence_api != "missing")
                 found_payload_primitive_deps_marker = (
                     found_payload_primitive_deps_marker or
                     primitive_deps_present)
@@ -9346,6 +9393,11 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                     print("function_so.payload_primitive_dep."
                           f"{primitive_name}="
                           f"{'present' if symbols_present.get(primitive_name, False) else 'missing'}")
+                for fence_name in HCOMM_PAYLOAD_CHANNEL_FENCE_SYMBOLS:
+                    print("function_so.payload_channel_fence_dep."
+                          f"{fence_name}="
+                          f"{'present' if symbols_present.get(fence_name, False) else 'missing'}")
+                print(f"payload_channel_fence_api={channel_fence_api}")
                 print("payload_primitive_deps="
                       f"{'present' if primitive_deps_present else 'missing'}")
                 for primitive_name in HCOMM_PAYLOAD_OPTIONAL_PRIMITIVE_SYMBOLS:
@@ -9408,6 +9460,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
                 print(f"function.{label}.{function_name}=missing")
             if args.require_hcomm_payload_kernel:
                 print("payload_primitive_deps=missing")
+                print("payload_channel_fence_api=missing")
                 print("payload_no_hccl_sendrecv_deps=failed")
                 print("payload_no_hccl_payload_api_deps=failed")
 
@@ -10074,7 +10127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hcomm-payload-channel-fence",
                         action="store_true",
                         help=("Ask the recv payload kernel to call "
-                              "HcommChannelFenceOnThread after "
+                              "the selected HCOMM channel fence after "
                               "HcommReadOnThread even on non-RoCE protocols. "
                               "This isolates HCOMM read completion ordering "
                               "from output-copy and done-notify behavior."))

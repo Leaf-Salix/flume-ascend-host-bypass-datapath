@@ -314,6 +314,13 @@ int main() {
 
   set(CMAKE_REQUIRED_LINK_OPTIONS)
   set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+  if(NOT FLUME_HCOMM_PRIMITIVE_PROBE_REVISION STREQUAL "2")
+    unset(FLUME_HAVE_HCOMM_PRIMITIVES CACHE)
+    unset(FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD CACHE)
+    unset(FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY CACHE)
+    set(FLUME_HCOMM_PRIMITIVE_PROBE_REVISION "2" CACHE INTERNAL
+      "Flume HCOMM primitive capability probe revision" FORCE)
+  endif()
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 int main() {
@@ -379,7 +386,6 @@ int main() {
       HcommChannelNotifyRecordOnThread(thread, channel, notify_idx);
   auto wait_ret =
       HcommChannelNotifyWaitOnThread(thread, channel, notify_idx, timeout_sec);
-  auto fence_ret = HcommChannelFenceOnThread(thread, channel);
   auto thread_record_ret =
       HcommThreadNotifyRecordOnThread(thread, peer_thread, notify_idx);
   auto thread_wait_ret =
@@ -393,7 +399,6 @@ int main() {
   (void)write_ret;
   (void)record_ret;
   (void)wait_ret;
-  (void)fence_ret;
   (void)thread_record_ret;
   (void)thread_wait_ret;
   (void)batch_start_ret;
@@ -402,6 +407,27 @@ int main() {
   return 0;
 }
 " FLUME_HAVE_HCOMM_PRIMITIVES)
+
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
+int main() {
+  ThreadHandle thread = 0;
+  ChannelHandle channel = 0;
+  auto ret = HcommChannelFenceOnThread(thread, channel);
+  (void)ret;
+  return 0;
+}
+" FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD)
+
+  check_cxx_source_compiles("
+${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
+int main() {
+  ChannelHandle channel = 0;
+  auto ret = HcommChannelFence(channel);
+  (void)ret;
+  return 0;
+}
+" FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY)
 
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE}
@@ -648,6 +674,8 @@ int main() {
       FLUME_HAVE_HCOMM_CHANNEL_RES
       FLUME_HAVE_HCOMM_THREAD_EXPORT
       FLUME_HAVE_HCOMM_PRIMITIVES
+      FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD
+      FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY
       FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY
       FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI
       FLUME_HAVE_HCOMM_RANK_GRAPH
@@ -698,6 +726,8 @@ int main() {
     FLUME_HAVE_HCOMM_CHANNEL_RES=${FLUME_HAVE_HCOMM_CHANNEL_RES_VALUE}
     FLUME_HAVE_HCOMM_THREAD_EXPORT=${FLUME_HAVE_HCOMM_THREAD_EXPORT_VALUE}
     FLUME_HAVE_HCOMM_PRIMITIVES=${FLUME_HAVE_HCOMM_PRIMITIVES_VALUE}
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=${FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD_VALUE}
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=${FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY_VALUE}
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=${FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_VALUE}
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=${FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI_VALUE}
     FLUME_HAVE_HCOMM_RANK_GRAPH=${FLUME_HAVE_HCOMM_RANK_GRAPH_VALUE}
@@ -725,6 +755,8 @@ else()
     FLUME_HAVE_HCOMM_CHANNEL_RES=0
     FLUME_HAVE_HCOMM_THREAD_EXPORT=0
     FLUME_HAVE_HCOMM_PRIMITIVES=0
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=0
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=0
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=0
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=0
     FLUME_HAVE_HCOMM_RANK_GRAPH=0
@@ -861,6 +893,8 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   target_compile_definitions(test_hcomm_payload_kernel PRIVATE
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=1
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=0
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=0)
   add_test(NAME hcomm_payload_kernel COMMAND test_hcomm_payload_kernel)
@@ -871,9 +905,26 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   target_compile_definitions(test_hcomm_payload_kernel_nbi PRIVATE
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=1
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=0
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=0
     FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=1)
   add_test(NAME hcomm_payload_kernel_nbi COMMAND test_hcomm_payload_kernel_nbi)
+
+  add_executable(test_hcomm_payload_kernel_legacy_fence
+    tests/test_hcomm_payload_kernel.cc)
+  target_include_directories(test_hcomm_payload_kernel_legacy_fence PRIVATE
+    ${PROJECT_SOURCE_DIR}/tests/hcomm_kernel_stubs
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/aicpu
+    ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
+  target_compile_definitions(test_hcomm_payload_kernel_legacy_fence PRIVATE
+    FLUME_TEST_DISABLE_HCOMM_CHANNEL_FENCE_ON_THREAD=1
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=0
+    FLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=1
+    FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY=1
+    FLUME_HAVE_HCOMM_WRITE_WITH_NOTIFY_NBI=0)
+  add_test(NAME hcomm_payload_kernel_legacy_fence
+    COMMAND test_hcomm_payload_kernel_legacy_fence)
 
   add_executable(test_hcomm_canary_kernel tests/test_hcomm_canary_kernel.cc)
   target_include_directories(test_hcomm_canary_kernel PRIVATE

@@ -48,7 +48,7 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
         "unsigned int FlumeHcommPayloadCopyDirectAclrtKernelV3(void *p) "
         "{ (void)p; return 0; }",
     ]
-    if mode in ("v4", "v4_nbi_write_with_notify",
+    if mode in ("v4", "v4_legacy_fence", "v4_nbi_write_with_notify",
                 "v4_no_write_with_notify", "v4_with_hccl_p2p",
                 "v4_with_hccl_collective",
                 "v4_with_hccl_alltoall",
@@ -69,10 +69,15 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "int HcommWriteOnThread(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }",
             "int HcommChannelNotifyRecordOnThread(ThreadHandle a, ChannelHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "int HcommChannelNotifyWaitOnThread(ThreadHandle a, ChannelHandle b, unsigned int c, unsigned int d) { (void)a; (void)b; (void)c; (void)d; return 0; }",
-            "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
             "int HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
             "int HcommThreadNotifyWaitOnThread(ThreadHandle a, unsigned int b, unsigned int c) { (void)a; (void)b; (void)c; return 0; }",
         ])
+        if mode == "v4_legacy_fence":
+            lines.append(
+                "int HcommChannelFence(ChannelHandle a) { (void)a; return 0; }")
+        else:
+            lines.append(
+                "int HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }")
         if mode == "v4_with_hccl_p2p":
             lines.extend([
                 "int HcclSend(void) { return 0; }",
@@ -107,7 +112,8 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             "  r += HcommChannelNotifyWaitOnThread(1, 2, 1, 60);",
             "  r += HcommReadOnThread(1, 2, a, b, 8);",
             "  r += HcommWriteOnThread(1, 2, b, a, 8);",
-            "  r += HcommChannelFenceOnThread(1, 2);",
+            ("  r += HcommChannelFence(2);" if mode == "v4_legacy_fence"
+             else "  r += HcommChannelFenceOnThread(1, 2);"),
             "  r += HcommThreadNotifyWaitOnThread(1, 0, 60);",
             "  r += HcommThreadNotifyRecordOnThread(1, 3, 0);",
             "  r += HcommBatchModeEnd(\"flume_unit_batch\");",
@@ -126,8 +132,11 @@ def compile_kernel(tmp: Path, mode: str) -> Path:
             lines.insert(
                 kernel_index,
                 f"int {write_symbol}(ThreadHandle a, ChannelHandle b, void* c, const void* d, unsigned long long e, unsigned int f) {{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; return 0; }}")
-            write_index = lines.index(
-                "  r += HcommChannelFenceOnThread(1, 2);")
+            fence_call = (
+                "  r += HcommChannelFence(2);"
+                if mode == "v4_legacy_fence"
+                else "  r += HcommChannelFenceOnThread(1, 2);")
+            write_index = lines.index(fence_call)
             lines.insert(
                 write_index,
                 f"  r += {write_symbol}(1, 2, b, a, 8, 0);")
@@ -716,7 +725,8 @@ def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
                          *, hccl_header: bool = True,
                          hcomm_header: bool = True,
                          write_with_notify_lib: bool = True,
-                         write_with_notify_nbi_lib: bool = True) -> Path:
+                         write_with_notify_nbi_lib: bool = True,
+                         legacy_fence: bool = False) -> Path:
     root = tmp / name
     include_hccl = root / "aarch64-linux" / "include" / "hccl"
     include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
@@ -752,6 +762,10 @@ int32_t HcommThreadNotifyWaitOnThread(ThreadHandle, uint32_t, uint32_t);
 #endif
 #endif
 """
+    if legacy_fence:
+        header = header.replace(
+            "int32_t HcommChannelFenceOnThread(ThreadHandle, ChannelHandle);",
+            "int32_t HcommChannelFence(ChannelHandle);")
     if hccl_header:
         (include_hccl / "hcomm_primitives.h").write_text(
             header, encoding="utf-8")
@@ -778,6 +792,10 @@ int32_t HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, uint32_t
 int32_t HcommThreadNotifyWaitOnThread(ThreadHandle a, uint32_t b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 """
     ]
+    if legacy_fence:
+        source_lines[0] = source_lines[0].replace(
+            "int32_t HcommChannelFenceOnThread(ThreadHandle a, ChannelHandle b) { (void)a; (void)b; return 0; }",
+            "int32_t HcommChannelFence(ChannelHandle a) { (void)a; return 0; }")
     if write_with_notify_lib:
         source_lines.append(
             "int32_t HcommWriteWithNotifyOnThread(ThreadHandle a, "
@@ -1436,7 +1454,24 @@ def main() -> int:
         assert flume_tool.PackageTextWriteWithNotifyReady(v4.stdout)
         assert "function_so.payload_primitive_dep.HcommChannelNotifyRecordOnThread=present" in v4.stdout
         assert "function_so.payload_primitive_dep.HcommChannelNotifyWaitOnThread=present" in v4.stdout
+        assert "function_so.payload_channel_fence_dep.HcommChannelFenceOnThread=present" in v4.stdout
+        assert "function_so.payload_channel_fence_dep.HcommChannelFence=missing" in v4.stdout
+        assert "payload_channel_fence_api=on-thread" in v4.stdout
         assert "status=PASS" in v4.stdout
+
+        legacy_fence_json, legacy_fence_tar = write_package(
+            tmp, mode="v4_legacy_fence")
+        legacy_fence = run_preflight(
+            repo, legacy_fence_json, legacy_fence_tar)
+        if legacy_fence.returncode != 0:
+            print(legacy_fence.stdout)
+            print(legacy_fence.stderr, file=sys.stderr)
+            raise AssertionError("ABI v4 package with legacy fence did not pass")
+        assert "payload_primitive_deps=present" in legacy_fence.stdout
+        assert "function_so.payload_channel_fence_dep.HcommChannelFenceOnThread=missing" in legacy_fence.stdout
+        assert "function_so.payload_channel_fence_dep.HcommChannelFence=present" in legacy_fence.stdout
+        assert "payload_channel_fence_api=legacy" in legacy_fence.stdout
+        assert "status=PASS" in legacy_fence.stdout
 
         hccp_json, hccp_tar = write_package(tmp, mode="v4_with_hccl_p2p")
         hccp = run_preflight(repo, hccp_json, hccp_tar)
@@ -1877,6 +1912,37 @@ def main() -> int:
                 encoding="utf-8")
         assert "status: PASS" in call_shape
         assert "## optional HcommWriteWithNotifyOnThread" in call_shape
+        assert "### HcommChannelFenceOnThread" in call_shape
+        assert "### HcommChannelFence (legacy)" in call_shape
+
+        fake_cann_legacy_fence = write_fake_cann_root(
+            tmp, name="fake-cann-legacy-fence", legacy_fence=True)
+        legacy_compat = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "collect_cann_compat.py"),
+                f"--ascend-home={fake_cann_legacy_fence}",
+                f"--output-root={tmp / 'cann-compat'}",
+                "--label=fake-hcomm-legacy-fence",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if legacy_compat.returncode != 0:
+            print(legacy_compat.stdout)
+            print(legacy_compat.stderr, file=sys.stderr)
+            raise AssertionError("legacy-fence CANN compat collection failed")
+        legacy_call_shape = (
+            tmp / "cann-compat" / "fake-hcomm-legacy-fence" /
+            "hcomm-primitive-call-shape-probe.txt").read_text(
+                encoding="utf-8")
+        assert "## channel fence API variants" in legacy_call_shape
+        on_thread_section, legacy_section = legacy_call_shape.split(
+            "### HcommChannelFence (legacy)", maxsplit=1)
+        assert "status: FAIL" in on_thread_section
+        assert "status: PASS" in legacy_section
         assert "## optional HcommWriteWithNotifyNbiOnThread" in call_shape
 
         cann_pair = flume_tool.ResolveCannRootPair(str(fake_cann))
