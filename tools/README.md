@@ -379,7 +379,7 @@ python3 tools/flume_tool.py \
 
 # 可选：由 Flume 工具调用 HCCL source custom-op packaging flow，并自动做产物 preflight
 python3 tools/flume_tool.py \
-  --hccl-source-root <path-to-cann-hccl-source> \
+  --prepare-hccl-source \
   --custom-op-build-mode payload \
   hcomm-custom-op-build
 
@@ -451,6 +451,18 @@ source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`�
 安装后再跑一次 installed-package preflight；它是显式 opt-in，因为会修改目标
 CANN/OPP 安装状态。安装前必须先通过 build artifact preflight；如果 JSON、
 AICPU tar、V4 payload entrypoint 或 primitive-payload marker 不完整，工具会拒绝安装。
+
+没有现成 source tree 时可先运行 `hcomm-custom-op-source-prepare`，或给
+`hcomm-custom-op-build` 追加 `--prepare-hccl-source`。工具会把固定 revision
+的官方 HCCL 仓库准备到 `<build-dir>/deps/hccl`，作为外部构建依赖使用，不会
+把 HCCL 源码提交到 Flume。可通过 `--hccl-source-url` 和
+`--hccl-source-revision` 显式覆盖，但兼容性测试必须记录实际 revision。
+
+package preflight 会输出 `package_provenance`、`package_qualification`、
+`package_manifest`、`package_elf_machine`、`package_needed` 和
+`package_host_dependencies`。只有带 device manifest、确认是 AArch64 ELF 且
+没有已知 host runtime 依赖的产物会得到 `device-candidate`；该标记仍不等于
+runtime admission 或 kernel execution 成功。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，

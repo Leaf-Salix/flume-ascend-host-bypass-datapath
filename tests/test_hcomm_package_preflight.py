@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -867,6 +868,64 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="flume-package-preflight-") as tmp_text:
         tmp = Path(tmp_text)
         flume_tool = load_flume_tool(repo)
+        qualification_dir = tmp / "qualification"
+        qualification_dir.mkdir()
+        qualification_so = compile_kernel(qualification_dir, "canary")
+        qualification_manifest = qualification_dir / "bin_hash.cfg"
+        qualification_manifest.write_text("synthetic manifest\n",
+                                          encoding="utf-8")
+        qualification_tar = qualification_dir / "device_candidate.tar.gz"
+        with tarfile.open(qualification_tar, "w:gz") as tar:
+            tar.add(qualification_so,
+                    arcname=f"aicpu_kernels_device/{KERNEL_SO}")
+            tar.add(qualification_manifest, arcname="bin_hash.cfg")
+        with mock.patch.object(
+                flume_tool, "_InspectElf",
+                return_value=("AArch64", (), "")):
+            qualification = flume_tool.InspectAicpuDevicePackage(
+                qualification_tar)
+        assert qualification.provenance == "hccl-device-toolchain"
+        assert qualification.qualification == "device-candidate"
+        assert qualification.manifest == "present"
+        host_qualification = flume_tool.InspectAicpuDevicePackage(
+            qualification_tar, "host-diagnostic")
+        assert host_qualification.qualification == "structural"
+        assert "diagnostic-only" in host_qualification.reason
+
+        source_seed = tmp / "hccl-source-seed"
+        source_seed.mkdir()
+        (source_seed / "build.sh").write_text("#!/usr/bin/env bash\n",
+                                               encoding="utf-8")
+        subprocess.run(["git", "init", str(source_seed)], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(source_seed), "config",
+                        "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(source_seed), "config",
+                        "user.name", "Flume Test"], check=True)
+        subprocess.run(["git", "-C", str(source_seed), "add", "build.sh"],
+                       check=True)
+        subprocess.run(["git", "-C", str(source_seed), "commit", "-m",
+                        "seed"], check=True, capture_output=True)
+        source_revision = subprocess.run(
+            ["git", "-C", str(source_seed), "rev-parse", "HEAD"],
+            check=True, text=True, capture_output=True).stdout.strip()
+        source_target = tmp / "prepared-hccl"
+        source_runner = flume_tool.Runner(tmp / "source-prepare-logs")
+        prepared = flume_tool.PrepareHcclSource(
+            SimpleNamespace(
+                hccl_source_root=str(source_target),
+                build_dir=str(tmp / "source-build"),
+                hccl_source_url=str(source_seed),
+                hccl_source_revision=source_revision,
+                step_timeout_sec=30,
+                hccl_smoke_timeout_sec=30),
+            source_runner)
+        assert prepared == source_target.resolve()
+        assert (source_target / "build.sh").exists()
+        assert subprocess.run(
+            ["git", "-C", str(source_target), "rev-parse", "HEAD"],
+            check=True, text=True, capture_output=True).stdout.strip() == (
+                source_revision)
         forbidden_source = tmp / "forbidden_payload_source.cc"
         forbidden_source.write_text(
             "const char* bad_send = \"HcclSend\";\n"
@@ -2064,6 +2123,7 @@ def main() -> int:
         assert f"json_path={direct_json}" in direct_preflight.stdout
         assert f"aicpu_tar_path={direct_tar}" in direct_preflight.stdout
         assert "package_provenance=host-diagnostic" in direct_preflight.stdout
+        assert "package_qualification=structural" in direct_preflight.stdout
         assert "device_runnable=no" in direct_preflight.stdout
         assert "host direct-build package is not AICPU" in direct_preflight.stdout
 

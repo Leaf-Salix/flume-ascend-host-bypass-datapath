@@ -27,6 +27,14 @@ DEFAULT_BUILD_JOBS = min(os.cpu_count() or 4, 32)
 HCOMM_CUSTOM_OP_JSON = "libflume_hcomm_payload_aicpu_kernel.json"
 HCOMM_CUSTOM_OP_TAR = "aicpu_flume_hcomm_payload.tar.gz"
 HCOMM_CUSTOM_OP_KERNEL_SO = "libflume_hcomm_payload_aicpu_kernel.so"
+HCCL_SOURCE_URL = "https://gitcode.com/cann/hccl.git"
+HCCL_SOURCE_REVISION = "31f6001549ca3d192d9368d478f9e403747a01e8"
+HCOMM_HOST_DIAGNOSTIC_NEEDED = {
+    "libascendcl.so",
+    "libc.so",
+    "libhcomm.so",
+    "libstdc++.so",
+}
 HCOMM_CUSTOM_OP_FUNCTIONS = {
     "notify_hccl_launch": "FlumeHcommNotifyOnlyAicpuKernel",
     "notify_direct_aclrt": "FlumeHcommNotifyOnlyDirectAclrtKernel",
@@ -352,6 +360,22 @@ def JsonDeclaresFunction(payload: object, function_name: str,
     return False
 
 
+def PackageProvenanceFromJson(json_path: Optional[Path]) -> str:
+    if json_path is None or not json_path.exists():
+        return "unknown"
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "unknown"
+    if not isinstance(payload, dict):
+        return "unknown"
+    package_meta = payload.get("_flumePackage", {})
+    if not isinstance(package_meta, dict):
+        return "unknown"
+    value = package_meta.get("packageProvenance")
+    return value if isinstance(value, str) and value else "unknown"
+
+
 def InspectAicpuTar(tar_path: Optional[Path]) -> tuple[str, str, int, str]:
     if tar_path is None or not tar_path.exists():
         return ("missing", "missing", 0, "")
@@ -364,6 +388,121 @@ def InspectAicpuTar(tar_path: Optional[Path]) -> tuple[str, str, int, str]:
                         for name in names)
     return ("present", "present" if has_kernel_so else "missing",
             len(names), "")
+
+
+@dataclass
+class AicpuPackageQualification:
+    provenance: str = "unknown"
+    qualification: str = "unqualified"
+    manifest: str = "missing"
+    elf_machine: str = "unknown"
+    needed: tuple[str, ...] = ()
+    host_dependencies: tuple[str, ...] = ()
+    reason: str = "package not inspected"
+
+
+def _InspectElf(path: Path) -> tuple[str, tuple[str, ...], str]:
+    machine = "unknown"
+    needed: list[str] = []
+    errors: list[str] = []
+    readelf = shutil.which("readelf")
+    if readelf:
+        try:
+            header = subprocess.run(
+                [readelf, "-h", str(path)], text=True, capture_output=True,
+                timeout=20, check=False)
+            dynamic = subprocess.run(
+                [readelf, "-d", str(path)], text=True, capture_output=True,
+                timeout=20, check=False)
+            if header.returncode == 0:
+                match = re.search(r"^\s*Machine:\s*(.+)$", header.stdout,
+                                  re.MULTILINE)
+                if match:
+                    machine = match.group(1).strip()
+            else:
+                errors.append(header.stderr.strip())
+            if dynamic.returncode == 0:
+                needed.extend(re.findall(
+                    r"\(NEEDED\).*?\[([^\]]+)\]", dynamic.stdout))
+            else:
+                errors.append(dynamic.stderr.strip())
+        except (OSError, subprocess.SubprocessError) as exc:
+            errors.append(str(exc))
+    if machine == "unknown" and shutil.which("file"):
+        try:
+            result = subprocess.run(
+                ["file", "-b", str(path)], text=True, capture_output=True,
+                timeout=20, check=False)
+            if result.returncode == 0:
+                output = result.stdout.lower()
+                if "aarch64" in output or "arm64" in output:
+                    machine = "AArch64"
+                elif "x86-64" in output or "x86_64" in output:
+                    machine = "x86-64"
+            elif result.stderr:
+                errors.append(result.stderr.strip())
+        except (OSError, subprocess.SubprocessError) as exc:
+            errors.append(str(exc))
+    return machine, tuple(sorted(set(needed))), "; ".join(
+        item for item in errors if item)
+
+
+def InspectAicpuDevicePackage(
+        tar_path: Optional[Path], provenance_hint: str = "unknown"
+) -> AicpuPackageQualification:
+    result = AicpuPackageQualification(provenance=provenance_hint)
+    if tar_path is None or not tar_path.exists():
+        result.reason = "AICPU tar missing"
+        return result
+    try:
+        with tarfile.open(tar_path, "r:*") as tar:
+            members = tar.getmembers()
+            result.manifest = (
+                "present" if any(Path(item.name).name == "bin_hash.cfg"
+                                 for item in members) else "missing")
+            so_member = next(
+                (item for item in members
+                 if Path(item.name).name == HCOMM_CUSTOM_OP_KERNEL_SO), None)
+            if so_member is None:
+                result.reason = "AICPU kernel SO missing"
+                return result
+            extracted = tar.extractfile(so_member)
+            if extracted is None:
+                result.reason = "AICPU kernel SO is not a regular file"
+                return result
+            with tempfile.TemporaryDirectory(
+                    prefix="flume-aicpu-qualification-") as tmp:
+                so_path = Path(tmp) / HCOMM_CUSTOM_OP_KERNEL_SO
+                so_path.write_bytes(extracted.read())
+                machine, needed, elf_error = _InspectElf(so_path)
+    except (OSError, tarfile.TarError) as exc:
+        result.reason = f"AICPU tar unreadable: {exc}"
+        return result
+    result.elf_machine = machine
+    result.needed = needed
+    result.host_dependencies = tuple(sorted(
+        item for item in needed
+        if any(item == name or item.startswith(name + ".")
+               for name in HCOMM_HOST_DIAGNOSTIC_NEEDED)))
+    if result.provenance == "host-diagnostic":
+        result.qualification = "structural"
+        result.reason = "host direct-build is diagnostic-only"
+    elif result.manifest != "present":
+        result.qualification = "structural"
+        result.reason = "device package manifest bin_hash.cfg missing"
+    elif result.elf_machine != "AArch64":
+        result.qualification = "structural"
+        result.reason = (
+            "AICPU kernel ELF is not confirmed AArch64" +
+            (f": {elf_error}" if elf_error else ""))
+    elif result.host_dependencies:
+        result.qualification = "structural"
+        result.reason = "AICPU kernel depends on host runtime libraries"
+    else:
+        result.provenance = "hccl-device-toolchain"
+        result.qualification = "device-candidate"
+        result.reason = "device package structure and ELF checks passed"
+    return result
 
 
 def _RunSymbolTool(path: Path) -> tuple[str, str]:
@@ -879,7 +1018,85 @@ def ResolveHcclSourceRoot(args: argparse.Namespace) -> Path:
     env_root = os.environ.get("FLUME_HCCL_SOURCE_ROOT", "").strip()
     if env_root:
         return Path(env_root).expanduser().resolve()
-    return (REPO_ROOT / "refer" / "cann-src" / "hccl").resolve()
+    local_refer = REPO_ROOT / "refer" / "cann-src" / "hccl"
+    if (local_refer / "build.sh").exists():
+        return local_refer.resolve()
+    return (Path(args.build_dir) / "deps" / "hccl").resolve()
+
+
+def PrepareHcclSource(args: argparse.Namespace, runner: Runner) -> Optional[Path]:
+    source_root = ResolveHcclSourceRoot(args)
+    build_sh = source_root / "build.sh"
+    if build_sh.exists():
+        result = runner.run(
+            "hccl-source-revision",
+            ["git", "-C", str(source_root), "rev-parse", "HEAD"],
+            required=True,
+            timeout_seconds=args.step_timeout_sec,
+        )
+        return source_root if result.returncode == 0 else None
+    if source_root.exists() and any(source_root.iterdir()):
+        runner.record_static(
+            "hccl-source-prepare",
+            [
+                "hccl_source_prepare=failed",
+                f"source_root={source_root}",
+                "reason=target directory is non-empty but build.sh is missing",
+            ],
+            returncode=1,
+            required=True,
+        )
+        return None
+    source_root.parent.mkdir(parents=True, exist_ok=True)
+    clone = runner.run(
+        "hccl-source-clone",
+        ["git", "clone", "--filter=blob:none", "--no-checkout",
+         args.hccl_source_url, str(source_root)],
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+    )
+    if clone.returncode != 0:
+        return None
+    fetch = runner.run(
+        "hccl-source-fetch-revision",
+        ["git", "-C", str(source_root), "fetch", "--depth=1", "origin",
+         args.hccl_source_revision],
+        required=True,
+        timeout_seconds=args.hccl_smoke_timeout_sec,
+    )
+    if fetch.returncode != 0:
+        return None
+    checkout = runner.run(
+        "hccl-source-checkout",
+        ["git", "-C", str(source_root), "checkout", "--detach", "FETCH_HEAD"],
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+    )
+    if checkout.returncode != 0 or not build_sh.exists():
+        runner.record_static(
+            "hccl-source-validation",
+            [
+                "hccl_source_prepare=failed",
+                f"source_root={source_root}",
+                f"build_sh={'present' if build_sh.exists() else 'missing'}",
+            ],
+            returncode=1,
+            required=True,
+        )
+        return None
+    runner.record_static(
+        "hccl-source-validation",
+        [
+            "hccl_source_prepare=passed",
+            f"source_root={source_root}",
+            f"source_url={args.hccl_source_url}",
+            f"source_revision={args.hccl_source_revision}",
+            "source_ownership=external-build-dependency",
+        ],
+        returncode=0,
+        required=True,
+    )
+    return source_root
 
 
 def CannToolkitCustomOpTemplateBuildScripts(
@@ -8725,6 +8942,12 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     runner.write_env_report()
     hccl_source_root = ResolveHcclSourceRoot(args)
     build_sh = hccl_source_root / "build.sh"
+    if not build_sh.exists() and args.prepare_hccl_source:
+        prepared = PrepareHcclSource(args, runner)
+        if prepared is None:
+            return runner.write_summary()
+        hccl_source_root = prepared
+        build_sh = hccl_source_root / "build.sh"
     if not build_sh.exists():
         setup_log = runner.run_dir / "COMMAND_SETUP_ERROR.txt"
         toolkit_scripts = CannToolkitCustomOpTemplateBuildScripts(
@@ -8879,6 +9102,13 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
     return runner.write_summary()
 
 
+def run_hcomm_custom_op_source_prepare(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    PrepareHcclSource(args, runner)
+    return runner.write_summary()
+
+
 def run_env(args: argparse.Namespace) -> int:
     runner = Runner(Path(args.log_root))
     runner.write_env_report()
@@ -8957,6 +9187,7 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_path={tar_path if tar_path else '<unset>'}")
         print(f"json={'present' if json_exists else 'missing'}")
         print(f"aicpu_tar={'present' if tar_exists else 'missing'}")
+        candidate_provenance = PackageProvenanceFromJson(json_path)
         json_forbidden_refs: dict[str, list[str]] = {}
         if json_exists and json_path is not None:
             json_forbidden_refs = FindForbiddenTokenRefsInFiles(
@@ -8976,6 +9207,19 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
         print(f"aicpu_tar_members={tar_members}")
         if tar_error:
             print(f"aicpu_tar_error={tar_error}")
+        qualification = InspectAicpuDevicePackage(
+            tar_path, candidate_provenance)
+        print(f"package_provenance={qualification.provenance}")
+        print(f"package_qualification={qualification.qualification}")
+        print(f"package_manifest={qualification.manifest}")
+        print(f"package_elf_machine={qualification.elf_machine}")
+        print("package_needed=" +
+              (",".join(qualification.needed) if qualification.needed
+               else "none"))
+        print("package_host_dependencies=" +
+              (",".join(qualification.host_dependencies)
+               if qualification.host_dependencies else "none"))
+        print(f"package_qualification_reason={qualification.reason}")
         symbol_names = list(HCOMM_CUSTOM_OP_FUNCTIONS.values()) + [
             HCOMM_LEGACY_PAYLOAD_DIRECT_ACLRT,
             HCOMM_PAYLOAD_BUILD_MODE_CANARY_ONLY,
@@ -9043,17 +9287,13 @@ def run_hcomm_custom_op_package(args: argparse.Namespace) -> int:
             except (OSError, json.JSONDecodeError) as exc:
                 print(f"json_error={exc}")
                 payload = {}
-            package_meta = payload.get("_flumePackage", {}) if isinstance(
-                payload, dict) else {}
-            host_diagnostic = (
-                isinstance(package_meta, dict) and
-                package_meta.get("packageProvenance") == "host-diagnostic")
+            host_diagnostic = candidate_provenance == "host-diagnostic"
             found_host_diagnostic_package = (
                 found_host_diagnostic_package or host_diagnostic)
-            print("package_provenance=" +
-                  ("host-diagnostic" if host_diagnostic else "unknown"))
             print("device_runnable=" +
-                  ("no" if host_diagnostic else "unknown"))
+                  ("no" if host_diagnostic else
+                   ("candidate" if qualification.qualification ==
+                    "device-candidate" else "unknown")))
             for label, function_name in HCOMM_CUSTOM_OP_FUNCTIONS.items():
                 ok = JsonDeclaresFunction(
                     payload, function_name, HCOMM_CUSTOM_OP_KERNEL_SO)
@@ -10341,6 +10581,17 @@ def parse_args() -> argparse.Namespace:
                         help=("HCCL source tree used by hcomm-custom-op-build. "
                               "Defaults to FLUME_HCCL_SOURCE_ROOT or the local "
                               "ignored refer/cann-src/hccl checkout."))
+    parser.add_argument("--hccl-source-url", default=HCCL_SOURCE_URL,
+                        help=("Official HCCL repository used only by source "
+                              "bootstrap."))
+    parser.add_argument("--hccl-source-revision",
+                        default=HCCL_SOURCE_REVISION,
+                        help=("Pinned official HCCL revision used by source "
+                              "bootstrap."))
+    parser.add_argument("--prepare-hccl-source", action="store_true",
+                        help=("Prepare the pinned official HCCL source under "
+                              "the build dependency cache when custom-op "
+                              "build.sh is not already available."))
     parser.add_argument("--custom-op-build-mode",
                         choices=["payload", "canary"],
                         default="payload",
@@ -10425,6 +10676,10 @@ def parse_args() -> argparse.Namespace:
         "hcomm-custom-op-build",
         help=("Build the Flume HCOMM custom-op package through a HCCL source "
               "tree custom-op packaging flow"))
+    subparsers.add_parser(
+        "hcomm-custom-op-source-prepare",
+        help=("Prepare pinned official HCCL source as an external build "
+              "dependency"))
     subparsers.add_parser(
         "hcomm-custom-op-export-runtime",
         help=("Copy a preflight-passing Flume custom-op JSON/AICPU tar into "
@@ -10530,6 +10785,8 @@ def main() -> int:
         return run_hcomm_storage_verify_logs(args)
     if args.command == "hcomm-custom-op-build":
         return run_hcomm_custom_op_build(args)
+    if args.command == "hcomm-custom-op-source-prepare":
+        return run_hcomm_custom_op_source_prepare(args)
     if args.command == "hcomm-custom-op-export-runtime":
         return run_hcomm_custom_op_export_runtime(args)
     if args.command == "hcomm-custom-op-direct-build":
