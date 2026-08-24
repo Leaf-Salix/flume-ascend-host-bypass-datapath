@@ -141,8 +141,6 @@ ${_FLUME_HCCL_CHECK_INCLUDE}
 ${_FLUME_HCOMM_RES_CHECK_INCLUDE}
 #if __has_include(<hccl/hccl_res_expt.h>)
 #include <hccl/hccl_res_expt.h>
-#else
-#error no hccl_res_expt header
 #endif
 ")
   set(_FLUME_HCOMM_PRIMITIVES_CHECK_INCLUDE "
@@ -351,6 +349,11 @@ int main() {
 
   set(CMAKE_REQUIRED_LINK_OPTIONS "${_FLUME_HCCL_REQUIRED_LINK_OPTIONS}")
   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+  if(NOT FLUME_HCOMM_THREAD_EXPORT_PROBE_REVISION STREQUAL "2")
+    unset(FLUME_HAVE_HCOMM_THREAD_EXPORT CACHE)
+    set(FLUME_HCOMM_THREAD_EXPORT_PROBE_REVISION "2" CACHE INTERNAL
+      "Flume HCOMM thread-export capability probe revision" FORCE)
+  endif()
   check_cxx_source_compiles("
 ${_FLUME_HCOMM_RES_EXPT_CHECK_INCLUDE}
 int main() {

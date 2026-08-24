@@ -726,7 +726,8 @@ def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
                          hcomm_header: bool = True,
                          write_with_notify_lib: bool = True,
                          write_with_notify_nbi_lib: bool = True,
-                         legacy_fence: bool = False) -> Path:
+                         legacy_fence: bool = False,
+                         thread_export_layout: str = "base") -> Path:
     root = tmp / name
     include_hccl = root / "aarch64-linux" / "include" / "hccl"
     include_hcomm = root / "aarch64-linux" / "include" / "hcomm"
@@ -734,6 +735,28 @@ def write_fake_cann_root(tmp: Path, name: str = "fake-cann",
     include_hccl.mkdir(parents=True)
     include_hcomm.mkdir(parents=True)
     lib64.mkdir(parents=True)
+    res_header = r"""
+#ifndef HCCL_RES_H_
+#define HCCL_RES_H_
+#include <stdint.h>
+typedef void* HcclComm;
+typedef int32_t HcclResult;
+typedef uint64_t ThreadHandle;
+typedef enum { COMM_ENGINE_CPU_TS = 2, COMM_ENGINE_AICPU_TS = 4 } CommEngine;
+"""
+    thread_export_decl = (
+        "HcclResult HcclThreadExportToCommEngine(HcclComm, uint32_t, "
+        "const ThreadHandle*, CommEngine, ThreadHandle*);\n")
+    if thread_export_layout == "base":
+        res_header += thread_export_decl
+    res_header += "#endif\n"
+    (include_hccl / "hccl_res.h").write_text(res_header, encoding="utf-8")
+    if thread_export_layout == "experimental":
+        (include_hccl / "hccl_res_expt.h").write_text(
+            "#ifndef HCCL_RES_EXPT_H_\n#define HCCL_RES_EXPT_H_\n"
+            "#include <hccl/hccl_res.h>\n" + thread_export_decl +
+            "#endif\n",
+            encoding="utf-8")
     header = r"""
 #ifndef HCOMM_PRIMITIVES_H_
 #define HCOMM_PRIMITIVES_H_
@@ -790,6 +813,7 @@ int32_t HcommBatchModeStart(const char* a) { (void)a; return 0; }
 int32_t HcommBatchModeEnd(const char* a) { (void)a; return 0; }
 int32_t HcommThreadNotifyRecordOnThread(ThreadHandle a, ThreadHandle b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
 int32_t HcommThreadNotifyWaitOnThread(ThreadHandle a, uint32_t b, uint32_t c) { (void)a; (void)b; (void)c; return 0; }
+int32_t HcclThreadExportToCommEngine(void* a, uint32_t b, const ThreadHandle* c, int d, ThreadHandle* e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 """
     ]
     if legacy_fence:
@@ -1914,6 +1938,39 @@ def main() -> int:
         assert "## optional HcommWriteWithNotifyOnThread" in call_shape
         assert "### HcommChannelFenceOnThread" in call_shape
         assert "### HcommChannelFence (legacy)" in call_shape
+        thread_export = (
+            fixture / "hcomm-thread-export-probe.txt").read_text(
+                encoding="utf-8")
+        assert "declaration_source: base" in thread_export
+        assert "libhcomm_symbol: present" in thread_export
+        assert "status: PASS" in thread_export
+
+        fake_cann_expt_export = write_fake_cann_root(
+            tmp, name="fake-cann-expt-export",
+            thread_export_layout="experimental")
+        expt_compat = subprocess.run(
+            [
+                sys.executable,
+                str(repo / "tools" / "collect_cann_compat.py"),
+                f"--ascend-home={fake_cann_expt_export}",
+                f"--output-root={tmp / 'cann-compat'}",
+                "--label=fake-hcomm-expt-export",
+            ],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if expt_compat.returncode != 0:
+            print(expt_compat.stdout)
+            print(expt_compat.stderr, file=sys.stderr)
+            raise AssertionError("experimental thread-export layout failed")
+        expt_thread_export = (
+            tmp / "cann-compat" / "fake-hcomm-expt-export" /
+            "hcomm-thread-export-probe.txt").read_text(encoding="utf-8")
+        assert "declaration_source: experimental" in expt_thread_export
+        assert "libhcomm_symbol: present" in expt_thread_export
+        assert "status: PASS" in expt_thread_export
 
         fake_cann_legacy_fence = write_fake_cann_root(
             tmp, name="fake-cann-legacy-fence", legacy_fence=True)

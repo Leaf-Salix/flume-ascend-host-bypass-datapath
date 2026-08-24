@@ -19,11 +19,11 @@ CANN 8.5 baseline
   -> root-info HCCL bring-up
   -> HCCL Send/Recv P2P payload baseline
   -> HCOMM Channel resource with cpu-ts
-  -> HCOMM payload backend without hccl_res_expt.h
+  -> HCOMM payload backend selected by callable API capability
   -> storage proxy / HCCL Buffer path
 
 Higher CANN optional extensions
-  -> AICPU_TS thread export
+  -> AICPU_TS thread export when the installed ABI exposes it
   -> rank graph descriptors
   -> A3 symmetric memory
   -> future direct registration capabilities
@@ -54,8 +54,8 @@ Higher CANN optional extensions
 | HCCL Send/Recv P2P | 必须支持 | Stage 2 payload baseline | 可扩展 batch/多 pair |
 | HCOMM Channel resource | 必须支持 | 默认 `engine=auto -> cpu-ts` | 有 thread-export 时可选 `aicpu-ts` |
 | HCOMM rank graph desc | 可选 | 有 `hccl_rank_graph.h` 时优先使用，否则 legacy desc | 高版本优先 |
-| `hccl_res_expt.h` / thread export | 8.5 可缺失 | `--hcomm-require-thread-export` 返回 unsupported | 有则启用 AICPU thread-export path |
-| HCOMM primitives payload | 目标必须支持 8.5 fallback | 下一阶段实现不依赖 `hccl_res_expt.h` 的路径 | 有扩展时优化 |
+| `hccl_res_expt.h` / thread export | 可选头文件可缺失 | 直接探测 `HcclThreadExportToCommEngine` 声明与符号 | API 可用时启用 AICPU thread-export path |
+| HCOMM primitives payload | 目标必须支持 8.5 fallback | 按 primitive call shape、符号和真机 execution context 分层探测 | 有扩展时优化 |
 | A3 symmetric memory | 非 8.5 baseline | 能力位存在才启用 | A3/HCCS 增强 |
 | storage -> HBM | 后续目标 | 先走 storage proxy / HCCL Buffer | direct registration 能力存在时增强 |
 
@@ -74,7 +74,7 @@ FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=
 | `hccl_p2p=on` | 当前 build 可以使用 `HcclSend` / `HcclRecv` baseline |
 | `hcomm_channel=on` | 当前 build 可以跑 HCOMM Channel resource probe |
 | `hcomm_default_engine=cpu-ts` | 当前默认 HCOMM probe 走 CANN 8.5 baseline engine |
-| `hcomm_aicpu_thread_export=off` | 当前没有高版本 thread-export 扩展，CANN 8.5 正常 |
+| `hcomm_aicpu_thread_export=off` | 当前安装包的 thread-export 声明+符号探测未通过；不能单凭版本号判定 |
 | `hcomm_rank_graph=off` | 没有 rank graph 时应 fallback legacy descriptor |
 | `hcomm_payload_probe=on` | 当前 build 暴露 HCOMM primitive 符号并可运行 payload readiness probe |
 | `hcomm_payload_scheduler=not-implemented` | Flume 还没有 custom-op/AICPU payload scheduler |
@@ -83,7 +83,7 @@ FLUME_BACKEND_CAPS hccl_root_info=on hccl_init_all=on hccl_p2p=on hcomm_channel=
 | `fallback_hccl_p2p=on` | 当前可回退到已验证的 HCCL Send/Recv P2P baseline |
 | `fallback_runtime_staging=off` | 当前 smoke 没有启用 runtime staging fallback |
 
-`hcomm_aicpu_thread_export=off` 不是 CANN 8.5 不支持的信号。它只说明不能走高版本 AICPU thread-export path。
+`hcomm_aicpu_thread_export=off` 不是 HCOMM Channel 不支持的信号。它只说明当前安装包的 thread-export API 探测未通过。有些 CANN 布局没有 `hccl_res_expt.h`，但已将同一声明合并进 `hccl_res.h`；这种情况应判为能力可用。
 
 Host B CANN 9.0 的 full-matrix 实测提供了一个高版本对照：
 

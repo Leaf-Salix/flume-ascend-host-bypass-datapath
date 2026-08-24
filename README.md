@@ -143,7 +143,7 @@ python3 tools/flume_tool.py --build-dir build-hcomm --run-hcomm-channel-probe --
 
 This keeps the same base collective smoke, then asks Flume to acquire the HCOMM resources needed by the future custom backend: HCCL Buffer, CPU_TS/AICPU_TS thread resources, an HCOMM Channel, and the peer HCCL Buffer. It prefers rank-graph link descriptors when available and falls back to a legacy descriptor only when rank graph is unavailable. It does not yet launch an AICPU kernel or move payload with `HcommReadOnThread`.
 
-The default HCOMM probe uses `--hcomm-channel-engine auto`, `--hcomm-channel-protocol hccs`, and `--hcomm-notify-num 2`. On CANN builds without `hccl_res_expt.h`, such as CANN 8.5, `auto` resolves to `cpu-ts` and validates the channel-resource path without claiming AICPU thread-export readiness. Add `--hcomm-require-thread-export` only when you want a strict future AICPU thread-export check; CANN 8.5 is expected to report unsupported for that stricter extension check.
+The default HCOMM probe uses `--hcomm-channel-engine auto`, `--hcomm-channel-protocol hccs`, and `--hcomm-notify-num 2`. Thread export is detected from the callable API, not from the presence of `hccl_res_expt.h`: some CANN packages declare `HcclThreadExportToCommEngine` directly in `hccl_res.h`, while others retain the optional experimental header. When neither layout exposes a linkable API, `auto` resolves to `cpu-ts` and does not claim AICPU thread-export readiness. Add `--hcomm-require-thread-export` for a strict resource-export check. See [docs/cann-hcomm-version-adaptation.md](docs/cann-hcomm-version-adaptation.md) for the version-selection rules and device-validation sequence.
 
 When `--hccl-devices` is set, the default `auto` mode uses the HCCL
 `root-info` initialization strategy and launches one process per rank. This is
@@ -264,6 +264,7 @@ HCCL-enabled builds additionally require a sourced CANN environment with:
 
 - [Implementation flow summary](docs/implementation-flow-summary.md)
 - [CANN 8.5 compatibility strategy](docs/cann-8.5-compatibility.md)
+- [HCOMM header/API version adaptation](docs/cann-hcomm-version-adaptation.md)
 - [Architecture](docs/architecture.md)
 - [Demo plan](docs/demo-plan.md)
 - [Single-node multi-card HBM/HCCL analysis](docs/single-node-hbm-hccl-analysis.md)

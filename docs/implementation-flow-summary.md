@@ -11,7 +11,7 @@ Flume 当前已经完成一个可本地回归、可 Ascend 真机验证的初步
 - 无 NPU 环境：可以验证 storage control plane、mock pread、sim HBM copy、sim collective、sim P2P send/recv、sim A3 symmetric memory 生命周期。
 - Ascend 真机环境：已经验证 `root-info` 和 `init-all` 初始化路径可跑通 base HCCL AllReduce / AllGather。
 - Stage 2 P2P baseline：已经在 Host A HCCS_SW pair A 跨 HCCS_SW die 对上验证 `HcclSend` / `HcclRecv` 的 rank0 HBM -> rank1 HBM P2P copy，结果 `p2p_copy=on`。
-- Stage 2 HCOMM resource probe：已经实现并在 CANN 8.5 真机上验证 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询；默认只证明 channel resource，严格 AICPU thread-export 检查需要显式加 `--hcomm-require-thread-export`，CANN 8.5 预期清晰返回 unsupported。
+- Stage 2 HCOMM resource probe：已经实现并在 CANN 8.5 真机上验证 `flume_hcomm_channel_probe` / `flume_hcomm_channel_probe_ex` 和 `--run-hcomm-channel-probe`，用于验证 HCCL Buffer、CPU_TS/AICPU_TS thread resource、可选 thread export、rank graph / legacy descriptor、可配置 engine/protocol 的 Channel acquire 和远端 HCCL Buffer 查询；默认只证明 channel resource，严格 AICPU thread-export 检查需要显式加 `--hcomm-require-thread-export`。thread-export 现按可调用 API 探测，不再与 `hccl_res_expt.h` 文件布局绑定。
 - Stage 2.5 HCOMM payload readiness：已经新增 `--run-hcomm-payload-smoke` 骨架，复用 Channel resource probe 并检查 HCOMM primitive call-shape / 符号；当前预期输出 unsupported / `fallback=hccl-p2p`，不误报真实 payload copy。
 - Full matrix：Host B (CANN 9.0) 空闲主机上已通过 HCCS_SW 卡对 required 步；Host A (CANN 8.5) 构建、CTest、sim 和 feature probe 通过，但 smoke 因 NPU 被长任务占满导致 VNIC socket listen 失败，需卡空闲后复测。
 - Stage 3A：`storage_hbm=hccl-p2p-staging` 已在 Host B (CANN 9.0) 用本地 SSD 输入文件和 16 MiB byte payload 通过，路径为 `file -> host -> proxy HBM -> HcclSend/HcclRecv -> compute HBM`。
@@ -188,7 +188,7 @@ flowchart TB
 | HCCL build path | `FLUME_ENABLE_HCCL=ON` | 查找 HCCL / HCOMM / ACL / securec / ascendcl | `tools/flume_tool.py ascend-probe` |
 | HCCL collective | `HcclAllReduce` / `HcclAllGather` | 已真机验证 root-info 和 init-all 路径 | `--run-hccl-smoke` |
 | HCCL P2P baseline | `HcclSend` / `HcclRecv` | 已真机验证 Host A HCCS_SW pair A | `--run-hccl-p2p-smoke` |
-| HCOMM Channel resource probe | `HcclGetHcclBuffer` / `HcclRankGraphGetLinks` / `HcclChannelAcquire` / `HcclChannelGetHcclBuffer` | 代码已接入并在 CANN 8.5 真机通过，默认 `engine=auto`；CANN 8.5 缺 `hccl_res_expt.h` 时降级 `cpu-ts` 并只验证 channel resource，`--hcomm-require-thread-export` 才验证 AICPU thread-export 前置能力 | `--run-hcomm-channel-probe` |
+| HCOMM Channel resource probe | `HcclGetHcclBuffer` / `HcclRankGraphGetLinks` / `HcclChannelAcquire` / `HcclChannelGetHcclBuffer` | 代码已接入并在 CANN 8.5 真机通过，默认 `engine=auto`；`HcclThreadExportToCommEngine` 声明+符号可用时选 `aicpu-ts`，否则降级 `cpu-ts` 并只验证 channel resource，`--hcomm-require-thread-export` 才验证 AICPU thread-export 前置能力 | `--run-hcomm-channel-probe` |
 | HCOMM payload readiness probe | `flume_hcomm_payload_probe_ex` / `--run-hcomm-payload-smoke` | 骨架已接入，复用 Channel resource 并检查 primitive capability；真实 backend 当前返回 unsupported / `fallback=hccl-p2p`，严格 copy 用 `--hcomm-require-payload-copy`；sim backend 可执行 payload copy | `--run-hcomm-payload-smoke` / `test_sim_hcomm_payload_copy` |
 | A3 symmetric wrapper | `flume_a3_*` | 按 CANN/HCCL 能力位编译和运行 | `test_sim_a3_symmetric_memory` / `--run-a3-symmetric-smoke` |
 | 工具化测试 | `tools/flume_tool.py` | env / local / ascend-probe / ascend-full-matrix / HCCL smoke / diagnostics | `logs/flume-check-*` |
@@ -624,7 +624,7 @@ hccl collective smoke passed: global_rank_size=2 ... init=root-info ... p2p_copy
 
 - **API 闭环**：已经有统一 C ABI、buffer handle、IO handle、状态码和错误信息。
 - **本地闭环**：没有 NPU 也能跑完整 mock/sim 回归，适合继续写上层逻辑和调度代码。
-- **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM；HCOMM Channel resource probe 已在 CANN 8.5 真机通过，probe 成功语义已收紧为 channel resource，不再把缺 thread-export 的 CANN 8.5 误报成 AICPU thread-export-ready。
+- **真机闭环**：root-info 和 init-all 已验证 base HCCL collective，Stage 2 `HcclSend` / `HcclRecv` P2P copy 已验证跨 HCCS_SW HBM -> HBM；HCOMM Channel resource probe 已在 CANN 8.5 真机通过，probe 成功语义已收紧为 channel resource。thread-export 现通过函数声明+可链接符号判断，不再由 CANN 版本号或可选头文件布局推断。
 - **诊断闭环**：工具能够收集环境、topology、HCCL 日志、rank-table、diagnostics，已经能区分 host TCP、device RoCE、NPU VNIC、driver P2P policy。
 - **路线闭环**：rank-table 失败路径被降级为诊断分支，公开 HCCL P2P 被确认为当前可靠 baseline，Stage 3B.3B/3C launcher router 和 direct ACL readiness 已在 Host B 真机把 CANN/HCOMM 版本差异变成可诊断选择，下一步可以在不破坏 fallback 的前提下实现 AICPU/HCOMM primitive payload backend。
 

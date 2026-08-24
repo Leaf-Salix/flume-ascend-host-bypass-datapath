@@ -71,6 +71,27 @@ HCOMM_OPTIONAL_PRIMITIVE_NAMES = [
     "HcommWriteWithNotifyNbiOnThread",
 ]
 
+HCOMM_THREAD_EXPORT_PROBE = r"""
+#include <cstdint>
+#if __has_include(<hccl/hccl_res.h>)
+#include <hccl/hccl_res.h>
+#else
+#error no hccl_res header
+#endif
+#if __has_include(<hccl/hccl_res_expt.h>)
+#include <hccl/hccl_res_expt.h>
+#endif
+int main() {
+  HcclComm comm = nullptr;
+  ThreadHandle thread = 0;
+  ThreadHandle exported = 0;
+  auto ret = HcclThreadExportToCommEngine(
+      comm, 1, &thread, COMM_ENGINE_AICPU_TS, &exported);
+  (void)ret;
+  return 0;
+}
+"""
+
 HCOMM_CALL_SHAPE_PROBE = r"""
 #include <cstdint>
 #if __has_include(<hccl/hcomm_primitives.h>)
@@ -620,6 +641,48 @@ def collect_hcomm_primitive_compile_probe(include_roots: list[Path]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def collect_hcomm_thread_export_probe(include_roots: list[Path],
+                                       lib_roots: list[Path]) -> str:
+    base_header = find_header(include_roots, "hccl/hccl_res.h")
+    expt_header = find_header(include_roots, "hccl/hccl_res_expt.h")
+    declaration_sources: list[str] = []
+    for label, path in (("base", base_header), ("experimental", expt_header)):
+        if path is None:
+            continue
+        try:
+            header_text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "HcclThreadExportToCommEngine" in header_text:
+            declaration_sources.append(label)
+
+    lib_path = find_library(lib_roots, "libhcomm.so")
+    if lib_path is None:
+        lib_path = find_library(lib_roots, "libhcomm.dylib")
+    symbol_present = False
+    if lib_path is not None:
+        symbol_present = "HcclThreadExportToCommEngine" in collect_symbols(
+            lib_path)
+
+    lines = [
+        "# HCOMM thread-export compatibility probe",
+        "",
+        "declaration_source: " +
+        ("+".join(declaration_sources) if declaration_sources else "missing"),
+        f"hccl_res: {base_header if base_header else 'missing'}",
+        f"hccl_res_expt: {expt_header if expt_header else 'missing'}",
+        f"libhcomm_symbol: {'present' if symbol_present else 'missing'}",
+        "",
+        "The compile probe accepts either header layout. The experimental "
+        "header is optional when hccl_res.h already declares the API.",
+        "",
+    ]
+    lines.append(compile_probe_text(
+        include_roots, HCOMM_THREAD_EXPORT_PROBE,
+        "hcomm_thread_export_probe"))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def collect_lib_manifest(ascend_home: Path, lib_roots: list[Path]) -> str:
     lines = ["# lib roots"]
     for root in lib_roots:
@@ -759,6 +822,8 @@ def write_summary(
         "- `hcomm-primitive-headers.txt`: HCOMM primitive declaration snippets",
         "- `hcomm-primitive-call-shape-probe.txt`: compile-only probe for "
         "Flume's current HCOMM primitive call shape",
+        "- `hcomm-thread-export-probe.txt`: declaration-layout, symbol, and "
+        "compile-only probe for HcclThreadExportToCommEngine",
         "- `lib-manifest.txt`: text library manifest with sizes",
         "- `lib-symbols/`: `nm -D` or `readelf -Ws` output for key libraries",
         "- `hcomm-primitive-symbols.txt`: targeted HCOMM primitive symbols in "
@@ -813,6 +878,8 @@ def main() -> int:
                collect_hcomm_primitive_headers(include_roots))
     write_text(out_dir / "hcomm-primitive-call-shape-probe.txt",
                collect_hcomm_primitive_compile_probe(include_roots))
+    write_text(out_dir / "hcomm-thread-export-probe.txt",
+               collect_hcomm_thread_export_probe(include_roots, lib_roots))
     write_text(out_dir / "lib-manifest.txt",
                collect_lib_manifest(ascend_home, lib_roots))
     write_text(out_dir / "hcomm-primitive-symbols.txt",

@@ -95,11 +95,12 @@
 #define FLUME_HAVE_ACL_SYNC_STREAM_TIMEOUT 0
 #endif
 
-#if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_CHANNEL_RES
+#if FLUME_ENABLE_HCCL && \
+    (FLUME_HAVE_HCOMM_CHANNEL_RES || FLUME_HAVE_HCOMM_THREAD_EXPORT)
 #if __has_include(<hccl/hccl_res.h>)
 #include <hccl/hccl_res.h>
 #else
-#error "FLUME_HAVE_HCOMM_CHANNEL_RES=1 requires hccl/hccl_res.h"
+#error "HCOMM resource features require hccl/hccl_res.h"
 #endif
 #endif
 
@@ -122,8 +123,6 @@
 #if FLUME_ENABLE_HCCL && FLUME_HAVE_HCOMM_THREAD_EXPORT
 #if __has_include(<hccl/hccl_res_expt.h>)
 #include <hccl/hccl_res_expt.h>
-#else
-#error "FLUME_HAVE_HCOMM_THREAD_EXPORT=1 requires hccl/hccl_res_expt.h"
 #endif
 #endif
 
