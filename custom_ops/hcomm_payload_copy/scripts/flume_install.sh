@@ -163,6 +163,14 @@ validate_whitelist_args() {
         fail "AICPU whitelist directory is not writable: $(dirname "${whitelist_path}")"
         return 1
     fi
+    if [ -s "${whitelist_path}" ]; then
+        local last_byte
+        last_byte=$(tail -c 1 "${whitelist_path}" | od -An -t u1 | tr -d '[:space:]')
+        if [ "${last_byte}" != "10" ]; then
+            fail "AICPU whitelist must end with a newline for reversible editing"
+            return 1
+        fi
+    fi
     case "${package_path}" in
         ""|/*|*..*|*[!A-Za-z0-9_./-]*)
             fail "invalid relative AICPU package path: ${package_path}"
@@ -205,7 +213,7 @@ register_package() {
         return 1
     fi
     {
-        printf '\n%s\n' "${FLUME_BEGIN_MARKER}"
+        printf '%s\n' "${FLUME_BEGIN_MARKER}"
         printf 'name:%s\n' "${FLUME_PACKAGE_NAME}"
         printf 'install_path:2\n'
         printf 'optional:true\n'

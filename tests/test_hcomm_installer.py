@@ -86,6 +86,7 @@ def main() -> int:
             "name:unrelated.tar.gz\npackage_path:opp/vendors/other\n",
             encoding="utf-8")
         whitelist.chmod(0o640)
+        original_whitelist = whitelist.read_bytes()
         first = run_installer(installer, whitelist, "--install",
                               env=common_env)
         assert first.returncode == 0, first.stderr + first.stdout
@@ -124,6 +125,7 @@ def main() -> int:
         after_remove = whitelist.read_text(encoding="utf-8")
         assert PACKAGE not in after_remove
         assert "name:unrelated.tar.gz" in after_remove
+        assert whitelist.read_bytes() == original_whitelist
         assert stat.S_IMODE(whitelist.stat().st_mode) == 0o640
         assert "aicpu_whitelist_action=removed-managed" in removed.stdout
 
@@ -135,6 +137,15 @@ def main() -> int:
                  "FLUME_TEST_BASE_RC": "9"})
         assert failed_install.returncode != 0
         assert base_failure.read_text(encoding="utf-8") == "# unchanged\n"
+
+        no_final_newline = tmp / "no-final-newline.ini"
+        no_final_newline.write_bytes(b"# no final newline")
+        log.unlink(missing_ok=True)
+        newline_rejected = run_installer(
+            installer, no_final_newline, "--install", env=common_env)
+        assert newline_rejected.returncode != 0
+        assert no_final_newline.read_bytes() == b"# no final newline"
+        assert not log.exists(), "base installer ran before newline rejection"
 
         external = tmp / "external.ini"
         external.write_text(exact_entry(), encoding="utf-8")
