@@ -265,4 +265,25 @@ else()
     RENAME libflume_hcomm_payload_aicpu_kernel.json
     COMPONENT hccl
   )
+  set(FLUME_HCOMM_BASE_INSTALLER
+    "${CMAKE_SOURCE_DIR}/scripts/custom/install.sh")
+  message(STATUS
+    "flume_custom_installer=whitelist-transaction-v1")
+  if(NOT EXISTS "${FLUME_HCOMM_BASE_INSTALLER}")
+    message(FATAL_ERROR
+      "Flume custom-op packaging requires the HCCL base installer at "
+      "${FLUME_HCOMM_BASE_INSTALLER}")
+  endif()
+  install(PROGRAMS
+    "${FLUME_HCOMM_BASE_INSTALLER}"
+    DESTINATION ${CUSTOM_OPS_OPP_SCRIPTS_PATH}
+    RENAME flume_base_install.sh
+    COMPONENT hccl
+  )
+  install(PROGRAMS
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/flume_install.sh"
+    DESTINATION ${CUSTOM_OPS_OPP_SCRIPTS_PATH}
+    RENAME install.sh
+    COMPONENT hccl
+  )
 endif()

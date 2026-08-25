@@ -1045,12 +1045,21 @@ def main() -> int:
             [whitelist], flume_tool.HCOMM_CUSTOM_OP_TAR)
         assert whitelist_state == "ready"
         assert whitelist_path == str(whitelist)
+        install_command = flume_tool.HcommCustomOpInstallCommand(
+            tmp / "flume.run", whitelist.resolve(), "flume")
+        assert "--install" in install_command
+        assert "--quiet" in install_command
+        assert "--flume-register-whitelist" in install_command
+        assert f"--flume-whitelist-path={whitelist.resolve()}" in install_command
+        assert f"--install-path={policy_cann.resolve()}" in install_command
+        assert ("--flume-whitelist-package-path="
+                "opp/vendors/flume/aicpu/kernel") in install_command
         mapping_text = (
             "| NPU ID | Chip ID | Chip Logic ID |\n"
-            "| 5 | 0 | 10 |\n"
-            "| 6 | 0 | 12 |\n")
+            "| 50 | 0 | 100 |\n"
+            "| 51 | 0 | 102 |\n")
         assert flume_tool.ParseNpuSmiInfoMDeviceCardMap(mapping_text) == {
-            "10": "5", "12": "6"}
+            "100": "50", "102": "51"}
         assert flume_tool._ParseNpuSmiProperty(
             "Custom-op-secverify-enable : True\n",
             "custom-op-secverify-enable") == "1"
@@ -1061,13 +1070,13 @@ def main() -> int:
             "Custom-op-secverify-mode : 0\n",
             "custom-op-secverify-mode") == "0"
         cards, mapping_detail, mapping_source = flume_tool.ResolveNpuSmiCards(
-            ["10", "12"], mapping_text)
-        assert cards == ["5", "6"]
-        assert mapping_detail == "10->5,12->6"
+            ["100", "102"], mapping_text)
+        assert cards == ["50", "51"]
+        assert mapping_detail == "100->50,102->51"
         assert mapping_source == "npu-smi-info-m"
         fallback_cards, _, fallback_source = flume_tool.ResolveNpuSmiCards(
-            ["10", "12"], "unparseable")
-        assert fallback_cards == ["5", "6"]
+            ["100", "102"], "unparseable")
+        assert fallback_cards == ["50", "51"]
         assert fallback_source == "dual-die-fallback"
 
         class MappingPolicyRunner:
@@ -1107,13 +1116,13 @@ def main() -> int:
                 flume_tool.RunAicpuRuntimePolicyPreflight(
                     mapping_runner,
                     SimpleNamespace(cann_package_root=str(policy_cann),
-                                    hccl_devices="10,12",
+                                    hccl_devices="100,102",
                                     step_timeout_sec=30),
                     required=True))
         assert mapped_result.returncode == 0
-        assert mapped_policy.device_card_map == "10->5,12->6"
+        assert mapped_policy.device_card_map == "100->50,102->51"
         assert mapped_policy.card_mapping_source == "npu-smi-info-m"
-        assert mapped_policy.queried_cards == "5,6"
+        assert mapped_policy.queried_cards == "50,51"
         assert mapped_policy.secverify_enable == "1"
         assert mapped_policy.secverify_mode == "0"
         assert mapped_policy.security == "ready-for-source-built-unsigned"
@@ -1121,10 +1130,10 @@ def main() -> int:
             command for command in mapping_runner.commands
             if any(item.startswith("custom-op-secverify-")
                    for item in command)]
-        assert {command[-1] for command in property_commands} == {"5", "6"}
-        assert all(command[-1] not in {"10", "12"}
+        assert {command[-1] for command in property_commands} == {"50", "51"}
+        assert all(command[-1] not in {"100", "102"}
                    for command in property_commands)
-        assert "npu_smi_device_card_map=10->5,12->6" in (
+        assert "npu_smi_device_card_map=100->50,102->51" in (
             mapping_runner.static_lines)
 
         policy_runner = flume_tool.Runner(tmp / "policy-logs")
@@ -2010,10 +2019,15 @@ def main() -> int:
         assert found_json == installed_json
         assert found_tar == installed_tar
         next_steps = flume_tool.WriteCustomOpInstallNextSteps(
-            tmp, "flume", found_json, found_tar)
+            tmp, "flume", found_json, found_tar, tmp / "flume.run",
+            whitelist.resolve())
         next_steps_text = next_steps.read_text(encoding="utf-8")
         assert str(installed_json) in next_steps_text
         assert "hcomm-payload-strict-positive" in next_steps_text
+        assert "--uninstall --quiet" in next_steps_text
+        assert "--flume-register-whitelist" in next_steps_text
+        assert f"--flume-whitelist-path={whitelist.resolve()}" in next_steps_text
+        assert "removes only the Flume-owned whitelist block" in next_steps_text
         build_steps = flume_tool.WritePayloadPackageBuildNextSteps(
             tmp, SimpleNamespace(hccl_source_root=str(repo / "refer" /
                                                       "cann-src" / "hccl")))

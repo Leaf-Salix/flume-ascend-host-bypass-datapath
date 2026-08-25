@@ -234,7 +234,9 @@ python3 tools/flume_tool.py \
   --custom-op-build-mode payload \
   hcomm-custom-op-build
 
-# Optional: install the generated .run package and verify installed visibility.
+# Optional: install the generated .run package, register its AICPU whitelist
+# entry, and verify installed visibility. This requires administrator write
+# access to the selected CANN installation and whitelist.
 python3 tools/flume_tool.py \
   --hccl-source-root <hccl-source-root> \
   --custom-op-build-mode payload \
@@ -257,7 +259,20 @@ bash build.sh \
   --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 
-./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
+./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run \
+  --install --quiet \
+  --install-path=<cann-root> \
+  --flume-register-whitelist \
+  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
+  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
+
+# Symmetric cleanup. Only a Flume-managed whitelist block is removed.
+./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run \
+  --uninstall --quiet \
+  --install-path=<cann-root> \
+  --flume-register-whitelist \
+  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
+  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
 ```
 
 The export command writes the runtime-loadable layout expected by Flume under
@@ -266,9 +281,13 @@ runs package preflight against that root. It is useful when the target machine
 should not be modified by a `.run --install` step.
 
 `--install-custom-op-package` only installs after the build artifact preflight
-passes. If the JSON, AICPU tar, V4 payload entrypoint, or primitive-payload
-build marker is missing, the helper stops before touching the target CANN/OPP
-install.
+passes and an existing AICPU whitelist is resolved. If the JSON, AICPU tar, V4
+payload entrypoint, primitive-payload build marker, or whitelist preflight is
+missing, the helper stops before touching the target CANN/OPP install. The
+installer delegates file deployment to the original CANN package installer and
+atomically manages only Flume's marked whitelist block. It never changes the
+driver secverify policy. Reinstall is idempotent; conflicting same-name entries
+are rejected, and a failed post-copy registration triggers package rollback.
 
 The primitive payload package is the one required for
 `stage3b3e_payload_copy=passed`.

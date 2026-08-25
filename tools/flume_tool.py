@@ -1451,6 +1451,14 @@ def AicpuWhitelistCandidates(args: argparse.Namespace) -> list[Path]:
     return candidates
 
 
+def ResolveAicpuWhitelistInstallPath(
+        args: argparse.Namespace) -> Optional[Path]:
+    for path in AicpuWhitelistCandidates(args):
+        if path.is_file():
+            return path.resolve()
+    return None
+
+
 def InspectAicpuWhitelist(
         candidates: Iterable[Path], package_name: str
 ) -> tuple[str, str]:
@@ -8716,6 +8724,19 @@ def SelectCustomOpRunPackage(run_files: list[Path]) -> Optional[Path]:
     return sorted(preferred or run_files)[0]
 
 
+def HcommCustomOpInstallCommand(run_package: Path, whitelist_path: Path,
+                                vendor: str) -> list[str]:
+    cann_root = whitelist_path.parent.parent
+    package_path = f"opp/vendors/{vendor}/aicpu/kernel"
+    return [
+        "bash", str(run_package), "--install", "--quiet",
+        f"--install-path={cann_root}",
+        "--flume-register-whitelist",
+        f"--flume-whitelist-path={whitelist_path}",
+        f"--flume-whitelist-package-path={package_path}",
+    ]
+
+
 def FindInstalledCustomOpRuntimeArtifacts(
         vendor: str, extra_roots: Optional[Iterable[str]] = None
 ) -> tuple[Optional[Path], Optional[Path]]:
@@ -8732,6 +8753,8 @@ def WriteCustomOpInstallNextSteps(
         vendor: str,
         installed_json: Optional[Path],
         installed_tar: Optional[Path],
+        run_package: Optional[Path] = None,
+        whitelist_path: Optional[Path] = None,
 ) -> Path:
     note = run_dir / "HCOMM_CUSTOM_OP_INSTALL_NEXT_STEPS.txt"
     json_text = str(installed_json) if installed_json else "<not-found>"
@@ -8760,6 +8783,22 @@ def WriteCustomOpInstallNextSteps(
         "when multiple CANN/OPP roots are present because strict-positive "
         "runtime launch treats that JSON as authoritative.",
     ])
+    if run_package is not None and whitelist_path is not None:
+        cann_root = whitelist_path.parent.parent
+        lines.extend([
+            "",
+            "Symmetric cleanup for this installation:",
+            f"bash {run_package} --uninstall --quiet \\",
+            f"  --install-path={cann_root} \\",
+            "  --flume-register-whitelist \\",
+            f"  --flume-whitelist-path={whitelist_path} \\",
+            "  --flume-whitelist-package-path="
+            f"opp/vendors/{vendor}/aicpu/kernel",
+            "",
+            "This removes package files through the CANN base installer and "
+            "removes only the Flume-owned whitelist block. It never changes "
+            "the driver secverify policy.",
+        ])
     note.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return note
 
@@ -9438,13 +9477,48 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
                 "hcomm-custom-op-install", ["<missing-run-package>"], 1, 0.0,
                 setup_log, True))
             return runner.write_summary()
+        whitelist_path = ResolveAicpuWhitelistInstallPath(args)
+        if whitelist_path is None:
+            setup_log = runner.run_dir / "CUSTOM_OP_INSTALL_ERROR.txt"
+            checked = "\n".join(
+                f"- {path}" for path in AicpuWhitelistCandidates(args))
+            setup_log.write_text(
+                "cannot install Flume HCOMM custom-op package: no existing "
+                "AICPU whitelist was found\n"
+                "The explicit install path registers and owns one whitelist "
+                "entry, but it never creates a replacement CANN policy file.\n"
+                "checked:\n"
+                f"{checked}\n",
+                encoding="utf-8",
+            )
+            print(f"[failed] custom-op install setup -> {setup_log}")
+            runner.results.append(StepResult(
+                "hcomm-custom-op-install", ["<missing-aicpu-whitelist>"], 1,
+                0.0, setup_log, True))
+            return runner.write_summary()
         install_result = runner.run(
             "hcomm-custom-op-install",
-            ["bash", str(run_package), "--install"],
+            HcommCustomOpInstallCommand(
+                run_package, whitelist_path, vendor),
             required=True,
             timeout_seconds=args.hccl_smoke_timeout_sec,
         )
         if install_result.returncode == 0:
+            whitelist_state, installed_whitelist_path = InspectAicpuWhitelist(
+                [whitelist_path], HCOMM_CUSTOM_OP_TAR)
+            whitelist_result = runner.record_static(
+                "hcomm-custom-op-installed-whitelist",
+                [
+                    f"aicpu_whitelist={whitelist_state}",
+                    f"aicpu_whitelist_path={installed_whitelist_path}",
+                    "aicpu_whitelist_owner=flume-installer-or-existing",
+                    "secverify_changes=none",
+                ],
+                returncode=0 if whitelist_state == "ready" else 1,
+                required=True,
+            )
+            if whitelist_result.returncode != 0:
+                return runner.write_summary()
             installed_args = copy.copy(args)
             installed_args.custom_op_json = ""
             installed_args.custom_op_aicpu_tar = ""
@@ -9460,7 +9534,8 @@ def run_hcomm_custom_op_build(args: argparse.Namespace) -> int:
                 installed_json, installed_tar = FindInstalledCustomOpRuntimeArtifacts(
                     vendor, [args.custom_op_root])
                 next_steps = WriteCustomOpInstallNextSteps(
-                    runner.run_dir, vendor, installed_json, installed_tar)
+                    runner.run_dir, vendor, installed_json, installed_tar,
+                    run_package, whitelist_path)
                 print(f"[ok] custom-op install next steps -> {next_steps}")
     return runner.write_summary()
 
@@ -11152,10 +11227,11 @@ def parse_args() -> argparse.Namespace:
                               "exposes hccl_launch.h."))
     parser.add_argument("--install-custom-op-package", action="store_true",
                         help=("After hcomm-custom-op-build succeeds, install "
-                              "the generated .run package and verify that the "
-                              "installed package is visible to Flume. This is "
-                              "explicit opt-in because it changes the target "
-                              "CANN/OPP installation."))
+                              "the generated .run package, atomically register "
+                              "its AICPU whitelist entry, and verify installed "
+                              "visibility. This is explicit opt-in because it "
+                              "changes the target CANN/OPP installation and "
+                              "whitelist."))
     parser.add_argument("--custom-op-export-root", default="",
                         help=("Destination root for hcomm-custom-op-export-runtime. "
                               "The command writes an OPP runtime layout under "
