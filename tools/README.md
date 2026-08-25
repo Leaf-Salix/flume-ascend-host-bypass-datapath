@@ -447,33 +447,12 @@ legacy public-HCCL-launch notify-only 入口时，才额外传
 `FLUME_HCOMM_PAYLOAD_BUILD_PUBLIC_HCCL_LAUNCH=ON`。如果 Host B 上还没有 HCCL
 source tree，该命令会在 build 前清晰报 `missing HCCL source build.sh`，
 这表示缺 packaging toolchain，不是 Flume runtime 或 HCOMM payload kernel
-逻辑失败。`--install-custom-op-package` 会执行生成的 `.run --install`，向已有的
-`ascend_package_load.ini` 原子登记 Flume AICPU package，再跑一次
-installed-package preflight；它是显式 opt-in，因为会修改目标 CANN/OPP 和
-package whitelist。该操作需要相应管理员写权限，但不会执行 `npu-smi set` 或修改
-secverify policy。安装前必须先通过 build artifact preflight；如果 JSON、AICPU
-tar、V4 payload entrypoint、primitive-payload marker 或 whitelist 前置检查不完整，
-工具会在复制 package 前拒绝安装。
-
-生成的 `.run` 保留 CANN 原安装器作为文件部署后端，Flume 包装层只管理自己的
-whitelist 条目。登记使用 ownership marker，重复安装幂等；`--uninstall` 只删除
-Flume 创建且 marker 完整的条目，不删除管理员预先配置的同名条目。若同名条目的
-字段与当前 package 不一致，安装会拒绝覆盖；若文件部署后登记失败，安装器会调用
-CANN 原卸载路径回滚本次 package 文件。独立调用 `.run` 时必须显式传入登记参数：
-
-```bash
-bash <flume-custom-op.run> --install --quiet \
-  --install-path=<cann-root> \
-  --flume-register-whitelist \
-  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
-  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
-
-bash <flume-custom-op.run> --uninstall --quiet \
-  --install-path=<cann-root> \
-  --flume-register-whitelist \
-  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
-  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
-```
+逻辑失败。Stage 3B.3G 的系统安装实验现已封存：CANN makeself 会在 packaged
+installer 运行前拒绝 Flume 所需的 whitelist 参数。继续适配这层不再是当前主线。
+`--install-custom-op-package` 仅为 CLI 兼容保留，输出 `status=TODO`、
+`stage3b3g_system_install=parked`、`system_changes=none` 和
+`fallback=hccl-p2p`，不会执行 `.run`，也不会修改 OPP、whitelist 或 secverify。
+生成的 package 只继续用于静态 qualification；不要手工执行其 `.run --install`。
 
 没有现成 source tree 时可先运行 `hcomm-custom-op-source-prepare`，或给
 `hcomm-custom-op-build` 追加 `--prepare-hccl-source`。工具会把固定 revision
@@ -507,9 +486,8 @@ CANN/OPP。`hcomm-aicpu-qualification-gate` 要求静态
 需要 card id；工具会先解析只读的 `npu-smi info -m`，对所有唯一 card 查询并
 输出 `npu_smi_device_card_map`、`npu_smi_card_mapping_source` 和
 `npu_smi_queried_cards`。解析失败时才显式使用 Ascend 910 双 die fallback，
-不会再把 chip id 直接当 card id。这个 preflight 始终只读；只有显式的
-`--install-custom-op-package` 路径会登记 whitelist，而且仍要求调用者具备系统文件
-写权限。
+不会再把 chip id 直接当 card id。这个 preflight 始终只读；当前没有工具路径会
+登记 whitelist 或修改系统安装。
 不同 `npu-smi` 版本输出的 enable 值可能是 `True/False` 或 `1/0`，工具会先
 统一归一化为 `1/0`，再执行多 card policy 判定。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
@@ -522,7 +500,7 @@ preflight 的 JSON/tar 复制到
 C++ launcher，避免 package preflight 通过但 ACL loader 找不到 matching
 AICPU tar。
 
-安装包后可以先做不依赖 NPU 的包体自检：
+构建 package 后可以先做不依赖 NPU 的包体自检：
 
 ```bash
 # 检查默认 canary package

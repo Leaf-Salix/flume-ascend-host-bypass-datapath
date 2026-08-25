@@ -190,9 +190,9 @@ Expected markers:
   `payload_thread_notify=unavailable payload_completion=stream-sync+status-word`
 - real launch failure: `stage3b3a_kernel_launch=failed`
 
-The AICPU kernel must still be packaged and deployed through the CANN/HCCL
-custom-op packaging flow before a target host can load
-`libflume_hcomm_payload_aicpu_kernel.so`.
+The AICPU kernel can still be packaged for static qualification through the
+CANN/HCCL custom-op flow. Runtime deployment is parked and is not part of the
+current Flume mainline.
 
 Packaging sketch:
 
@@ -209,7 +209,7 @@ bash build.sh \
   --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 
-./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run --install
+# Do not install the generated .run package. See the parked Stage 3B.3G note.
 ```
 
 By default this builds the no-internal-header canary package. To build the
@@ -234,9 +234,7 @@ python3 tools/flume_tool.py \
   --custom-op-build-mode payload \
   hcomm-custom-op-build
 
-# Optional: install the generated .run package, register its AICPU whitelist
-# entry, and verify installed visibility. This requires administrator write
-# access to the selected CANN installation and whitelist.
+# Compatibility diagnostic: this flag is parked and does not install.
 python3 tools/flume_tool.py \
   --hccl-source-root <hccl-source-root> \
   --custom-op-build-mode payload \
@@ -259,35 +257,21 @@ bash build.sh \
   --ops=hcomm_payload \
   --custom_ops_path=<flume-repo>/custom_ops/hcomm_payload_copy
 
-./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run \
-  --install --quiet \
-  --install-path=<cann-root> \
-  --flume-register-whitelist \
-  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
-  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
-
-# Symmetric cleanup. Only a Flume-managed whitelist block is removed.
-./build_out/cann-hccl_custom_hcomm_payload_linux-<arch>.run \
-  --uninstall --quiet \
-  --install-path=<cann-root> \
-  --flume-register-whitelist \
-  --flume-whitelist-path=<cann-root>/conf/ascend_package_load.ini \
-  --flume-whitelist-package-path=opp/vendors/flume/aicpu/kernel
+# Do not run the generated .run package. Stage 3B.3G system installation is
+# parked because the CANN makeself wrapper rejects the required Flume whitelist
+# arguments before the packaged installer runs.
 ```
 
-The export command writes the runtime-loadable layout expected by Flume under
-`<temporary-custom-op-root>/opp/vendors/flume/aicpu/{config,kernel}` and then
-runs package preflight against that root. It is useful when the target machine
-should not be modified by a `.run --install` step.
+The export command writes the layout expected by Flume under
+`<temporary-custom-op-root>/opp/vendors/flume/aicpu/{config,kernel}` and runs
+static package preflight against that root. It is retained for ABI/package
+inspection only and does not claim AICPU runtime admission.
 
-`--install-custom-op-package` only installs after the build artifact preflight
-passes and an existing AICPU whitelist is resolved. If the JSON, AICPU tar, V4
-payload entrypoint, primitive-payload build marker, or whitelist preflight is
-missing, the helper stops before touching the target CANN/OPP install. The
-installer delegates file deployment to the original CANN package installer and
-atomically manages only Flume's marked whitelist block. It never changes the
-driver secverify policy. Reinstall is idempotent; conflicting same-name entries
-are rejected, and a failed post-copy registration triggers package rollback.
+`--install-custom-op-package` is retained only for CLI compatibility. It emits
+`status=TODO`, `stage3b3g_system_install=parked`, `system_changes=none`, and
+`fallback=hccl-p2p`; it never executes the generated `.run` package. The
+transactional installer prototype remains in history for later work, but it is
+not on the Flume storage-direct mainline.
 
 The primitive payload package is the one required for
 `stage3b3e_payload_copy=passed`.

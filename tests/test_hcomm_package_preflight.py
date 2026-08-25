@@ -1045,15 +1045,6 @@ def main() -> int:
             [whitelist], flume_tool.HCOMM_CUSTOM_OP_TAR)
         assert whitelist_state == "ready"
         assert whitelist_path == str(whitelist)
-        install_command = flume_tool.HcommCustomOpInstallCommand(
-            tmp / "flume.run", whitelist.resolve(), "flume")
-        assert "--install" in install_command
-        assert "--quiet" in install_command
-        assert "--flume-register-whitelist" in install_command
-        assert f"--flume-whitelist-path={whitelist.resolve()}" in install_command
-        assert f"--install-path={policy_cann.resolve()}" in install_command
-        assert ("--flume-whitelist-package-path="
-                "opp/vendors/flume/aicpu/kernel") in install_command
         mapping_text = (
             "| NPU ID | Chip ID | Chip Logic ID |\n"
             "| 50 | 0 | 100 |\n"
@@ -2019,15 +2010,18 @@ def main() -> int:
         assert found_json == installed_json
         assert found_tar == installed_tar
         next_steps = flume_tool.WriteCustomOpInstallNextSteps(
-            tmp, "flume", found_json, found_tar, tmp / "flume.run",
-            whitelist.resolve())
+            tmp, "flume", found_json, found_tar)
         next_steps_text = next_steps.read_text(encoding="utf-8")
         assert str(installed_json) in next_steps_text
-        assert "hcomm-payload-strict-positive" in next_steps_text
-        assert "--uninstall --quiet" in next_steps_text
-        assert "--flume-register-whitelist" in next_steps_text
-        assert f"--flume-whitelist-path={whitelist.resolve()}" in next_steps_text
-        assert "removes only the Flume-owned whitelist block" in next_steps_text
+        assert "stage3b3g_system_install=parked" in next_steps_text
+        assert "system_changes=none" in next_steps_text
+        assert "fallback=hccl-p2p" in next_steps_text
+        parked_lines = flume_tool.HcommSystemInstallParkedLines()
+        assert "status=TODO" in parked_lines
+        assert "stage3b3g_system_install=parked" in parked_lines
+        assert "action=none" in parked_lines
+        assert "system_changes=none" in parked_lines
+        assert "fallback=hccl-p2p" in parked_lines
         build_steps = flume_tool.WritePayloadPackageBuildNextSteps(
             tmp, SimpleNamespace(hccl_source_root=str(repo / "refer" /
                                                       "cann-src" / "hccl")))
@@ -2035,7 +2029,9 @@ def main() -> int:
         assert "hcomm-custom-op-direct-build" in build_steps_text
         assert "host-diagnostic" in build_steps_text
         assert "--custom-op-build-mode payload" in build_steps_text
-        assert "--install-custom-op-package" in build_steps_text
+        assert "--install-custom-op-package" not in build_steps_text
+        assert "system installation is parked" in build_steps_text
+        assert "fallback=hccl-p2p" in build_steps_text
         assert "hcomm-custom-op-build" in build_steps_text
         assert "--custom-op-export-root <temporary-custom-op-root>" in build_steps_text
         assert "hcomm-custom-op-export-runtime" in build_steps_text
