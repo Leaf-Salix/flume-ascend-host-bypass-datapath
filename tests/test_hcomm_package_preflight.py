@@ -973,6 +973,12 @@ def main() -> int:
         assert "elseif(COMMAND generate_stub)" in custom_op_cmake
         assert "generate_stub(ccl_kernel)" in custom_op_cmake
         assert "ccl_kernel_link_mode=${" in custom_op_cmake
+        assert "FLUME_HCOMM_PAYLOAD_BINARY_RELATIVE_PATH" in custom_op_cmake
+        assert "signed_aicpu_install_source=${" in custom_op_cmake
+        assert ("${BUILD_DEVICE_DIR}/signatures/"
+                not in custom_op_cmake)
+        assert ("signatures_aicpu_flume_hcomm_payload_tar_gz/"
+                "aicpu_flume_hcomm_payload.tar.gz" in custom_op_cmake)
 
         build_hccl = tmp / "build-hccl"
         build_hccl.mkdir()

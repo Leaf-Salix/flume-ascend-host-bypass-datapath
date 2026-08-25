@@ -464,6 +464,9 @@ marker 的 staging 目录，兼容 CMake 4.x 对跨树 `add_subdirectory` 的限
 `generate_stub(ccl_kernel)`，并打印
 `ccl_kernel_link_mode=generated-stub`。该 stub 只解决构建
 边界，不能替代后续 standalone canary 和 strict payload 真机验证。
+host CPack 阶段会用 custom-op 相对 binary path 映射 device 签名产物，并打印
+`signed_aicpu_install_source=<path>`；它不会再假设签名包固定落在
+`build_device/signatures/`。
 
 package preflight 会输出 `package_provenance`、`package_qualification`、
 `package_manifest`、`package_elf_machine`、`package_needed` 和

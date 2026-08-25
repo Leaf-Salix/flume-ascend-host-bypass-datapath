@@ -248,8 +248,14 @@ else()
     set(FLUME_HCOMM_PAYLOAD_AICPU_JSON
       ${CMAKE_CURRENT_SOURCE_DIR}/aicpu/libflume_hcomm_payload_aicpu_kernel_payload.json)
   endif()
+  file(RELATIVE_PATH FLUME_HCOMM_PAYLOAD_BINARY_RELATIVE_PATH
+    "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+  set(FLUME_HCOMM_PAYLOAD_SIGNED_AICPU_PACKAGE
+    "${BUILD_DEVICE_DIR}/${FLUME_HCOMM_PAYLOAD_BINARY_RELATIVE_PATH}/signatures_aicpu_flume_hcomm_payload_tar_gz/aicpu_flume_hcomm_payload.tar.gz")
+  message(STATUS
+    "signed_aicpu_install_source=${FLUME_HCOMM_PAYLOAD_SIGNED_AICPU_PACKAGE}")
   install(FILES
-    ${BUILD_DEVICE_DIR}/signatures/aicpu_flume_hcomm_payload.tar.gz
+    ${FLUME_HCOMM_PAYLOAD_SIGNED_AICPU_PACKAGE}
     DESTINATION ${CUSTOM_OPS_OPP_AICPU_KERNEL_PATH}
     COMPONENT hccl
   )

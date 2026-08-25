@@ -39,6 +39,11 @@ marker-owned directory below the HCCL checkout. This keeps
 `add_subdirectory()` inside the HCCL source tree for CMake 4.x compatibility.
 The staging directory is removed after `build.sh` returns, including failed
 builds; Flume refuses to remove directories without its ownership marker.
+The host packaging configure maps its custom-op binary directory relative to
+the host build root onto the matching device build directory. The resulting
+`signed_aicpu_install_source` therefore follows CANN's per-subdirectory
+`add_cann_sign_file` output instead of assuming a fixed
+`build_device/signatures` location.
 
 The device package can then be built with:
 
