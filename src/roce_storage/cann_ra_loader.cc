@@ -48,7 +48,9 @@ void* OpenLibrary(const char* env_name, const char* fallback, std::string* error
 
 CannRaApi::~CannRaApi() { Close(); }
 
-bool CannRaApi::Open(std::string* error) {
+bool CannRaApi::Open(std::string* error) { return Open(true, error); }
+
+bool CannRaApi::Open(bool require_command_posting, std::string* error) {
   Close();
 #if !FLUME_HAVE_DLOPEN
   if (error != nullptr) *error = "dynamic library loading is unavailable on this host";
@@ -72,15 +74,18 @@ bool CannRaApi::Open(std::string* error) {
   FLUME_LOAD(ra_library_, ra_qp_destroy, "RaQpDestroy")
   FLUME_LOAD(ra_library_, ra_register_mr, "RaRegisterMr")
   FLUME_LOAD(ra_library_, ra_deregister_mr, "RaDeregisterMr")
-  FLUME_LOAD(ra_library_, ra_typical_send_wr, "RaTypicalSendWr")
   FLUME_LOAD(runtime_library_, rt_set_device, "rtSetDevice")
   FLUME_LOAD(runtime_library_, rt_open_net_service, "rtOpenNetService")
   FLUME_LOAD(runtime_library_, rt_close_net_service, "rtCloseNetService")
-  FLUME_LOAD(runtime_library_, rt_rdma_db_send, "rtRDMADBSend")
   FLUME_LOAD(acl_library_, acl_get_physical_device, "aclrtGetPhyDevIdByLogicDevId")
-  FLUME_LOAD(acl_library_, acl_malloc, "aclrtMalloc")
-  FLUME_LOAD(acl_library_, acl_free, "aclrtFree")
-  FLUME_LOAD(acl_library_, acl_memcpy, "aclrtMemcpy")
+  if (require_command_posting) {
+    FLUME_LOAD(ra_library_, ra_typical_send_wr, "RaTypicalSendWr")
+    FLUME_LOAD(runtime_library_, rt_rdma_db_send, "rtRDMADBSend")
+    FLUME_LOAD(acl_library_, acl_malloc, "aclrtMalloc")
+    FLUME_LOAD(acl_library_, acl_free, "aclrtFree")
+    FLUME_LOAD(acl_library_, acl_memcpy, "aclrtMemcpy")
+    command_posting_available_ = true;
+  }
 #undef FLUME_LOAD
   available_ = true;
   return true;
@@ -89,6 +94,7 @@ bool CannRaApi::Open(std::string* error) {
 
 void CannRaApi::Close() {
   available_ = false;
+  command_posting_available_ = false;
 #if FLUME_HAVE_DLOPEN
   if (acl_library_ != nullptr) dlclose(acl_library_);
   if (runtime_library_ != nullptr) dlclose(runtime_library_);

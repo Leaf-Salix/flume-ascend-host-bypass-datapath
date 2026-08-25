@@ -26,6 +26,7 @@ add_library(flume STATIC
   src/core/client.cc
   src/hcomm_payload/payload_backend.cc
   src/protocol/framing.cc
+  src/roce_storage/control_channel.cc
   src/roce_storage/roce_storage.cc
   src/roce_storage/cann_ra_loader.cc
   src/roce_storage/host_ra_session.cc
@@ -776,6 +777,21 @@ target_include_directories(flume PRIVATE
   ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include
 )
 
+# The Host-RA canary uses ACL for HBM allocation but does not require HCCL or
+# HCOMM. Discover ACL independently when only the RoCE storage path is enabled.
+if(FLUME_ENABLE_ROCE_STORAGE AND (NOT ACL_INCLUDE_DIR OR NOT ASCENDCL_LIBRARY))
+  find_path(ACL_INCLUDE_DIR
+    NAMES acl/acl.h
+    PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
+    PATH_SUFFIXES include include/external runtime/include/external
+  )
+  find_library(ASCENDCL_LIBRARY
+    NAMES ascendcl
+    PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
+    PATH_SUFFIXES lib64 lib
+  )
+endif()
+
 add_executable(flume-store-agent apps/flume-store-agent.cc)
 target_link_libraries(flume-store-agent PRIVATE flume)
 target_include_directories(flume-store-agent PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -819,13 +835,24 @@ if(FLUME_ENABLE_HCCL)
       ${SECUREC_INCLUDE_DIR}
   )
 
-  if(FLUME_ENABLE_ROCE_STORAGE)
-    add_executable(flume-roce-storage-client apps/flume-roce-storage-client.cc)
-    target_link_libraries(flume-roce-storage-client PRIVATE flume)
-    target_include_directories(flume-roce-storage-client PRIVATE
-      ${PROJECT_SOURCE_DIR}/src
-      ${ACL_INCLUDE_DIR})
-  endif()
+endif()
+
+if(FLUME_ENABLE_ROCE_STORAGE AND ACL_INCLUDE_DIR AND ASCENDCL_LIBRARY)
+  add_executable(flume-roce-storage-client apps/flume-roce-storage-client.cc)
+  target_link_libraries(flume-roce-storage-client PRIVATE flume ${ASCENDCL_LIBRARY})
+  target_include_directories(flume-roce-storage-client PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${ACL_INCLUDE_DIR})
+
+  add_executable(flume-roce-hbm-write-smoke apps/flume-roce-storage-client.cc)
+  target_link_libraries(flume-roce-hbm-write-smoke PRIVATE flume ${ASCENDCL_LIBRARY})
+  target_include_directories(flume-roce-hbm-write-smoke PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${ACL_INCLUDE_DIR})
+elseif(FLUME_ENABLE_ROCE_STORAGE)
+  message(STATUS
+    "ACL was not found; Host-RA protocol/server targets remain available, "
+    "but the NPU HBM smoke target is omitted")
 endif()
 
 if(FLUME_BUILD_TESTS)
@@ -975,8 +1002,63 @@ if(FLUME_BUILD_TESTS)
   target_include_directories(test_roce_storage_protocol PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME roce_storage_protocol COMMAND test_roce_storage_protocol)
 
+  add_executable(test_roce_tcp_control_sim tests/test_roce_tcp_control_sim.cc)
+  target_link_libraries(test_roce_tcp_control_sim PRIVATE flume)
+  target_include_directories(test_roce_tcp_control_sim PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME roce_tcp_control_sim COMMAND test_roce_tcp_control_sim)
+
   add_executable(test_cann_ra_loader tests/test_cann_ra_loader.cc)
   target_link_libraries(test_cann_ra_loader PRIVATE flume)
   target_include_directories(test_cann_ra_loader PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME cann_ra_loader COMMAND test_cann_ra_loader)
+
+  if(UNIX OR APPLE)
+    add_library(test_cann_ra_core_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_ra_core_fixture PRIVATE FLUME_RA_FIXTURE=1)
+    target_include_directories(test_cann_ra_core_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_runtime_core_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_runtime_core_fixture PRIVATE FLUME_RUNTIME_FIXTURE=1)
+    target_include_directories(test_cann_runtime_core_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_acl_core_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_acl_core_fixture PRIVATE FLUME_ACL_FIXTURE=1)
+    target_include_directories(test_cann_acl_core_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    add_test(NAME cann_ra_loader_core_only
+      COMMAND test_cann_ra_loader
+        $<TARGET_FILE:test_cann_ra_core_fixture>
+        $<TARGET_FILE:test_cann_runtime_core_fixture>
+        $<TARGET_FILE:test_cann_acl_core_fixture>)
+  endif()
+
+  set(FLUME_CANN_SOURCE_HCCP_INCLUDE
+    ${PROJECT_SOURCE_DIR}/refer/cann-src/hcomm/src/base_comm/resources/hccp/inc)
+  set(FLUME_CANN_SOURCE_VERBS_FIXTURE_INCLUDE
+    ${PROJECT_SOURCE_DIR}/refer/cann-src/hcomm/test/ut/platform/hccp/rdma_service_normal/include)
+  if(EXISTS ${FLUME_CANN_SOURCE_HCCP_INCLUDE}/network/hccp.h AND
+     EXISTS ${FLUME_CANN_SOURCE_VERBS_FIXTURE_INCLUDE}/infiniband/verbs.h)
+    add_executable(test_cann_ra_source_abi tests/test_cann_ra_source_abi.cc)
+    target_include_directories(test_cann_ra_source_abi PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}/tests/cann_ra_fixture
+      ${FLUME_CANN_SOURCE_HCCP_INCLUDE}
+      ${FLUME_CANN_SOURCE_VERBS_FIXTURE_INCLUDE})
+    add_test(NAME cann_ra_source_abi COMMAND test_cann_ra_source_abi)
+
+    add_test(NAME roce_verbs_fixture_syntax
+      COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -fsyntax-only
+        -DFLUME_HAVE_IBVERBS=1
+        -I${PROJECT_SOURCE_DIR}/src
+        -I${PROJECT_SOURCE_DIR}/tests/cann_ra_fixture
+        -I${FLUME_CANN_SOURCE_VERBS_FIXTURE_INCLUDE}
+        ${PROJECT_SOURCE_DIR}/src/roce_storage/verbs_backend.cc)
+  endif()
+
+  set(FLUME_CANN_SOURCE_ACL_INCLUDE
+    ${PROJECT_SOURCE_DIR}/refer/cann-src/runtime/include/external)
+  if(EXISTS ${FLUME_CANN_SOURCE_ACL_INCLUDE}/acl/acl.h)
+    add_test(NAME roce_client_cann_fixture_syntax
+      COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -fsyntax-only
+        -I${PROJECT_SOURCE_DIR}/src
+        -I${FLUME_CANN_SOURCE_ACL_INCLUDE}
+        ${PROJECT_SOURCE_DIR}/apps/flume-roce-storage-client.cc)
+  endif()
 endif()

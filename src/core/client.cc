@@ -236,6 +236,7 @@ struct flume_roce_storage_session {
   uint32_t bootstrap_port = 0;
   uint32_t timeout_ms = 0;
   flume_roce_post_mode_t post_mode = FLUME_ROCE_POST_AUTO;
+  flume_roce_control_mode_t control_mode = FLUME_ROCE_CONTROL_TCP;
   flume_roce_storage_backend_t storage_backend = FLUME_ROCE_STORAGE_MEMORY;
   bool require_compute_host_bypass = true;
   std::shared_ptr<flume::roce::HostRaSession> host_ra;
@@ -7881,7 +7882,6 @@ int flume_roce_storage_session_open(
       options->size < sizeof(flume_roce_storage_options_t) ||
       options->storage_server == nullptr || options->storage_server[0] == '\0' ||
       options->npu_rnic_ip == nullptr || options->npu_rnic_ip[0] == '\0' ||
-      options->storage_rnic_ip == nullptr || options->storage_rnic_ip[0] == '\0' ||
       options->bootstrap_port == 0 || options->timeout_ms == 0) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
@@ -7889,6 +7889,10 @@ int flume_roce_storage_session_open(
       options->post_mode != FLUME_ROCE_POST_HOST_RA &&
       options->post_mode != FLUME_ROCE_POST_AICPU &&
       options->post_mode != FLUME_ROCE_POST_AIV) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  if (options->control_mode != FLUME_ROCE_CONTROL_TCP &&
+      options->control_mode != FLUME_ROCE_CONTROL_NPU_RA) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   if (options->storage_backend != FLUME_ROCE_STORAGE_MEMORY &&
@@ -7900,12 +7904,14 @@ int flume_roce_storage_session_open(
   session->client = client;
   session->storage_server = options->storage_server;
   session->npu_rnic_ip = options->npu_rnic_ip;
-  session->storage_rnic_ip = options->storage_rnic_ip;
+  session->storage_rnic_ip = options->storage_rnic_ip == nullptr ?
+      "" : options->storage_rnic_ip;
   session->npu_device = options->npu_device;
   session->gid_index = options->gid_index;
   session->bootstrap_port = options->bootstrap_port;
   session->timeout_ms = options->timeout_ms;
   session->post_mode = options->post_mode;
+  session->control_mode = options->control_mode;
   session->storage_backend = options->storage_backend;
   session->require_compute_host_bypass = options->require_compute_host_bypass != 0;
   session->host_ra = std::make_shared<flume::roce::HostRaSession>();
@@ -7920,6 +7926,8 @@ int flume_roce_storage_session_open(
     config.gid_index = session->gid_index;
     config.bootstrap_port = session->bootstrap_port;
     config.timeout_ms = session->timeout_ms;
+    config.control_mode = session->control_mode == FLUME_ROCE_CONTROL_TCP ?
+        flume::roce::ControlMode::kTcp : flume::roce::ControlMode::kNpuRa;
     session->host_ra->Open(config, &session->native_open_error);
   }
   *out = session;

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "roce_storage/control_channel.h"
 #include "roce_storage/roce_storage.h"
 #include "roce_storage/storage_backend.h"
 #include "roce_storage/verbs_backend.h"
@@ -19,28 +20,6 @@ namespace {
 constexpr uint32_t kDefaultQueueDepth = 32;
 constexpr uint32_t kDefaultTransferTimeoutMs = 30000;
 constexpr uint64_t kDefaultMaxTransferBytes = 64U * 1024U * 1024U;
-
-bool ReadAll(int fd, void* dst, size_t bytes) {
-  auto* cursor = static_cast<uint8_t*>(dst);
-  while (bytes != 0) {
-    const ssize_t n = recv(fd, cursor, bytes, 0);
-    if (n <= 0) return false;
-    cursor += n;
-    bytes -= static_cast<size_t>(n);
-  }
-  return true;
-}
-
-bool WriteAll(int fd, const void* src, size_t bytes) {
-  const auto* cursor = static_cast<const uint8_t*>(src);
-  while (bytes != 0) {
-    const ssize_t n = send(fd, cursor, bytes, 0);
-    if (n <= 0) return false;
-    cursor += n;
-    bytes -= static_cast<size_t>(n);
-  }
-  return true;
-}
 
 bool OpenListener(const std::string& listen, uint16_t port, int* listener, std::string* error) {
   if (listener == nullptr || port == 0) return false;
@@ -91,13 +70,17 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
                    uint8_t verbs_port, uint8_t gid_index, uint32_t timeout_ms) {
   std::vector<uint8_t> wire(flume::roce::kSessionRequestWireBytes);
   flume::roce::SessionRequest request;
-  if (!ReadAll(fd, wire.data(), wire.size()) ||
+  std::string error;
+  if (flume::roce::ControlReadAll(fd, wire.data(), wire.size(), &error) !=
+          flume::roce::ControlReadResult::kSuccess ||
       !flume::roce::DecodeSessionRequest(wire.data(), wire.size(), &request)) {
-    std::cerr << "invalid RoCE session request received on control connection\n";
+    std::cerr << "invalid RoCE session request received on control connection: "
+              << error << "\n";
     return 1;
   }
+  const bool tcp_control =
+      (request.flags & flume::roce::kSessionFlagTcpControl) != 0;
   flume::roce::VerbsBackend verbs;
-  std::string error;
   if (!verbs.Open(verbs_device, verbs_port, gid_index, kDefaultQueueDepth, &error) ||
       !verbs.Connect(ToVerbsEndpoint(request.endpoint), &error)) {
     std::cerr << "verbs connection setup failed: " << error << "\n";
@@ -107,27 +90,35 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
   std::vector<uint8_t> completion_wire(flume::roce::kCompletionWireBytes);
   flume::roce::VerbsMemoryRegion command_mr;
   flume::roce::VerbsMemoryRegion completion_mr;
-  if (!verbs.Register(command_wire.data(), command_wire.size(), false, false,
-                      &command_mr, &error)) {
-    std::cerr << "failed to prepare server command/completion buffers: " << error << "\n";
-    return 1;
-  }
-  if (!verbs.Register(completion_wire.data(), completion_wire.size(), false, false,
-                      &completion_mr, &error) || !verbs.PostReceive(command_mr, &error)) {
-    verbs.Deregister(&completion_mr, nullptr);
-    verbs.Deregister(&command_mr, nullptr);
-    std::cerr << "failed to prepare server command/completion buffers: " << error << "\n";
-    return 1;
+  bool command_registered = false;
+  bool completion_registered = false;
+  if (!tcp_control) {
+    command_registered = verbs.Register(command_wire.data(), command_wire.size(),
+                                        false, false, &command_mr, &error);
+    completion_registered = command_registered &&
+        verbs.Register(completion_wire.data(), completion_wire.size(), false,
+                       false, &completion_mr, &error);
+    if (!command_registered || !completion_registered ||
+        !verbs.PostReceive(command_mr, &error)) {
+      if (completion_registered) verbs.Deregister(&completion_mr, nullptr);
+      if (command_registered) verbs.Deregister(&command_mr, nullptr);
+      std::cerr << "failed to prepare server command/completion buffers: "
+                << error << "\n";
+      return 1;
+    }
   }
   struct RegionCleanup {
     flume::roce::VerbsBackend* verbs;
     flume::roce::VerbsMemoryRegion* command;
     flume::roce::VerbsMemoryRegion* completion;
+    bool command_registered;
+    bool completion_registered;
     ~RegionCleanup() {
-      verbs->Deregister(completion, nullptr);
-      verbs->Deregister(command, nullptr);
+      if (completion_registered) verbs->Deregister(completion, nullptr);
+      if (command_registered) verbs->Deregister(command, nullptr);
     }
-  } region_cleanup{&verbs, &command_mr, &completion_mr};
+  } region_cleanup{&verbs, &command_mr, &completion_mr,
+                   command_registered, completion_registered};
   flume::roce::SessionResponse response;
   response.endpoint = ToWireEndpoint(verbs.endpoint());
   response.namespace_capacity = storage->size();
@@ -136,19 +127,28 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
       flume::roce::kServerCapabilityMemoryNamespace :
       flume::roce::kServerCapabilityPosixNamespace;
   if (!flume::roce::EncodeSessionResponse(response, &wire) ||
-      !WriteAll(fd, wire.data(), wire.size())) {
+      !flume::roce::ControlWriteAll(fd, wire.data(), wire.size(), &error)) {
     std::cerr << "failed to send storage-node RoCE session response\n";
     return 1;
   }
   while (true) {
-    if (!verbs.WaitForReceive(timeout_ms, &error)) {
-      std::cerr << "failed waiting for NPU RA command: " << error << "\n";
-      return 1;
-    }
     flume::roce::Command command;
-    if (!flume::roce::DecodeCommand(command_wire.data(), command_wire.size(), &command)) {
-      std::cerr << "invalid RoCE storage command\n";
-      return 1;
+    if (tcp_control) {
+      const auto read = flume::roce::ReceiveCommand(fd, &command, &error);
+      if (read == flume::roce::ControlReadResult::kPeerClosed) return 0;
+      if (read != flume::roce::ControlReadResult::kSuccess) {
+        std::cerr << "failed receiving TCP storage command: " << error << "\n";
+        return 1;
+      }
+    } else {
+      if (!verbs.WaitForReceive(timeout_ms, &error)) {
+        std::cerr << "failed waiting for NPU RA command: " << error << "\n";
+        return 1;
+      }
+      if (!flume::roce::DecodeCommand(command_wire.data(), command_wire.size(), &command)) {
+        std::cerr << "invalid RoCE storage command\n";
+        return 1;
+      }
     }
     flume::roce::Completion completion;
     completion.request_id = command.request_id;
@@ -175,12 +175,20 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
       completion.checksum = ok ? flume::roce::Checksum(staging.data(), staging.size()) : 0;
       if (!ok) std::cerr << "request " << command.request_id << " failed: " << error << "\n";
     }
-    if (!flume::roce::EncodeCompletion(completion, &completion_wire) ||
-        !verbs.Write(completion_mr, request.completion.address,
-                     request.completion.rkey, completion_wire.size(), timeout_ms, &error) ||
-        !verbs.PostReceive(command_mr, &error)) {
-      std::cerr << "failed to publish RDMA completion or repost command receive: " << error << "\n";
-      return 1;
+    if (tcp_control) {
+      if (!flume::roce::SendCompletion(fd, completion, &error)) {
+        std::cerr << "failed to publish TCP completion: " << error << "\n";
+        return 1;
+      }
+    } else {
+      if (!flume::roce::EncodeCompletion(completion, &completion_wire) ||
+          !verbs.Write(completion_mr, request.completion.address,
+                       request.completion.rkey, completion_wire.size(), timeout_ms, &error) ||
+          !verbs.PostReceive(command_mr, &error)) {
+        std::cerr << "failed to publish RDMA completion or repost command receive: "
+                  << error << "\n";
+        return 1;
+      }
     }
   }
 }
@@ -234,8 +242,7 @@ int main(int argc, char** argv) {
   }
   std::cout << "flume RoCE storage server scaffold "
             << "listen=" << listen << " namespace_bytes=" << storage->size() << " "
-            << "protocol=flume-roce-v2 control_plane=tcp-bootstrap "
-            << "command_plane=npu-ra-send completion_plane=rdma-write-to-npu-hbm "
+            << "protocol=flume-roce-v2 control_modes=tcp,npu-ra "
             << "storage_backend="
             << (storage_file.empty() ? "memory" : "posix") << " "
             << "verbs_backend=" << (flume::roce::VerbsAvailable() ? "available" : "unavailable") << " "

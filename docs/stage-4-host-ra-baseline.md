@@ -1,128 +1,164 @@
-# Stage 4 Host-RA Storage Baseline
+# Stage 4 Host-RA Direct-Storage Baseline
 
-## Goal
+## Status
 
-Stage 4A/4B establishes the first real external-storage-to-Ascend-HBM path.
-The compute host performs setup and submits each command, but payload bytes do
-not pass through compute-host DRAM.
+**Implemented, statically verified, hardware validation pending.**
+
+The default baseline uses TCP for commands and completions while payload bytes
+use RDMA between the storage-server RNIC and a registered NPU HBM window. The
+older NPU-RA command path remains available as an experimental mode.
+
+## Boundary
 
 ```mermaid
 flowchart LR
-  SSD["Storage namespace\nfile or memory"] -->|"read into staging"| Staging["Storage-server DRAM"]
-  Staging -->|"RNIC RDMA Write"| HBM["Compute NPU HBM window"]
-  App["Compute application"] -->|"open/register/submit"| RA["Flume Host-RA client"]
-  RA -->|"NPU RA SEND command"| Server["Flume storage server"]
-  Server -->|"RDMA completion Write"| Completion["NPU HBM completion window"]
+  Storage["Server A storage\nmemory or POSIX file"] --> Staging["Server A DRAM staging"]
+  Staging -->|"RNIC RDMA Write payload"| HBM["Server C NPU HBM"]
+  Client["Flume Host-RA client"] -->|"TCP command + HBM descriptor"| Server["Flume storage server"]
+  Server -->|"TCP completion"| Client
+  Client -->|"RA/HCCP register MR"| HBM
 ```
 
-This stage bypasses compute-host payload staging. It does **not** bypass the
-storage server CPU/DRAM and does not claim SSD-to-HBM peer DMA.
+This proves **compute-host payload bypass** when hardware validation passes:
+the compute CPU creates resources and submits control messages, but it does not
+stage or H2D-copy payload bytes. Server A still reads storage into its own DRAM,
+so this stage does not claim SSD-to-HBM peer DMA or full end-to-end host bypass.
 
-## Clean-room boundary
+## Control Modes
 
-The implementation is independent Flume code. Its ABI declarations were
-reduced from the open CANN HCCP and runtime API headers under `refer/cann-src`
-and its storage endpoint uses standard `libibverbs`. No NDS source code was
+| Mode | Command | Completion | Payload | Status |
+|---|---|---|---|---|
+| `tcp` (default) | TCP | TCP | RNIC RDMA Read/Write to NPU HBM | Primary hardware baseline |
+| `npu-ra` | NPU RA SEND | RDMA Write to completion HBM | RNIC RDMA Read/Write to NPU HBM | Preserved experimental path |
+
+TCP control deliberately removes command HBM, completion HBM,
+`RaTypicalSendWr`, and `rtRDMADBSend` from the minimum proof. It still requires
+the hard path: RA/HCCP QP creation, HBM MR registration, RC-QP connection, and
+standard-verbs RDMA into the returned HBM address/rkey.
+
+## Implemented Flow
+
+| Phase | Compute server C | Storage server A |
+|---|---|---|
+| Capability | Load RA/ACL/runtime QP+MR symbols | Require standard `libibverbs` |
+| Resources | Select NPU, open net service, create RA RC QP | Create PD/CQ/RC QP |
+| Bootstrap | Send NPU endpoint over TCP | Return RNIC endpoint and namespace limits |
+| Connect | `RaTypicalQpModify` | `ibv_modify_qp` through RTR/RTS |
+| Request | Register application HBM and send `offset/len/addr/rkey` over TCP | Decode and validate command |
+| Payload | No compute-host payload buffer | memory/POSIX -> staging -> RDMA Write/Read |
+| Completion | Receive TCP completion | Wait local CQ, then send status/checksum |
+| Verification | D2H read after completion, smoke only | Server checksum is returned as metadata |
+
+The dynamic CANN loader separates QP/MR core capability from optional NPU
+command posting. Missing core symbols produce `unsupported`; a runtime failure
+after successful capability loading produces a backend failure. CANN 8.5/9.0
+differences therefore do not cause an unconditional build failure.
+
+## Clean-Room Boundary
+
+The implementation is independent Flume code. Its minimal ABI declarations
+are checked against the public CANN/HCCP source fixture under `refer/cann-src`;
+the storage endpoint uses standard libibverbs. No NDS implementation code is
 copied or adapted.
 
-## Implemented flow
-
-| Phase | Compute side | Storage side |
-|---|---|---|
-| Capability load | Dynamically resolve public CANN runtime, ACL, and RA symbols | Verify `libibverbs` at configure time |
-| Resource setup | Select logical NPU, resolve physical ID, open HCCP net service, create NPU RC QP | Create PD/CQ/RC QP |
-| Registration | Allocate/register command and completion HBM; register application HBM per request | Register command receive, completion source, and staging buffers |
-| Bootstrap | TCP sends NPU QP endpoint and completion HBM descriptor | TCP returns server QP endpoint and namespace limits |
-| Connect | `RaTypicalQpModify` | `ibv_modify_qp` to RTR/RTS |
-| Command | Encode protocol v2 command in HBM, `RaTypicalSendWr`, `rtRDMADBSend` | `ibv_post_recv` receives command from NPU |
-| Read payload | HBM is exposed with remote-write access | file/memory to server staging, then RDMA Write to HBM |
-| Completion | Poll completion HBM and match request ID | RDMA Write completion record to the registered HBM window |
-
-Protocol v2 keeps only bootstrap on TCP. Commands and completions are no longer
-carried by the host TCP connection.
-
-## Capability and fallback behavior
-
-The CANN libraries are loaded at runtime from `libra.so`, `libruntime.so`, and
-`libascendcl.so`. A missing library or required symbol returns a precise
-`unsupported` marker instead of producing a build failure on Mac or ordinary
-Linux. A real RA/runtime failure after capabilities are loaded is reported as
-a `roce_storage=backend-failed` backend error.
-
-Current markers:
-
-```text
-roce_storage=host-ra-passed
-roce_protocol=flume-roce-v2
-compute_host_payload=not-used
-compute_host_post=used
-command_path=npu-ra-send
-completion_path=rdma-write-to-npu-hbm
-payload_path=storage-host-staging-to-npu-hbm
-fallback=none
-```
-
-## Local validation
+## Local Validation
 
 ```bash
-cmake -S . -B build-stage4 \
+cmake -S . -B build-local-roce \
   -DFLUME_BUILD_TESTS=ON \
   -DFLUME_ENABLE_HCCL=OFF \
   -DFLUME_ENABLE_ROCE_STORAGE=ON
-cmake --build build-stage4 -j 8
-ctest --test-dir build-stage4 -R 'roce_storage_protocol|cann_ra_loader' \
-  --output-on-failure
+cmake --build build-local-roce -j 8
+ctest --test-dir build-local-roce --output-on-failure
 ```
 
-The equivalent helper configuration is:
+The tests cover TCP framing and partial-frame failure, send-first and
+receive-first sequencing, memory/POSIX storage into a registered simulated HBM
+window, checksums, both session modes, CANN/HCCP source-fixture ABI sizes, and
+CANN ACL fixture syntax for the standalone smoke.
+
+## Hardware Preconditions
+
+Host TCP reachability is not sufficient. Server A's RNIC and server C's NPU
+HCCN/RoCE endpoint must share a compatible RoCE fabric. Confirm RNIC port/GID,
+NPU HCCN address, VLAN, MTU, and link state before running the payload smoke.
+Do not commit lab addresses or device identifiers.
+
+Build on the CANN host:
 
 ```bash
-python3 tools/flume_tool.py --build-dir build-stage4 \
-  --enable-roce-storage ascend-probe
+python3 tools/flume_tool.py \
+  --build-dir build-roce-tcp \
+  --enable-roce-storage \
+  ascend-probe
 ```
 
-The protocol test covers wire validation and lifecycle transitions. The loader
-test covers ABI guards and fail-closed behavior when CANN libraries are absent.
+### Memory Canary
 
-## Hardware validation topology
-
-Run a normal Flume agent for the public API client handle, then the storage
-server on Host A and the NPU client on compute Host C. Replace placeholders
-with lab values; do not commit them.
+On storage server A:
 
 ```bash
-# Existing Flume control agent on Host C.
-build-stage4/flume-store-agent --listen 127.0.0.1:18080 --root /tmp
-
-# Host A: SSD/file owner and standard RNIC endpoint.
-build-stage4/flume-roce-storage-server \
+build-roce-tcp/flume-roce-storage-server \
   --listen <control-listen-ip> \
-  --storage-file <test-file> \
+  --namespace-bytes 67108864 \
   --verbs-device <storage-rnic-device> \
+  --verbs-port <verbs-port> \
+  --gid-index <storage-gid-index> \
   --control-port <control-port>
+```
 
-# Host C: NPU HBM owner and HCCN/RA endpoint.
-build-stage4/flume-roce-storage-client \
-  --agent-endpoint 127.0.0.1:18080 \
+On compute server C:
+
+```bash
+build-roce-tcp/flume-roce-hbm-write-smoke \
   --storage-server <storage-server-ip> \
   --npu-rnic-ip <npu-hccn-ip> \
   --device <logical-device-id> \
+  --gid-index <npu-gid-index> \
   --control-port <control-port> \
-  --bytes 4194304
+  --control-mode tcp \
+  --bytes 4096
 ```
 
-Acceptance requires `roce_storage_smoke=passed`, matching server/client
-checksums, the protocol-v2 markers above, and no TCP command/completion path in
-debug output. The final D2H copy in the smoke is verification only and occurs
-after the transfer completes.
+Required client markers:
 
-## Remaining work
+```text
+roce_hbm_write_smoke=passed
+control_path=tcp
+payload_path=server-memory->rnic->npu-hbm
+npu_hbm_mr=registered
+qp_state=rtr-rts
+server_rdma_cq=success
+compute_host_payload_bytes=0
+verification_d2h_bytes=4096
+checksum=matched
+fallback=none
+```
 
-1. Validate CANN 8.5 and 9.0 RA ABI/symbol availability and capture per-step
-   failures without publishing lab addresses.
-2. Add queue depth greater than one, request cancellation, and CQ-based NPU
-   completion handling.
-3. Add AICPU/AIV command posting so the compute host is removed from the
-   per-I/O submission path.
-4. Replace storage-server POSIX staging with SPDK/NVMe-oF or a supported peer
-   DMA path. Only that later stage can claim storage-side payload bypass.
+### POSIX Smoke
+
+Restart the server with an existing nonempty test file:
+
+```bash
+build-roce-tcp/flume-roce-storage-server \
+  --listen <control-listen-ip> \
+  --storage-file <ssd-test-file> \
+  --verbs-device <storage-rnic-device> \
+  --verbs-port <verbs-port> \
+  --gid-index <storage-gid-index> \
+  --control-port <control-port>
+```
+
+Run the same client with a range contained by the file. The required marker is
+`payload_path=server-posix->rnic->npu-hbm storage_side_staging=used`.
+The client checksum must match the server completion checksum. CQ success
+without the final HBM checksum is not acceptance evidence.
+
+## Next Steps After Hardware Proof
+
+1. Sweep 4 KiB, 64 KiB, 1 MiB, and 16 MiB with repeated QD=1 requests.
+2. Compare the preserved `--control-mode npu-ra` path with the TCP baseline.
+3. Use HCCL only after storage data reaches one NPU, for optional multi-card
+   distribution.
+4. Replace server DRAM staging with SPDK/NVMe-oF or supported peer DMA before
+   claiming storage-side/full direct operation.

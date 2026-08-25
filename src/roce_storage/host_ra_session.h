@@ -18,6 +18,7 @@ struct HostRaConfig {
   uint32_t bootstrap_port = 0;
   uint32_t timeout_ms = 30000;
   int hdc_type = 18;
+  ControlMode control_mode = ControlMode::kTcp;
 };
 
 struct HostRaResult {

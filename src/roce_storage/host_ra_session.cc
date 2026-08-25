@@ -8,36 +8,14 @@
 #include <chrono>
 #include <cstring>
 #include <mutex>
-#include <sstream>
 #include <thread>
 #include <vector>
 
 #include "roce_storage/cann_ra_loader.h"
+#include "roce_storage/control_channel.h"
 
 namespace flume::roce {
 namespace {
-
-bool ReadAll(int fd, void* dst, size_t bytes) {
-  auto* cursor = static_cast<uint8_t*>(dst);
-  while (bytes != 0) {
-    const ssize_t count = recv(fd, cursor, bytes, 0);
-    if (count <= 0) return false;
-    cursor += count;
-    bytes -= static_cast<size_t>(count);
-  }
-  return true;
-}
-
-bool WriteAll(int fd, const void* src, size_t bytes) {
-  const auto* cursor = static_cast<const uint8_t*>(src);
-  while (bytes != 0) {
-    const ssize_t count = send(fd, cursor, bytes, 0);
-    if (count <= 0) return false;
-    cursor += count;
-    bytes -= static_cast<size_t>(count);
-  }
-  return true;
-}
 
 int ConnectTcp(const std::string& host, uint32_t port, uint32_t timeout_ms,
                std::string* error) {
@@ -103,7 +81,12 @@ class HostRaSession::Impl {
       return false;
     }
     config = requested;
-    if (!api.Open(error)) return Fail();
+    const bool npu_command_posting = config.control_mode == ControlMode::kNpuRa;
+    if (config.control_mode != ControlMode::kTcp && !npu_command_posting) {
+      if (error != nullptr) *error = "unsupported Host-RA control mode";
+      return Fail();
+    }
+    if (!api.Open(npu_command_posting, error)) return Fail();
     capability_loaded = true;
     int32_t physical = -1;
     if (api.rt_set_device(static_cast<int32_t>(config.logical_device)) != cann::kSuccess ||
@@ -148,12 +131,14 @@ class HostRaSession::Impl {
       if (error != nullptr) *error = "RaTypicalQpCreate failed";
       return Fail();
     }
-    if (!AllocateAndRegister(kCommandWireBytes, cann::kRaAccessLocalWrite,
-                             &command_device, &command_mr, &command_mr_handle, error) ||
-        !AllocateAndRegister(kCompletionWireBytes,
-                             cann::kRaAccessLocalWrite | cann::kRaAccessRemoteWrite,
-                             &completion_device, &completion_mr, &completion_mr_handle, error)) {
-      return Fail();
+    if (npu_command_posting) {
+      if (!AllocateAndRegister(kCommandWireBytes, cann::kRaAccessLocalWrite,
+                               &command_device, &command_mr, &command_mr_handle, error) ||
+          !AllocateAndRegister(kCompletionWireBytes,
+                               cann::kRaAccessLocalWrite | cann::kRaAccessRemoteWrite,
+                               &completion_device, &completion_mr, &completion_mr_handle, error)) {
+        return Fail();
+      }
     }
     if (!lifecycle.LocalResourcesReady()) return Fail();
 
@@ -162,18 +147,23 @@ class HostRaSession::Impl {
     if (control_fd < 0) return Fail();
     SessionRequest request;
     request.endpoint = ToEndpoint(local_qp);
-    request.completion = {reinterpret_cast<uint64_t>(completion_device),
-                          kCompletionWireBytes, completion_mr.rkey,
-                          kMemoryRemoteWrite};
+    if (config.control_mode == ControlMode::kTcp) {
+      request.flags = kSessionFlagTcpControl;
+    } else {
+      request.completion = {reinterpret_cast<uint64_t>(completion_device),
+                            kCompletionWireBytes, completion_mr.rkey,
+                            kMemoryRemoteWrite};
+    }
     std::vector<uint8_t> wire;
     if (!EncodeSessionRequest(request, &wire) ||
-        !WriteAll(control_fd, wire.data(), wire.size())) {
+        !ControlWriteAll(control_fd, wire.data(), wire.size(), error)) {
       if (error != nullptr) *error = "failed to send Host-RA session request";
       return Fail();
     }
     wire.assign(kSessionResponseWireBytes, 0);
     SessionResponse response;
-    if (!ReadAll(control_fd, wire.data(), wire.size()) ||
+    if (ControlReadAll(control_fd, wire.data(), wire.size(), error) !=
+            ControlReadResult::kSuccess ||
         !DecodeSessionResponse(wire.data(), wire.size(), &response) || response.status != 0) {
       if (error != nullptr) *error = "storage server rejected Host-RA session bootstrap";
       return Fail();
@@ -188,6 +178,7 @@ class HostRaSession::Impl {
     }
     namespace_bytes = response.namespace_capacity;
     max_transfer = response.max_transfer_bytes;
+    server_capabilities = response.server_capabilities;
     if (!lifecycle.Connected()) return Fail();
     return true;
   }
@@ -225,37 +216,46 @@ class HostRaSession::Impl {
     command.npu_address = reinterpret_cast<uint64_t>(npu_buffer);
     command.npu_rkey = payload_mr.rkey;
     command.npu_access = operation == Operation::kRead ? kMemoryRemoteWrite : kMemoryRemoteRead;
-    std::vector<uint8_t> command_wire;
-    std::vector<uint8_t> completion_zero(kCompletionWireBytes, 0);
-    bool ok = EncodeCommand(command, &command_wire) &&
-        api.acl_memcpy(command_device, kCommandWireBytes, command_wire.data(),
-                       command_wire.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess &&
-        api.acl_memcpy(completion_device, kCompletionWireBytes, completion_zero.data(),
-                       completion_zero.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess;
-    cann::SgList sge{reinterpret_cast<uint64_t>(command_device),
-                     static_cast<uint32_t>(kCommandWireBytes), command_mr.lkey};
-    cann::SendWr wr{&sge, 1, 0, 0, cann::kRaWrSend, cann::kRaSendSignaled};
-    cann::SendWrResponse response{};
-    if (ok) ok = api.ra_typical_send_wr(qp_handle, &wr, &response) == cann::kSuccess;
-    if (ok) ok = api.rt_rdma_db_send(response.db.index, response.db.info, acl_stream) == cann::kSuccess;
-
     Completion completion;
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(config.timeout_ms);
-    std::vector<uint8_t> completion_wire(kCompletionWireBytes);
-    while (ok && std::chrono::steady_clock::now() < deadline) {
-      ok = api.acl_memcpy(completion_wire.data(), completion_wire.size(), completion_device,
-                          kCompletionWireBytes, cann::kAclMemcpyDeviceToHost) == cann::kSuccess;
-      if (ok && DecodeCompletion(completion_wire.data(), completion_wire.size(), &completion) &&
-          completion.request_id == request_id) {
-        break;
+    bool ok = true;
+    if (config.control_mode == ControlMode::kTcp) {
+      ok = SendCommand(control_fd, command, error) &&
+           ReceiveCompletion(control_fd, &completion, error) ==
+               ControlReadResult::kSuccess;
+    } else {
+      std::vector<uint8_t> command_wire;
+      std::vector<uint8_t> completion_zero(kCompletionWireBytes, 0);
+      ok = EncodeCommand(command, &command_wire) &&
+          api.acl_memcpy(command_device, kCommandWireBytes, command_wire.data(),
+                         command_wire.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess &&
+          api.acl_memcpy(completion_device, kCompletionWireBytes, completion_zero.data(),
+                         completion_zero.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess;
+      cann::SgList sge{reinterpret_cast<uint64_t>(command_device),
+                       static_cast<uint32_t>(kCommandWireBytes), command_mr.lkey};
+      cann::SendWr wr{&sge, 1, 0, 0, cann::kRaWrSend, cann::kRaSendSignaled};
+      cann::SendWrResponse response{};
+      if (ok) ok = api.ra_typical_send_wr(qp_handle, &wr, &response) == cann::kSuccess;
+      if (ok) ok = api.rt_rdma_db_send(response.db.index, response.db.info, acl_stream) == cann::kSuccess;
+
+      const auto deadline = std::chrono::steady_clock::now() +
+                            std::chrono::milliseconds(config.timeout_ms);
+      std::vector<uint8_t> completion_wire(kCompletionWireBytes);
+      while (ok && std::chrono::steady_clock::now() < deadline) {
+        ok = api.acl_memcpy(completion_wire.data(), completion_wire.size(), completion_device,
+                            kCompletionWireBytes, cann::kAclMemcpyDeviceToHost) == cann::kSuccess;
+        if (ok && DecodeCompletion(completion_wire.data(), completion_wire.size(), &completion) &&
+            completion.request_id == request_id) {
+          break;
+        }
+        completion = {};
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
-      completion = {};
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (!ok) {
       if (error != nullptr && error->empty()) {
-        *error = "CANN RA command submission or HBM completion polling failed";
+        *error = config.control_mode == ControlMode::kTcp ?
+            "TCP command/completion exchange failed" :
+            "CANN RA command submission or HBM completion polling failed";
       }
     } else if (completion.request_id != request_id) {
       ok = false;
@@ -275,12 +275,8 @@ class HostRaSession::Impl {
     lifecycle.CompleteRequest(request_id);
     result->bytes = static_cast<size_t>(completion.bytes);
     result->checksum = completion.checksum;
-    std::ostringstream marker;
-    marker << "roce_storage=host-ra-passed roce_protocol=flume-roce-v2 "
-           << "compute_host_payload=not-used compute_host_post=used "
-           << "command_path=npu-ra-send completion_path=rdma-write-to-npu-hbm "
-           << "payload_path=storage-host-staging-to-npu-hbm fallback=none";
-    result->marker = marker.str();
+    result->marker = MakeHostRaSuccessMarker(config.control_mode, operation,
+                                             server_capabilities);
     return true;
   }
 
@@ -362,6 +358,7 @@ class HostRaSession::Impl {
   bool capability_loaded = false;
   uint64_t namespace_bytes = 0;
   uint64_t max_transfer = 0;
+  uint32_t server_capabilities = 0;
 };
 
 HostRaSession::HostRaSession() : impl_(std::make_unique<Impl>()) {}

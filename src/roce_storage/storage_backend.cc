@@ -17,7 +17,11 @@ void SetError(std::string* error, const char* text) {
 
 }  // namespace
 
-MemoryStorageBackend::MemoryStorageBackend(size_t bytes) : bytes_(bytes) {}
+MemoryStorageBackend::MemoryStorageBackend(size_t bytes) : bytes_(bytes) {
+  for (size_t index = 0; index < bytes_.size(); ++index) {
+    bytes_[index] = static_cast<uint8_t>((index * 29U + 11U) & 0xffU);
+  }
+}
 
 uint64_t MemoryStorageBackend::size() const { return bytes_.size(); }
 

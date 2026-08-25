@@ -72,7 +72,7 @@ int main() {
   request.completion.length = flume::roce::kCompletionWireBytes;
   request.completion.rkey = 101;
   request.completion.access = flume::roce::kMemoryRemoteWrite;
-  request.flags = 3;
+  request.flags = 0;
   FLUME_TEST_CHECK(flume::roce::EncodeSessionRequest(request, &wire));
   FLUME_TEST_CHECK(wire.size() == flume::roce::kSessionRequestWireBytes);
   flume::roce::SessionRequest decoded_request;
@@ -83,6 +83,15 @@ int main() {
   FLUME_TEST_CHECK(decoded_request.completion.rkey == request.completion.rkey);
   FLUME_TEST_CHECK(decoded_request.flags == request.flags);
   request.completion.access = flume::roce::kMemoryRemoteRead;
+  FLUME_TEST_CHECK(!flume::roce::EncodeSessionRequest(request, &wire));
+  request = {};
+  request.endpoint = endpoint;
+  request.flags = flume::roce::kSessionFlagTcpControl;
+  FLUME_TEST_CHECK(flume::roce::EncodeSessionRequest(request, &wire));
+  FLUME_TEST_CHECK(flume::roce::DecodeSessionRequest(
+      wire.data(), wire.size(), &decoded_request));
+  FLUME_TEST_CHECK(decoded_request.flags == flume::roce::kSessionFlagTcpControl);
+  request.completion.address = 1;
   FLUME_TEST_CHECK(!flume::roce::EncodeSessionRequest(request, &wire));
 
   flume::roce::SessionResponse response;
@@ -98,6 +107,22 @@ int main() {
   FLUME_TEST_CHECK(decoded_response.namespace_capacity == response.namespace_capacity);
   FLUME_TEST_CHECK(decoded_response.max_transfer_bytes == response.max_transfer_bytes);
   FLUME_TEST_CHECK(decoded_response.server_capabilities == response.server_capabilities);
+
+  const std::string tcp_marker = flume::roce::MakeHostRaSuccessMarker(
+      flume::roce::ControlMode::kTcp, flume::roce::Operation::kRead,
+      flume::roce::kServerCapabilityMemoryNamespace);
+  FLUME_TEST_CHECK(tcp_marker.find("control_path=tcp") != std::string::npos);
+  FLUME_TEST_CHECK(tcp_marker.find(
+      "payload_path=server-memory->rnic->npu-hbm") != std::string::npos);
+  FLUME_TEST_CHECK(tcp_marker.find("compute_host_payload_bytes=0") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(tcp_marker.find("fallback=none") != std::string::npos);
+  const std::string npu_ra_marker = flume::roce::MakeHostRaSuccessMarker(
+      flume::roce::ControlMode::kNpuRa, flume::roce::Operation::kWrite,
+      flume::roce::kServerCapabilityPosixNamespace);
+  FLUME_TEST_CHECK(npu_ra_marker.find("control_path=npu-ra") != std::string::npos);
+  FLUME_TEST_CHECK(npu_ra_marker.find(
+      "payload_path=npu-hbm->rnic->server-posix") != std::string::npos);
 
   flume::roce::SessionLifecycle lifecycle;
   FLUME_TEST_CHECK(lifecycle.LocalResourcesReady());

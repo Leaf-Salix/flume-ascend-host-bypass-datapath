@@ -13,7 +13,10 @@ Flume 要补的是 HCCL 没有覆盖的部分：**把存储数据接入 NPU HBM 
 - 远端存储到 NPU HBM：远端存储数据通过 RDMA/存储侧 DMA/HCCL-HCOMM 通信链路进入目标 NPU HBM。
 - NPU HBM 到 NPU HBM：不同 NPU rank 的 HBM 之间通过 HCCL/HCOMM 互通；这部分 HCCL 已经提供主能力，Flume 只把它作为 baseline、fallback 和 HCOMM 下钻前的验证路径。
 
-因此本项目主线应是 **HCCL/HCOMM-first**。HIXL 不作为第一优先实现基座，而作为 one-sided transfer、内存注册、异步请求状态和能力协商的参考样板。
+因此外部存储主线是 **Storage Server RNIC -> registered NPU HBM**。
+HCCL/HCOMM 负责数据进入一张 NPU 后的可选多卡分发与设备侧调度，不再
+作为外部存储 RDMA 的前置阻塞。HIXL 仅作为 one-sided transfer、内存
+注册、异步请求状态和能力协商的参考样板。
 
 当前代码命名已与项目名对齐：对外 C ABI 使用 `flume_*` 前缀，CMake target 使用 `flume` / `libflume`。
 
@@ -48,6 +51,22 @@ HcommReadOnThread
 | HCOMM Channel / HCCL Buffer | HCOMM 提供底层资源接口 | 封装 resource probe，后续实现 HCOMM primitive payload copy |
 | 远端存储块如何进入 HBM | 不是 HCCL 职责 | Flume 核心目标：storage proxy、HCCL/HCOMM visible buffer、未来 RDMA/storage direct path |
 | CANN 8.5 与高版本差异 | 由安装环境暴露 header/symbol | Flume feature probe + fallback，缺能力返回 unsupported |
+
+### 1.2 当前外部存储主路径
+
+```mermaid
+flowchart LR
+  Storage["Server A memory / POSIX storage"] --> Staging["Server A DRAM staging"]
+  Staging -->|"standard verbs RDMA Write"| HBM["Server C registered NPU HBM"]
+  Client["Flume Host-RA client"] -->|"TCP command/completion"| Server["Flume storage server"]
+  Client -->|"RA/HCCP QP + MR"| HBM
+  HBM -->|"optional after ingress"| HCCL["HCCL multi-card distribution"]
+```
+
+该 TCP-control/RDMA-payload 路径已经实现并完成静态验证，真机验证待执行。
+它允许 CPU 参与建链和请求提交，但 payload 不进入计算服务器 C 的 host
+DRAM。Server A 仍使用 DRAM staging，因此只声明 compute-host bypass，
+不声明 full direct storage。
 
 因此本文档中的 “host-bypass” 不是指 host 完全退出系统，而是指 **payload 不经 host memory staging**。host 仍负责初始化、建链、任务下发、错误诊断和 fallback 决策。最终目标是在 storage->HBM payload 上也达到类似 HCCL tensor 通信的数据路径属性。
 
@@ -93,7 +112,7 @@ HcommReadOnThread
 | storage partial-direct sim | 本地已实现最小骨架 | `ctest --test-dir build-local-next -R sim_hcomm_payload_failures` | `flume_prepare_storage_block_async` / `flume_read_to_hbm_async` 当前模拟 `file offset -> SIM_HCCL_COMM -> SIM_HBM`；真实 storage->Ascend HBM direct path 仍返回 unsupported |
 | storage direct transfer sim | 本地已实现 host-bypass 语义骨架 | `ctest --test-dir build-local-direct -R storage_direct_sim`、`flume-storage-direct-sim-smoke --strict-direct-only` 或 `flume-storage-read-to-rank-demo` | `flume_register_storage_target_memory`、`flume_storage_direct_plan_create` 和 `flume_read_storage_to_hbm_async` 当前模拟 `storage block -> registered target window -> storage fabric sim -> HCOMM payload sim -> target SIM_HBM`，输出 `storage_fabric=sim-rdma`、`storage_memory_registration=sim-hbm-window`、`storage_host_payload_copy=not-used`、`fallback=none`；这只证明 API / 状态机 / 路由语义，不声明真实 RDMA/HBM bypass |
 | Ascend full matrix | Host B (CANN 9.0) 真机已通过；CANN 8.5 构建和 feature probe 已通过，smoke 受 Host A 资源占用影响未完成 | `tools/flume_tool.py --build-dir build-full --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> --hccl-debug-logs ascend-full-matrix` | Host B HCCS_SW 卡对通过 required 步，包括 Stage 3A storage-HBM fallback；未安装 payload package 时 strict payload-copy 是 optional expected negative；package preflight 为 payload-ready 时 strict payload-copy 会升级为 required positive；Host A 当前因 NPU 任务占满导致 VNIC socket listen 失败，不归类为代码问题 |
-| storage/RDMA->NPU HBM | 待探索 | 暂不可真实测试 | 依赖外部 RDMA/NVMe-oF 与 NPU HBM/comm memory 的注册和同步能力 |
+| Host-RA TCP control + RNIC payload | 已实现并静态验证，待真机 | `ctest -R 'roce_storage_protocol|roce_tcp_control_sim|cann_ra_source_abi'`；真机见 `docs/stage-4-host-ra-baseline.md` | TCP 传 command/completion；RA/HCCP 注册 NPU HBM；Server verbs RDMA Write payload；memory/POSIX 均已接入 |
 
 因此，现在可以把仓库拿到 Ascend 主机上做“环境、编译、链接、mock/sim 回归”、base HCCL AllReduce/AllGather HBM collective smoke、公开 HCCL `Send/Recv` 的 P2P HBM copy smoke、CANN 8.5/9.0 HCOMM Channel resource probe、payload readiness / strict payload-copy gate，以及 Stage 3A storage-HBM fallback smoke。Host B (CANN 9.0) full-matrix 已证明这些路径在空闲 HCCS_SW 卡对上可通过，并已用本地 SSD 输入文件完成 16 MiB `storage_hbm=hccl-p2p-staging` 验证；Host A (CANN 8.5) 当前 smoke 失败来自卡被长任务占用后的 VNIC socket 资源冲突。如果 CMake 探测到 A3 相关试用接口存在，还可以在 Atlas A3 HCCS 场景下跑 symmetric-memory collective smoke。未安装 payload package 时 strict payload-copy 是 expected negative；package payload-ready 后它会变成 required positive。当前还不能宣称真实 HCOMM primitive/custom-op payload copy 或真实 storage->Ascend HBM direct path 已打通，直到 strict positive 同时输出两 rank passed、`stage3b3e_payload_copy=passed`、direct ACL payload launch/sync passed、`payload_kernel_status=success`、`payload_failure_step=none`、`payload_status_word=0`、`payload_kernel_hcomm_ret=0`、`payload_local_buffer_prime=passed`、`payload_local_buffer_prime_source=host-sentinel-not-payload`、`payload_status_schema=v7`、`payload_status_word_count=17`、`payload_echo=passed`, `payload_descriptor_fingerprint=passed`, `payload_host_descriptor_validation=passed`, `payload_host_validation_reason=ok`, `payload_host_validation_reason_code=0`, `payload_data_probe=observed`、`payload_data_remote_entry_fingerprint=...`, `payload_data_transfer_exit_fingerprint=...`、`payload_data_flow=passed`、`payload_host_data=passed`、`payload_primitive_state=completed`、`payload_trace=passed`、`payload_trace_header=passed`、`payload_trace_schema=v3`、`payload_trace_word_count=82`、`payload_trace_status_word=0`、`payload_trace_hcomm_ret=0`、`payload_trace_event=kernel-exit`、`payload_trace_role=...`、`payload_trace_local_rank=...`、`payload_trace_peer_rank=...`、`payload_trace_order=passed`、`payload_trace_ret_order=passed`、`payload_trace_primitive_counts=passed`、`payload_trace_primitive_path=send-local-copy|recv-read-*|send-write|recv-write-local-copy`、`payload_transfer_mode=read|write`、`payload_trace_transfer_mode=read|write`、`payload_trace_result=success`、`payload_trace_first_error_event=none`、`payload_trace_first_error_ret=0`、`payload_trace_first_error_index=-1`、`payload_comm_binding=comm-name` + `payload_comm_acquire=default` 或显式 `payload_comm_binding=channel-handle`、`payload_desc_batch_tag=default|custom`、`payload_recv_path=local-buffer|direct-output`、`payload_semantic_v6=present`、`payload_semantic_v7=present`、`payload_semantic_v8=present`, `payload_semantic_v9=present`、`payload_semantic_v10=present`, `payload_semantic_v11=present`、`payload_semantic_v12=present`、`payload_semantic_v13=present`、`payload_semantic_v14=present`, `payload_semantic_v15=present`、`payload_semantic_v16=present`, `payload_semantic_v17=present`、`payload_semantic_v18=present`、`payload_semantic_v19=present`、`payload_thread_notify_order=...`、`payload_pattern=strict-v1`、source/received/expected checksum match、`payload_verify=passed` 和 `fallback=none`。
 

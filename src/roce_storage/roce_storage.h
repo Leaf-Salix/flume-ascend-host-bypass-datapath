@@ -22,6 +22,13 @@ constexpr uint32_t kMemoryRemoteRead = 1U << 1;
 
 constexpr uint32_t kServerCapabilityMemoryNamespace = 1U << 0;
 constexpr uint32_t kServerCapabilityPosixNamespace = 1U << 1;
+constexpr uint16_t kSessionFlagTcpControl = 1U << 0;
+constexpr uint16_t kSessionKnownFlags = kSessionFlagTcpControl;
+
+enum class ControlMode : uint16_t {
+  kTcp = 0,
+  kNpuRa = 1,
+};
 
 enum class Operation : uint16_t {
   kRead = 1,
@@ -119,6 +126,9 @@ bool DecodeSessionRequest(const uint8_t* wire, size_t len, SessionRequest* reque
 bool EncodeSessionResponse(const SessionResponse& response, std::vector<uint8_t>* wire);
 bool DecodeSessionResponse(const uint8_t* wire, size_t len, SessionResponse* response);
 uint32_t Checksum(const uint8_t* data, size_t len);
+const char* ControlModeName(ControlMode mode);
+std::string MakeHostRaSuccessMarker(ControlMode mode, Operation operation,
+                                    uint32_t server_capabilities);
 
 // The protocol compiles on every development host. Native Host-RA support is
 // enabled explicitly and resolves CANN symbols at runtime, so missing toolkits

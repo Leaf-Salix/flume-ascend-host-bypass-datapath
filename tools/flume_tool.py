@@ -1010,6 +1010,20 @@ def HcommPayloadKernelSyntaxCommand() -> Optional[list[str]]:
     if not all(path.exists() for path in include_roots[1:]):
         return None
     command = [cxx, "-std=c++17", "-fsyntax-only"]
+    primitives_header = include_roots[1] / "hcomm_primitives.h"
+    try:
+        primitives = primitives_header.read_text(encoding="utf-8",
+                                                  errors="replace")
+    except OSError:
+        return None
+    if "HcommChannelFenceOnThread" in primitives:
+        command.append("-DFLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=1")
+        command.append("-DFLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=0")
+    elif "HcommChannelFence(" in primitives:
+        command.append("-DFLUME_HAVE_HCOMM_CHANNEL_FENCE_ON_THREAD=0")
+        command.append("-DFLUME_HAVE_HCOMM_CHANNEL_FENCE_LEGACY=1")
+    else:
+        return None
     command.extend(f"-I{path}" for path in include_roots)
     command.append(str(REPO_ROOT / "custom_ops" / "hcomm_payload_copy" /
                        "aicpu" / "payload_copy_kernel.cc"))

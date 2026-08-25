@@ -17,8 +17,10 @@ class CannRaApi {
   CannRaApi& operator=(const CannRaApi&) = delete;
 
   bool Open(std::string* error);
+  bool Open(bool require_command_posting, std::string* error);
   void Close();
   bool available() const { return available_; }
+  bool command_posting_available() const { return command_posting_available_; }
 
   int (*ra_init)(cann::RaInitConfig*) = nullptr;
   int (*ra_deinit)(cann::RaInitConfig*) = nullptr;
@@ -46,6 +48,7 @@ class CannRaApi {
   void* runtime_library_ = nullptr;
   void* acl_library_ = nullptr;
   bool available_ = false;
+  bool command_posting_available_ = false;
 };
 
 bool CannRaLoaderCompiled();

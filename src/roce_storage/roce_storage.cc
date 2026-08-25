@@ -3,6 +3,7 @@
 #include "roce_storage/cann_ra_loader.h"
 
 #include <cstring>
+#include <sstream>
 
 #ifndef FLUME_HAVE_IBVERBS
 #define FLUME_HAVE_IBVERBS 0
@@ -187,10 +188,17 @@ bool DecodeEndpoint(const uint8_t* wire, size_t len, Endpoint* endpoint) {
 }
 
 bool EncodeSessionRequest(const SessionRequest& request, std::vector<uint8_t>* wire) {
-  if (wire == nullptr || request.completion.address == 0 ||
-      request.completion.length < kCompletionWireBytes ||
-      request.completion.rkey == 0 ||
-      (request.completion.access & kMemoryRemoteWrite) == 0) {
+  const bool tcp_control = (request.flags & kSessionFlagTcpControl) != 0;
+  const bool valid_completion = request.completion.address != 0 &&
+      request.completion.length >= kCompletionWireBytes &&
+      request.completion.rkey != 0 &&
+      (request.completion.access & kMemoryRemoteWrite) != 0;
+  if (wire == nullptr || (request.flags & ~kSessionKnownFlags) != 0 ||
+      (!tcp_control && !valid_completion) ||
+      (tcp_control && (request.completion.address != 0 ||
+                       request.completion.length != 0 ||
+                       request.completion.rkey != 0 ||
+                       request.completion.access != 0))) {
     return false;
   }
   std::vector<uint8_t> endpoint;
@@ -221,11 +229,18 @@ bool DecodeSessionRequest(const uint8_t* wire, size_t len, SessionRequest* reque
     return false;
   }
   offset += kEndpointWireBytes;
-  return ReadU64(wire, len, &offset, &request->completion.address) &&
-         ReadU64(wire, len, &offset, &request->completion.length) &&
-         ReadU32(wire, len, &offset, &request->completion.rkey) &&
-         ReadU32(wire, len, &offset, &request->completion.access) &&
-         request->completion.address != 0 &&
+  if (!ReadU64(wire, len, &offset, &request->completion.address) ||
+      !ReadU64(wire, len, &offset, &request->completion.length) ||
+      !ReadU32(wire, len, &offset, &request->completion.rkey) ||
+      !ReadU32(wire, len, &offset, &request->completion.access) ||
+      (request->flags & ~kSessionKnownFlags) != 0) {
+    return false;
+  }
+  if ((request->flags & kSessionFlagTcpControl) != 0) {
+    return request->completion.address == 0 && request->completion.length == 0 &&
+           request->completion.rkey == 0 && request->completion.access == 0;
+  }
+  return request->completion.address != 0 &&
          request->completion.length >= kCompletionWireBytes &&
          request->completion.rkey != 0 &&
          (request->completion.access & kMemoryRemoteWrite) != 0;
@@ -325,6 +340,41 @@ uint32_t Checksum(const uint8_t* data, size_t len) {
     value *= 16777619U;
   }
   return value;
+}
+
+const char* ControlModeName(ControlMode mode) {
+  switch (mode) {
+    case ControlMode::kTcp:
+      return "tcp";
+    case ControlMode::kNpuRa:
+      return "npu-ra";
+  }
+  return "unknown";
+}
+
+std::string MakeHostRaSuccessMarker(ControlMode mode, Operation operation,
+                                    uint32_t server_capabilities) {
+  std::ostringstream marker;
+  marker << "roce_storage=host-ra-passed roce_protocol=flume-roce-v2 "
+         << "control_path=" << ControlModeName(mode) << " "
+         << "npu_hbm_mr=registered qp_state=rtr-rts server_rdma_cq=success "
+         << "compute_host_payload_bytes=0 compute_host_post=used ";
+  if (mode == ControlMode::kTcp) {
+    marker << "command_path=tcp completion_path=tcp ";
+  } else {
+    marker << "command_path=npu-ra-send completion_path=rdma-write-to-npu-hbm ";
+  }
+  const char* backend =
+      (server_capabilities & kServerCapabilityPosixNamespace) != 0 ?
+          "posix" : "memory";
+  marker << "payload_path=";
+  if (operation == Operation::kRead) {
+    marker << "server-" << backend << "->rnic->npu-hbm";
+  } else {
+    marker << "npu-hbm->rnic->server-" << backend;
+  }
+  marker << " storage_side_staging=used fallback=none";
+  return marker.str();
 }
 
 bool NativeTransportCompiled() {

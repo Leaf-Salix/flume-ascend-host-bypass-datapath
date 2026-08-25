@@ -181,12 +181,14 @@ This validates the first real storage-integrated fallback path. Rank 0 acts as t
 
 ### Stage 4 Host-RA baseline
 
-With `-DFLUME_ENABLE_ROCE_STORAGE=ON`, Flume now includes an experimental
-protocol-v2 Host-RA path. TCP is used only to exchange RC-QP and completion
-window descriptors. Commands use NPU RA `SEND`; the storage server uses a
-standard RNIC to RDMA Write payload and completion records into registered NPU
-HBM. This bypasses compute-host payload staging, while the current POSIX/memory
-storage backend still stages payload in storage-server DRAM. See
+With `-DFLUME_ENABLE_ROCE_STORAGE=ON`, Flume includes a protocol-v2 Host-RA
+path. The primary baseline uses TCP for commands/completions and standard-verbs
+RDMA for payload into registered NPU HBM; the previous NPU RA `SEND` control
+path remains available as `control_mode=npu-ra`. The standalone
+`flume-roce-hbm-write-smoke` does not require HCCL, HCOMM, custom ops, or a
+Flume storage agent. This is implemented and statically verified, with hardware
+validation pending. It targets compute-host payload bypass while the current
+POSIX/memory backend still stages bytes in storage-server DRAM. See
 [`docs/stage-4-host-ra-baseline.md`](docs/stage-4-host-ra-baseline.md) for the
 exact boundary, clean-room provenance, and hardware checklist.
 

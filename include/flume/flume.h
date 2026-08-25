@@ -106,6 +106,11 @@ typedef enum {
 } flume_roce_post_mode_t;
 
 typedef enum {
+  FLUME_ROCE_CONTROL_TCP = 0,
+  FLUME_ROCE_CONTROL_NPU_RA = 1
+} flume_roce_control_mode_t;
+
+typedef enum {
   FLUME_ROCE_STORAGE_MEMORY = 0,
   FLUME_ROCE_STORAGE_POSIX = 1,
   FLUME_ROCE_STORAGE_SPDK = 2
@@ -141,6 +146,7 @@ typedef struct {
   flume_roce_post_mode_t post_mode;
   flume_roce_storage_backend_t storage_backend;
   uint32_t require_compute_host_bypass;
+  flume_roce_control_mode_t control_mode;
 } flume_roce_storage_options_t;
 
 typedef struct {

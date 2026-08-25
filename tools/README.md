@@ -27,6 +27,23 @@ python3 tools/flume_tool.py local
 
 macOS 或无 Ascend Linux 上的预期结果：HCCL 布局检查可以失败，但 configure、build、CTest、sim demo 和可用的 refer syntax gate 应通过。普通步骤默认 600 秒超时，可用 `--step-timeout-sec` 调整。
 
+### Stage 4 Host-RA 构建
+
+在 CANN 主机上构建 TCP-control/RDMA-payload 基线：
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-roce-tcp \
+  --enable-roce-storage \
+  ascend-probe
+```
+
+该命令会构建独立的 `flume-roce-hbm-write-smoke`。工具不会自动运行跨主机
+RDMA，因为 storage RNIC 和 NPU HCCN endpoint 可能位于不同服务器。配套的
+Server/Client 命令与验收 marker 见
+`docs/stage-4-host-ra-baseline.md`。默认 control mode 是 `tcp`；只有在 TCP
+基线通过后，才建议使用 `--control-mode npu-ra` 做实验对照。
+
 ### 本地 storage direct sim smoke
 
 `flume-storage-direct-sim-smoke` 不声明真实硬件 host-bypass。它验证的是
