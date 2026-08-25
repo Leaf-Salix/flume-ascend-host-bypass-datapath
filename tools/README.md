@@ -480,6 +480,11 @@ Stage 3B.3G 提供两个额外入口。`hcomm-aicpu-runtime-preflight` 只读检
 CANN/OPP。`hcomm-aicpu-qualification-gate` 要求静态
 `device-candidate`，然后按独立进程顺序运行 standalone canary、notify-only
 和 strict payload。任一步失败都会阻止后续步骤，避免错误 stream 污染诊断。
+其中 `--hccl-devices` 是 chip/logic device id，而 secverify 的 `npu-smi -i`
+需要 card id；工具会先解析只读的 `npu-smi info -m`，对所有唯一 card 查询并
+输出 `npu_smi_device_card_map`、`npu_smi_card_mapping_source` 和
+`npu_smi_queried_cards`。解析失败时才显式使用 Ascend 910 双 die fallback，
+不会再把 chip id 直接当 card id。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，

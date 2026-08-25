@@ -1045,6 +1045,79 @@ def main() -> int:
             [whitelist], flume_tool.HCOMM_CUSTOM_OP_TAR)
         assert whitelist_state == "ready"
         assert whitelist_path == str(whitelist)
+        mapping_text = (
+            "| NPU ID | Chip ID | Chip Logic ID |\n"
+            "| 5 | 0 | 10 |\n"
+            "| 6 | 0 | 12 |\n")
+        assert flume_tool.ParseNpuSmiInfoMDeviceCardMap(mapping_text) == {
+            "10": "5", "12": "6"}
+        cards, mapping_detail, mapping_source = flume_tool.ResolveNpuSmiCards(
+            ["10", "12"], mapping_text)
+        assert cards == ["5", "6"]
+        assert mapping_detail == "10->5,12->6"
+        assert mapping_source == "npu-smi-info-m"
+        fallback_cards, _, fallback_source = flume_tool.ResolveNpuSmiCards(
+            ["10", "12"], "unparseable")
+        assert fallback_cards == ["5", "6"]
+        assert fallback_source == "dual-die-fallback"
+
+        class MappingPolicyRunner:
+            def __init__(self, run_dir: Path):
+                self.run_dir = run_dir
+                self.run_dir.mkdir(parents=True)
+                self.commands: list[list[str]] = []
+                self.static_lines: list[str] = []
+
+            def run(self, name, command, required, timeout_seconds,
+                    env_updates=None):
+                del required, timeout_seconds, env_updates
+                self.commands.append(list(command))
+                if command[-1] == "-m":
+                    output = mapping_text
+                elif "custom-op-secverify-enable" in command:
+                    output = "custom-op-secverify-enable: 1\n"
+                else:
+                    output = "custom-op-secverify-mode: 0\n"
+                log_path = self.run_dir / f"{name}.log"
+                log_path.write_text(output, encoding="utf-8")
+                return SimpleNamespace(returncode=0, log_path=log_path)
+
+            def record_static(self, name, lines, returncode, required):
+                del required
+                self.static_lines.extend(lines)
+                log_path = self.run_dir / f"{name}.log"
+                log_path.write_text("\n".join(lines) + "\n",
+                                    encoding="utf-8")
+                return SimpleNamespace(returncode=returncode,
+                                       log_path=log_path)
+
+        mapping_runner = MappingPolicyRunner(tmp / "policy-mapping-logs")
+        with mock.patch.object(flume_tool.shutil, "which",
+                               return_value="/usr/bin/npu-smi"):
+            mapped_policy, mapped_result = (
+                flume_tool.RunAicpuRuntimePolicyPreflight(
+                    mapping_runner,
+                    SimpleNamespace(cann_package_root=str(policy_cann),
+                                    hccl_devices="10,12",
+                                    step_timeout_sec=30),
+                    required=True))
+        assert mapped_result.returncode == 0
+        assert mapped_policy.device_card_map == "10->5,12->6"
+        assert mapped_policy.card_mapping_source == "npu-smi-info-m"
+        assert mapped_policy.queried_cards == "5,6"
+        assert mapped_policy.secverify_enable == "1"
+        assert mapped_policy.secverify_mode == "0"
+        assert mapped_policy.security == "ready-for-source-built-unsigned"
+        property_commands = [
+            command for command in mapping_runner.commands
+            if any(item.startswith("custom-op-secverify-")
+                   for item in command)]
+        assert {command[-1] for command in property_commands} == {"5", "6"}
+        assert all(command[-1] not in {"10", "12"}
+                   for command in property_commands)
+        assert "npu_smi_device_card_map=10->5,12->6" in (
+            mapping_runner.static_lines)
+
         policy_runner = flume_tool.Runner(tmp / "policy-logs")
         with mock.patch.object(flume_tool.shutil, "which", return_value=None):
             policy, policy_result = flume_tool.RunAicpuRuntimePolicyPreflight(

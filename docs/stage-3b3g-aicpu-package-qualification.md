@@ -83,6 +83,14 @@ The tool never runs `npu-smi set` and never edits
 signature policy stops the device gate and produces
 `AICPU_RUNTIME_ADMIN_ACTIONS.txt`.
 
+The selected HCCL device IDs are physical/logical chip IDs, while the
+security properties expect NPU card IDs. Flume first parses
+`npu-smi info -m`, queries every unique selected card, and records
+`npu_smi_device_card_map`, `npu_smi_card_mapping_source`, and
+`npu_smi_queried_cards`. If the mapping output is unavailable, the existing
+Ascend 910 dual-die mapping is used as an explicit diagnostic fallback rather
+than silently passing chip IDs to `npu-smi -i`.
+
 After an administrator-approved device package is installed or supplied, the
 one-shot gate is:
 

@@ -1424,6 +1424,9 @@ class AicpuRuntimePolicy:
     security: str = "unknown"
     secverify_enable: str = "unknown"
     secverify_mode: str = "unknown"
+    device_card_map: str = "unknown"
+    card_mapping_source: str = "unknown"
+    queried_cards: str = "none"
     gate: str = "candidate"
 
 
@@ -1483,6 +1486,82 @@ def _ParseNpuSmiProperty(text: str, property_name: str) -> str:
     return match.group(1) if match else "unknown"
 
 
+def ParseNpuSmiInfoMDeviceCardMap(text: str) -> dict[str, str]:
+    """Parse physical/logical device to NPU card mappings from info -m."""
+    mapping: dict[str, str] = {}
+    header: Optional[list[str]] = None
+    for raw_line in text.splitlines():
+        columns = [item.strip() for item in raw_line.strip().strip("|").split("|")]
+        normalized = [re.sub(r"[^a-z0-9]", "", item.lower())
+                      for item in columns]
+        logic_headers = [item for item in normalized
+                         if item.endswith("logicid") or
+                         item.endswith("logicalid")]
+        if "npuid" in normalized and logic_headers:
+            header = normalized
+            continue
+        if header is not None and len(columns) == len(header):
+            try:
+                npu_index = header.index("npuid")
+                logic_key = next(
+                    item for item in header
+                    if item.endswith("logicid") or
+                    item.endswith("logicalid"))
+                logic_index = header.index(logic_key)
+            except ValueError:
+                header = None
+                continue
+            npu_id = columns[npu_index]
+            logic_id = columns[logic_index]
+            if npu_id.isdigit() and logic_id.isdigit():
+                mapping[logic_id] = npu_id
+
+    current: dict[str, str] = {}
+    labels = {
+        "npu": re.compile(r"\bNPU\s*ID\s*[:=]\s*(\d+)", re.IGNORECASE),
+        "logic": re.compile(
+            r"\b(?:Chip\s+)?(?:Logic|Logical)\s*ID\s*[:=]\s*(\d+)",
+            re.IGNORECASE),
+    }
+    for raw_line in text.splitlines():
+        for key, pattern in labels.items():
+            match = pattern.search(raw_line)
+            if match:
+                current[key] = match.group(1)
+        if "npu" in current and "logic" in current:
+            mapping[current["logic"]] = current["npu"]
+            current = {}
+    return mapping
+
+
+def ResolveNpuSmiCards(devices: Iterable[str], info_m_text: str
+                       ) -> tuple[list[str], str, str]:
+    parsed = ParseNpuSmiInfoMDeviceCardMap(info_m_text)
+    cards: list[str] = []
+    details: list[str] = []
+    sources: set[str] = set()
+    for device in devices:
+        card = parsed.get(device)
+        source = "npu-smi-info-m"
+        if card is None:
+            card = str(int(device) // 2)
+            source = "dual-die-fallback"
+        details.append(f"{device}->{card}")
+        sources.add(source)
+        if card not in cards:
+            cards.append(card)
+    source_label = next(iter(sources)) if len(sources) == 1 else "mixed"
+    return cards, ",".join(details) or "none", source_label
+
+
+def _AggregateNpuSmiProperties(values: Iterable[str]) -> str:
+    collected = list(values)
+    if not collected or any(value == "unknown" for value in collected):
+        return "unknown"
+    unique = set(collected)
+    return collected[0] if len(unique) == 1 else "mixed"
+
+
 def WriteAicpuRuntimeAdminNote(run_dir: Path,
                                policy: AicpuRuntimePolicy) -> Path:
     note = run_dir / "AICPU_RUNTIME_ADMIN_ACTIONS.txt"
@@ -1494,6 +1573,9 @@ def WriteAicpuRuntimeAdminNote(run_dir: Path,
         f"custom_op_secverify={policy.security}\n"
         f"custom_op_secverify_enable={policy.secverify_enable}\n"
         f"custom_op_secverify_mode={policy.secverify_mode}\n"
+        f"npu_smi_device_card_map={policy.device_card_map}\n"
+        f"npu_smi_card_mapping_source={policy.card_mapping_source}\n"
+        f"npu_smi_queried_cards={policy.queried_cards}\n"
         "\n"
         "For source-built unsigned AICPU packages, an administrator must "
         "review the target driver policy and the official HCCL custom-op "
@@ -1516,26 +1598,40 @@ def RunAicpuRuntimePolicyPreflight(
         AicpuWhitelistCandidates(args), HCOMM_CUSTOM_OP_TAR)
     devices = ParseDeviceList(args.hccl_devices) if args.hccl_devices else []
     if shutil.which("npu-smi") and devices:
-        outputs: dict[str, str] = {}
-        for property_name in (
-                "custom-op-secverify-enable", "custom-op-secverify-mode"):
-            result = runner.run(
-                f"npu-smi-{property_name}",
-                ["npu-smi", "info", "-t", property_name, "-i", devices[0]],
-                required=False,
-                timeout_seconds=args.step_timeout_sec,
-            )
-            try:
-                outputs[property_name] = result.log_path.read_text(
-                    encoding="utf-8", errors="replace")
-            except OSError:
-                outputs[property_name] = ""
-        policy.secverify_enable = _ParseNpuSmiProperty(
-            outputs["custom-op-secverify-enable"],
-            "custom-op-secverify-enable")
-        policy.secverify_mode = _ParseNpuSmiProperty(
-            outputs["custom-op-secverify-mode"],
-            "custom-op-secverify-mode")
+        mapping_result = runner.run(
+            "npu-smi-info-mapping", ["npu-smi", "info", "-m"],
+            required=False, timeout_seconds=args.step_timeout_sec)
+        try:
+            mapping_text = mapping_result.log_path.read_text(
+                encoding="utf-8", errors="replace")
+        except OSError:
+            mapping_text = ""
+        cards, policy.device_card_map, policy.card_mapping_source = (
+            ResolveNpuSmiCards(devices, mapping_text))
+        policy.queried_cards = ",".join(cards) or "none"
+        property_values: dict[str, list[str]] = {
+            "custom-op-secverify-enable": [],
+            "custom-op-secverify-mode": [],
+        }
+        for card in cards:
+            for property_name in property_values:
+                result = runner.run(
+                    f"npu-smi-{property_name}-card-{card}",
+                    ["npu-smi", "info", "-t", property_name, "-i", card],
+                    required=False,
+                    timeout_seconds=args.step_timeout_sec,
+                )
+                try:
+                    output = result.log_path.read_text(
+                        encoding="utf-8", errors="replace")
+                except OSError:
+                    output = ""
+                property_values[property_name].append(
+                    _ParseNpuSmiProperty(output, property_name))
+        policy.secverify_enable = _AggregateNpuSmiProperties(
+            property_values["custom-op-secverify-enable"])
+        policy.secverify_mode = _AggregateNpuSmiProperties(
+            property_values["custom-op-secverify-mode"])
     if policy.secverify_enable == "1" and policy.secverify_mode == "0":
         policy.security = "ready-for-source-built-unsigned"
     elif (policy.secverify_enable != "unknown" and
@@ -1554,6 +1650,9 @@ def RunAicpuRuntimePolicyPreflight(
             f"custom_op_secverify={policy.security}",
             f"custom_op_secverify_enable={policy.secverify_enable}",
             f"custom_op_secverify_mode={policy.secverify_mode}",
+            f"npu_smi_device_card_map={policy.device_card_map}",
+            f"npu_smi_card_mapping_source={policy.card_mapping_source}",
+            f"npu_smi_queried_cards={policy.queried_cards}",
             f"aicpu_runtime_gate={policy.gate}",
             "system_changes=none",
         ],
