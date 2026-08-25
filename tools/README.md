@@ -485,6 +485,8 @@ CANN/OPP。`hcomm-aicpu-qualification-gate` 要求静态
 输出 `npu_smi_device_card_map`、`npu_smi_card_mapping_source` 和
 `npu_smi_queried_cards`。解析失败时才显式使用 Ascend 910 双 die fallback，
 不会再把 chip id 直接当 card id。
+不同 `npu-smi` 版本输出的 enable 值可能是 `True/False` 或 `1/0`，工具会先
+统一归一化为 `1/0`，再执行多 card policy 判定。
 `hcomm-custom-op-export-runtime` 是不污染系统安装的替代路径：它只把已通过
 preflight 的 JSON/tar 复制到
 `<temporary-custom-op-root>/opp/vendors/<vendor>/aicpu/{config,kernel}`，

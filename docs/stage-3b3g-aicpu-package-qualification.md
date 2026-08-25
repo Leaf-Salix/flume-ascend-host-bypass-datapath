@@ -90,6 +90,9 @@ security properties expect NPU card IDs. Flume first parses
 `npu_smi_queried_cards`. If the mapping output is unavailable, the existing
 Ascend 910 dual-die mapping is used as an explicit diagnostic fallback rather
 than silently passing chip IDs to `npu-smi -i`.
+`npu-smi` versions may print the enable property as `True`/`False` or `1`/`0`;
+Flume normalizes both representations to `1`/`0` before applying the policy
+gate.
 
 After an administrator-approved device package is installed or supplied, the
 one-shot gate is:

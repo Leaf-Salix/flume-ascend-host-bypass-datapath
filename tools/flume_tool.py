@@ -1481,9 +1481,17 @@ def InspectAicpuWhitelist(
 
 def _ParseNpuSmiProperty(text: str, property_name: str) -> str:
     pattern = re.compile(
-        rf"{re.escape(property_name)}\s*[:=]\s*([0-9]+)", re.IGNORECASE)
+        rf"{re.escape(property_name)}\s*[:=]\s*(true|false|[0-9]+)\b",
+        re.IGNORECASE)
     match = pattern.search(text)
-    return match.group(1) if match else "unknown"
+    if match is None:
+        return "unknown"
+    value = match.group(1).lower()
+    if value == "true":
+        return "1"
+    if value == "false":
+        return "0"
+    return value
 
 
 def ParseNpuSmiInfoMDeviceCardMap(text: str) -> dict[str, str]:

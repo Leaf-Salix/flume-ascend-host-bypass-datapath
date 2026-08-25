@@ -1051,6 +1051,15 @@ def main() -> int:
             "| 6 | 0 | 12 |\n")
         assert flume_tool.ParseNpuSmiInfoMDeviceCardMap(mapping_text) == {
             "10": "5", "12": "6"}
+        assert flume_tool._ParseNpuSmiProperty(
+            "Custom-op-secverify-enable : True\n",
+            "custom-op-secverify-enable") == "1"
+        assert flume_tool._ParseNpuSmiProperty(
+            "Custom-op-secverify-enable : FALSE\n",
+            "custom-op-secverify-enable") == "0"
+        assert flume_tool._ParseNpuSmiProperty(
+            "Custom-op-secverify-mode : 0\n",
+            "custom-op-secverify-mode") == "0"
         cards, mapping_detail, mapping_source = flume_tool.ResolveNpuSmiCards(
             ["10", "12"], mapping_text)
         assert cards == ["5", "6"]
@@ -1075,7 +1084,7 @@ def main() -> int:
                 if command[-1] == "-m":
                     output = mapping_text
                 elif "custom-op-secverify-enable" in command:
-                    output = "custom-op-secverify-enable: 1\n"
+                    output = "Custom-op-secverify-enable: True\n"
                 else:
                     output = "custom-op-secverify-mode: 0\n"
                 log_path = self.run_dir / f"{name}.log"
