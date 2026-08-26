@@ -56,6 +56,33 @@ data mover node 使用本机 NPU HCCN 作为 sender，可运行
 Linux 进程的 storage appliance，当前工具不能直接拉起其 RNIC；需要先实现
 该设备原生 control/storage protocol 的 controller-side adapter。
 
+### Native NVMe namespace / HBM canary
+
+`native-nvme-hbm-canary` 是与现有 Host-RA/verbs server 路径相互独立的
+硬件判定工具。它要求远端 NVMe-oF namespace 已经通过系统或厂商 initiator
+映射为本机 Linux NVMe block device，然后把 `aclrtMalloc` 返回的 HBM 地址
+直接交给 NVMe passthrough ioctl，并要求 sysfs 报告 controller transport 为
+`rdma`，因此本地 PCIe NVMe 不会被误判为远端路径。默认 `read` 不修改
+namespace：
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-native-nvme \
+  --nvme-namespace <nvme-namespace-block-device> \
+  --nvme-device <logical-npu-device> \
+  --nvme-direction read \
+  --nvme-slba <readable-lba> \
+  --nvme-bytes 4096 \
+  native-nvme-hbm-canary
+```
+
+若 namespace 不存在，结果是 `step=namespace-open`；若内核拒绝 HBM pointer，
+典型结果是 `errno=EFAULT` 和
+`likely_reason=hbm-pointer-rejected-by-kernel`。两者都不会 fallback 到 host
+payload staging。写入测试只允许未挂载的专用 scratch namespace，并必须显式
+使用 `--nvme-direction write-roundtrip --confirm-scratch-namespace`。详细安全
+边界和 marker 见 `docs/stage-4-native-nvme-hbm-canary.md`。
+
 ### 本地 storage direct sim smoke
 
 `flume-storage-direct-sim-smoke` 不声明真实硬件 host-bypass。它验证的是

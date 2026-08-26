@@ -40,6 +40,8 @@ Implemented and testable on macOS/Linux without NPU hardware:
   `file offset -> SIM_HCCL_COMM staging -> SIM_HBM`.
 - Simulated A3 symmetric-memory lifecycle checks.
 - Tooling for local and Ascend-host validation under `tools/`.
+- An isolated native NVMe/HBM canary plan with alignment, range, and
+  destructive-write safety tests. The Linux hardware executable is opt-in.
 
 Implemented and validated on Ascend hardware in the current test environment:
 
@@ -203,6 +205,30 @@ matrix and commands.
 The current proxy requires an upstream Flume daemon. A storage appliance that
 cannot run Flume needs a controller-side adapter for its native control/storage
 protocol; that external-appliance route is designed but not implemented.
+
+### Native NVMe namespace / HBM canary
+
+An independent opt-in path tests whether an NVMe namespace already mapped on
+the Ascend compute node accepts an `aclrtMalloc` HBM address directly through
+the Linux NVMe passthrough ioctl. It does not use the Flume raw-RDMA server and
+does not replace any existing route. Start with the non-destructive read gate:
+
+```bash
+python3 tools/flume_tool.py \
+  --build-dir build-native-nvme \
+  --nvme-namespace <nvme-namespace-block-device> \
+  --nvme-device <logical-npu-device> \
+  --nvme-direction read \
+  --nvme-slba <readable-lba> \
+  --nvme-bytes 4096 \
+  native-nvme-hbm-canary
+```
+
+The write roundtrip is available only for an unmounted dedicated scratch
+namespace and requires `--confirm-scratch-namespace`. See
+[`docs/stage-4-native-nvme-hbm-canary.md`](docs/stage-4-native-nvme-hbm-canary.md)
+for its backup/restore behavior and the distinction between an ioctl pass and
+final no-bounce-buffer proof.
 
 If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
 

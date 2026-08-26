@@ -10,6 +10,8 @@ option(FLUME_ENABLE_HCCL "Enable the future HCCL/HCOMM-backed transport." OFF)
 option(FLUME_BUILD_TESTS "Build tests." ON)
 option(FLUME_BUILD_HCOMM_CUSTOM_OP "Build experimental HCOMM custom-op/AICPU payload scheduler." OFF)
 option(FLUME_ENABLE_ROCE_STORAGE "Enable the experimental NPU-RNIC RoCE storage API surface." OFF)
+option(FLUME_ENABLE_NATIVE_NVME_HBM_CANARY
+  "Build the isolated Linux NVMe namespace to NPU HBM passthrough canary." OFF)
 
 find_package(Threads REQUIRED)
 
@@ -25,6 +27,7 @@ add_library(flume STATIC
   src/agent/storage_agent.cc
   src/core/client.cc
   src/hcomm_payload/payload_backend.cc
+  src/nvme_storage/nvme_hbm_canary.cc
   src/protocol/framing.cc
   src/roce_storage/control_channel.cc
   src/roce_storage/control_proxy.cc
@@ -85,7 +88,8 @@ if(FLUME_ENABLE_HCCL)
   find_path(ACL_INCLUDE_DIR
     NAMES acl/acl.h
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
-    PATH_SUFFIXES include include/external runtime/include/external
+    PATH_SUFFIXES aarch64-linux/include include include/external
+                  runtime/include/external
   )
   find_path(SECUREC_INCLUDE_DIR
     NAMES securec.h
@@ -100,7 +104,7 @@ if(FLUME_ENABLE_HCCL)
   find_library(ASCENDCL_LIBRARY
     NAMES ascendcl
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
-    PATH_SUFFIXES lib64 lib
+    PATH_SUFFIXES aarch64-linux/lib64 lib64 lib
   )
 
   if(NOT HCCL_INCLUDE_DIR OR NOT HCCL_LIBRARY OR
@@ -779,19 +783,39 @@ target_include_directories(flume PRIVATE
   ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include
 )
 
-# The Host-RA canary uses ACL for HBM allocation but does not require HCCL or
-# HCOMM. Discover ACL independently when only the RoCE storage path is enabled.
-if(FLUME_ENABLE_ROCE_STORAGE AND (NOT ACL_INCLUDE_DIR OR NOT ASCENDCL_LIBRARY))
+# Storage canaries use ACL for HBM allocation but do not require HCCL/HCOMM.
+# Discover ACL independently when only a storage path is enabled.
+if((FLUME_ENABLE_ROCE_STORAGE OR FLUME_ENABLE_NATIVE_NVME_HBM_CANARY) AND
+   (NOT ACL_INCLUDE_DIR OR NOT ASCENDCL_LIBRARY))
   find_path(ACL_INCLUDE_DIR
     NAMES acl/acl.h
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
-    PATH_SUFFIXES include include/external runtime/include/external
+    PATH_SUFFIXES aarch64-linux/include include include/external
+                  runtime/include/external
   )
   find_library(ASCENDCL_LIBRARY
     NAMES ascendcl
     PATHS "$ENV{ASCEND_HOME_PATH}" "$ENV{ASCEND_HOME_PATH}/latest"
-    PATH_SUFFIXES lib64 lib
+    PATH_SUFFIXES aarch64-linux/lib64 lib64 lib
   )
+endif()
+
+if(FLUME_ENABLE_NATIVE_NVME_HBM_CANARY)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR
+      "FLUME_ENABLE_NATIVE_NVME_HBM_CANARY requires Linux NVMe ioctls")
+  endif()
+  include(CheckIncludeFileCXX)
+  check_include_file_cxx("linux/nvme_ioctl.h" FLUME_HAVE_LINUX_NVME_IOCTL_H)
+  if(NOT FLUME_HAVE_LINUX_NVME_IOCTL_H)
+    message(FATAL_ERROR
+      "FLUME_ENABLE_NATIVE_NVME_HBM_CANARY requires linux/nvme_ioctl.h")
+  endif()
+  if(NOT ACL_INCLUDE_DIR OR NOT ASCENDCL_LIBRARY)
+    message(FATAL_ERROR
+      "FLUME_ENABLE_NATIVE_NVME_HBM_CANARY requires AscendCL; set "
+      "ASCEND_HOME_PATH or ACL_INCLUDE_DIR/ASCENDCL_LIBRARY")
+  endif()
 endif()
 
 add_executable(flume-store-agent apps/flume-store-agent.cc)
@@ -824,6 +848,14 @@ target_include_directories(flume-roce-storage-server PRIVATE ${PROJECT_SOURCE_DI
 add_executable(flume-roce-storage-proxy apps/flume-roce-storage-proxy.cc)
 target_link_libraries(flume-roce-storage-proxy PRIVATE flume)
 target_include_directories(flume-roce-storage-proxy PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
+if(FLUME_ENABLE_NATIVE_NVME_HBM_CANARY)
+  add_executable(flume-nvme-hbm-canary apps/flume-nvme-hbm-canary.cc)
+  target_link_libraries(flume-nvme-hbm-canary PRIVATE flume ${ASCENDCL_LIBRARY})
+  target_include_directories(flume-nvme-hbm-canary PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${ACL_INCLUDE_DIR})
+endif()
 
 if(FLUME_ENABLE_HCCL)
   add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
@@ -1015,6 +1047,13 @@ if(FLUME_BUILD_TESTS)
   target_link_libraries(test_roce_storage_protocol PRIVATE flume)
   target_include_directories(test_roce_storage_protocol PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME roce_storage_protocol COMMAND test_roce_storage_protocol)
+
+  add_executable(test_nvme_hbm_canary tests/test_nvme_hbm_canary.cc)
+  target_link_libraries(test_nvme_hbm_canary PRIVATE flume)
+  target_include_directories(test_nvme_hbm_canary PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/tests)
+  add_test(NAME nvme_hbm_canary COMMAND test_nvme_hbm_canary)
 
   add_executable(test_roce_tcp_control_sim tests/test_roce_tcp_control_sim.cc)
   target_link_libraries(test_roce_tcp_control_sim PRIVATE flume)

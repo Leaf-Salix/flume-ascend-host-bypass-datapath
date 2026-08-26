@@ -2475,6 +2475,8 @@ def build_commands(args: argparse.Namespace, enable_hccl: bool,
         f"-DFLUME_ENABLE_HCCL={'ON' if enable_hccl else 'OFF'}",
         f"-DFLUME_BUILD_HCOMM_CUSTOM_OP={'ON' if args.build_hcomm_custom_op else 'OFF'}",
         f"-DFLUME_ENABLE_ROCE_STORAGE={'ON' if args.enable_roce_storage else 'OFF'}",
+        ("-DFLUME_ENABLE_NATIVE_NVME_HBM_CANARY="
+         f"{'ON' if args.enable_native_nvme_hbm_canary else 'OFF'}"),
     ]
     commands: list[CommandSpec] = [
         CommandSpec("cmake-configure", configure, True, cmake_env_updates),
@@ -2929,6 +2931,68 @@ def run_ascend_probe(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(f"[ok] scope note -> {note}")
+    return runner.write_summary()
+
+
+def run_native_nvme_hbm_canary(args: argparse.Namespace) -> int:
+    runner = Runner(Path(args.log_root))
+    runner.write_env_report()
+    env_updates = CannRuntimeEnvUpdates(args)
+    configure = [
+        "cmake", "-S", ".", "-B", args.build_dir,
+        "-DFLUME_BUILD_TESTS=ON",
+        "-DFLUME_ENABLE_HCCL=OFF",
+        "-DFLUME_ENABLE_ROCE_STORAGE=OFF",
+        "-DFLUME_ENABLE_NATIVE_NVME_HBM_CANARY=ON",
+    ]
+    runner.run("cmake-configure", configure, required=True,
+               timeout_seconds=args.step_timeout_sec,
+               env_updates=env_updates)
+    runner.run(
+        "cmake-build-native-nvme-hbm-canary",
+        ["cmake", "--build", args.build_dir, "--target",
+         "flume-nvme-hbm-canary", "test_nvme_hbm_canary",
+         "-j", str(args.jobs)],
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+        env_updates=env_updates,
+    )
+    runner.run(
+        "nvme-hbm-plan-tests",
+        ["ctest", "--test-dir", args.build_dir, "--output-on-failure",
+         "-R", "^nvme_hbm_canary$"],
+        required=True,
+        timeout_seconds=args.step_timeout_sec,
+        env_updates=env_updates,
+    )
+    command = [
+        str(Path(args.build_dir) / "flume-nvme-hbm-canary"),
+        "--namespace", args.nvme_namespace,
+        "--device", str(args.nvme_device),
+        "--direction", args.nvme_direction,
+        "--slba", str(args.nvme_slba),
+        "--bytes", str(args.nvme_bytes),
+        "--timeout-ms", str(args.nvme_timeout_ms),
+    ]
+    if args.confirm_scratch_namespace:
+        command.append("--confirm-scratch-namespace")
+    runner.run("native-nvme-hbm-canary", command, required=True,
+               timeout_seconds=max(args.step_timeout_sec,
+                                   args.nvme_timeout_ms // 1000 + 10),
+               env_updates=env_updates)
+    scope = runner.run_dir / "NATIVE_NVME_HBM_SCOPE.txt"
+    scope.write_text(
+        "This canary passes an aclrtMalloc NPU HBM address directly to the "
+        "Linux NVMe namespace passthrough ioctl. It never falls back to a "
+        "Flume host payload buffer. A pass proves the installed namespace "
+        "and kernel accepted the HBM pointer and completed the I/O; it is a "
+        "direct-path candidate until driver tracing or counters exclude an "
+        "internal kernel bounce buffer. write-roundtrip is destructive and "
+        "must only target an unmounted dedicated scratch namespace; Flume "
+        "backs up and restores the selected range.\n",
+        encoding="utf-8",
+    )
+    print(f"[ok] scope note -> {scope}")
     return runner.write_summary()
 
 
@@ -10743,6 +10807,27 @@ def parse_args() -> argparse.Namespace:
                               "and standard-verbs storage server. Runtime "
                               "CANN RA capability is checked when a session "
                               "opens."))
+    parser.add_argument("--enable-native-nvme-hbm-canary", action="store_true",
+                        help=("Build the independent Linux NVMe namespace to "
+                              "NPU HBM passthrough canary."))
+    parser.add_argument("--nvme-namespace", default="",
+                        help=("NVMe namespace block device for "
+                              "native-nvme-hbm-canary."))
+    parser.add_argument("--nvme-device", type=int, default=0,
+                        help="Logical NPU device for native NVMe/HBM I/O")
+    parser.add_argument("--nvme-direction",
+                        choices=["read", "write-roundtrip"], default="read",
+                        help=("read is non-destructive; write-roundtrip "
+                              "requires a dedicated scratch namespace"))
+    parser.add_argument("--nvme-slba", type=int, default=0,
+                        help="Starting LBA for native NVMe/HBM I/O")
+    parser.add_argument("--nvme-bytes", type=int, default=4096,
+                        help="LBA-aligned native NVMe/HBM transfer size")
+    parser.add_argument("--nvme-timeout-ms", type=int, default=30000,
+                        help="NVMe passthrough command timeout")
+    parser.add_argument("--confirm-scratch-namespace", action="store_true",
+                        help=("Confirm that write-roundtrip targets an "
+                              "unmounted dedicated scratch namespace"))
     parser.add_argument("--step-timeout-sec", type=int, default=600,
                         help="Timeout for regular helper steps; 0 disables it")
     parser.add_argument("--run-hccl-smoke", action="store_true",
@@ -11142,6 +11227,10 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("ascend-probe", help="Probe CANN/HCCL discovery and compile/link on Ascend host")
     subparsers.add_parser("ascend-full-matrix", help="Run the full two-rank Ascend readiness matrix")
     subparsers.add_parser(
+        "native-nvme-hbm-canary",
+        help=("Test a mapped Linux NVMe namespace directly against an "
+              "aclrtMalloc NPU HBM pointer"))
+    subparsers.add_parser(
         "hcomm-payload-strict-positive",
         help=("Run the focused Stage 3B.3E strict HCOMM payload-copy gate"))
     subparsers.add_parser(
@@ -11219,6 +11308,21 @@ def parse_args() -> argparse.Namespace:
         parser.error("--storage-smoke-offset must be >= 0")
     if args.storage_smoke_bytes <= 0:
         parser.error("--storage-smoke-bytes must be greater than 0")
+    if args.nvme_device < 0:
+        parser.error("--nvme-device must be >= 0")
+    if args.nvme_slba < 0:
+        parser.error("--nvme-slba must be >= 0")
+    if args.nvme_bytes <= 0:
+        parser.error("--nvme-bytes must be greater than 0")
+    if args.nvme_timeout_ms <= 0:
+        parser.error("--nvme-timeout-ms must be greater than 0")
+    if args.command == "native-nvme-hbm-canary":
+        if not args.nvme_namespace:
+            parser.error("native-nvme-hbm-canary requires --nvme-namespace")
+        if (args.nvme_direction == "write-roundtrip" and
+                not args.confirm_scratch_namespace):
+            parser.error("write-roundtrip requires "
+                         "--confirm-scratch-namespace")
     if args.jobs <= 0:
         parser.error("--jobs must be greater than 0")
     if args.hcomm_notify_num <= 0 or args.hcomm_notify_num > 64:
@@ -11281,6 +11385,8 @@ def main() -> int:
         return run_ascend_probe(args)
     if args.command == "ascend-full-matrix":
         return run_ascend_full_matrix(args)
+    if args.command == "native-nvme-hbm-canary":
+        return run_native_nvme_hbm_canary(args)
     if args.command in (
             "hcomm-payload-strict-positive",
             "hcomm-payload-official-p2p-positive"):
