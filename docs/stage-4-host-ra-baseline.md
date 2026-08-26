@@ -4,9 +4,14 @@
 
 **Implemented, statically verified, hardware validation pending.**
 
-The default baseline uses TCP for commands and completions while payload bytes
-use RDMA between the storage-server RNIC and a registered NPU HBM window. The
+The push-first routing extension, including a CPU-server/NPU-data-mover sender
+and a transparent three-node control proxy, is documented in
+[`stage-4-push-routing.md`](stage-4-push-routing.md).
+
+The default baseline uses push mode with TCP commands and completions while payload bytes
+use RDMA between the data-mover RNIC and a registered NPU HBM window. The
 older NPU-RA command path remains available as an experimental mode.
+Pull is a reserved API/protocol mode and currently returns unsupported.
 
 ## Boundary
 

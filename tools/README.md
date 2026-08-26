@@ -44,6 +44,14 @@ Server/Client 命令与验收 marker 见
 `docs/stage-4-host-ra-baseline.md`。默认 control mode 是 `tcp`；只有在 TCP
 基线通过后，才建议使用 `--control-mode npu-ra` 做实验对照。
 
+Storage read 默认使用 `--transfer-mode push`。如果 data mover node 与
+compute NPU 直接共享 RoCE fabric，可运行 `flume-roce-storage-server`；其
+`--storage-file` 可以是本地文件或远端 storage backend 的挂载路径。如果
+data mover node 使用本机 NPU HCCN 作为 sender，可运行
+`flume-roce-npu-relay-server`；独立 control node 使用
+`flume-roce-storage-proxy` 只转发控制消息。Pull 接口暂时返回 unsupported。
+三种部署的完整命令和验收边界见 `docs/stage-4-push-routing.md`。
+
 ### 本地 storage direct sim smoke
 
 `flume-storage-direct-sim-smoke` 不声明真实硬件 host-bypass。它验证的是

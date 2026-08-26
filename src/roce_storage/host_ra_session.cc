@@ -86,6 +86,12 @@ class HostRaSession::Impl {
       if (error != nullptr) *error = "unsupported Host-RA control mode";
       return Fail();
     }
+    if (config.transfer_mode != TransferMode::kPush) {
+      if (error != nullptr) {
+        *error = "pull transfer mode is reserved but not implemented; use push";
+      }
+      return Fail();
+    }
     if (!api.Open(npu_command_posting, error)) return Fail();
     capability_loaded = true;
     int32_t physical = -1;
@@ -275,7 +281,8 @@ class HostRaSession::Impl {
     lifecycle.CompleteRequest(request_id);
     result->bytes = static_cast<size_t>(completion.bytes);
     result->checksum = completion.checksum;
-    result->marker = MakeHostRaSuccessMarker(config.control_mode, operation,
+    result->marker = MakeHostRaSuccessMarker(config.control_mode,
+                                             config.transfer_mode, operation,
                                              server_capabilities);
     return true;
   }

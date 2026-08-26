@@ -15,6 +15,7 @@ void Usage(const char* name) {
             << " --storage-server <host> --npu-rnic-ip <hccn-ip>"
             << " --device <logical-id> --control-port <port>"
             << " [--control-mode tcp|npu-ra] [--bytes N] [--offset N]"
+            << " [--transfer-mode push|pull]"
             << " [--gid-index N] [--timeout-ms N]\n";
 }
 
@@ -26,6 +27,19 @@ bool ParseControlMode(const std::string& value,
   }
   if (value == "npu-ra") {
     *mode = flume::roce::ControlMode::kNpuRa;
+    return true;
+  }
+  return false;
+}
+
+bool ParseTransferMode(const std::string& value,
+                       flume::roce::TransferMode* mode) {
+  if (value == "push") {
+    *mode = flume::roce::TransferMode::kPush;
+    return true;
+  }
+  if (value == "pull") {
+    *mode = flume::roce::TransferMode::kPull;
     return true;
   }
   return false;
@@ -43,6 +57,7 @@ int main(int argc, char** argv) {
   size_t bytes = 4096;
   uint64_t offset = 0;
   flume::roce::ControlMode control_mode = flume::roce::ControlMode::kTcp;
+  flume::roce::TransferMode transfer_mode = flume::roce::TransferMode::kPush;
   for (int index = 1; index < argc; ++index) {
     const std::string arg = argv[index];
     if (arg == "--storage-server" && index + 1 < argc) storage_server = argv[++index];
@@ -55,6 +70,9 @@ int main(int argc, char** argv) {
     else if (arg == "--offset" && index + 1 < argc) offset = std::stoull(argv[++index]);
     else if (arg == "--control-mode" && index + 1 < argc &&
              ParseControlMode(argv[index + 1], &control_mode)) {
+      ++index;
+    } else if (arg == "--transfer-mode" && index + 1 < argc &&
+               ParseTransferMode(argv[index + 1], &transfer_mode)) {
       ++index;
     } else {
       Usage(argv[0]);
@@ -98,6 +116,7 @@ int main(int argc, char** argv) {
     config.bootstrap_port = control_port;
     config.timeout_ms = timeout_ms;
     config.control_mode = control_mode;
+    config.transfer_mode = transfer_mode;
     if (!session.Open(config, &error)) {
       std::cerr << "roce_hbm_write_smoke="
                 << (session.capability_available() ? "failed" : "unsupported")

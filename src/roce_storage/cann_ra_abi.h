@@ -23,6 +23,7 @@ constexpr int kRaAccessLocalWrite = 1;
 constexpr int kRaAccessRemoteWrite = 1 << 1;
 constexpr int kRaAccessRemoteRead = 1 << 2;
 constexpr int kRaSendSignaled = 1 << 1;
+constexpr uint32_t kRaWrRdmaWrite = 0;
 constexpr uint32_t kRaWrSend = 2;
 constexpr int kAclMallocNormalOnly = 2;
 constexpr int kAclMemcpyHostToDevice = 1;
@@ -102,6 +103,24 @@ struct SendWr {
   int send_flags;
 };
 
+// Public HCCP RaPollCq writes the standard ibv_wc layout. This reduced ABI
+// avoids making the NPU-RA backend depend on a host rdma-core installation.
+struct WorkCompletion {
+  uint64_t wr_id;
+  int status;
+  int opcode;
+  uint32_t vendor_error;
+  uint32_t byte_length;
+  uint32_t immediate_data;
+  uint32_t qp_number;
+  uint32_t source_qp;
+  uint32_t flags;
+  uint16_t pkey_index;
+  uint16_t source_lid;
+  uint8_t service_level;
+  uint8_t destination_path_bits;
+};
+
 struct RtProcExtParam {
   const char* param_info;
   uint64_t param_length;
@@ -120,6 +139,8 @@ static_assert(sizeof(Rdev) == 24, "CANN rdev ABI size changed");
 static_assert(sizeof(RdevInitInfo) == 12, "CANN RdevInitInfo ABI size changed");
 static_assert(sizeof(SendWrResponse) == 16, "CANN SendWrRsp ABI size changed");
 static_assert(sizeof(SendWr) == 40, "CANN SendWr ABI size changed");
+static_assert(sizeof(WorkCompletion) == 48,
+              "CANN/HCCP work completion ABI size changed");
 
 }  // namespace flume::roce::cann
 

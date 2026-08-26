@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "roce_storage/roce_storage.h"
+#include "roce_storage/host_ra_session.h"
 #include "test_util.h"
 
 int main() {
@@ -91,6 +92,14 @@ int main() {
   FLUME_TEST_CHECK(flume::roce::DecodeSessionRequest(
       wire.data(), wire.size(), &decoded_request));
   FLUME_TEST_CHECK(decoded_request.flags == flume::roce::kSessionFlagTcpControl);
+  FLUME_TEST_CHECK(flume::roce::SessionTransferMode(decoded_request) ==
+                   flume::roce::TransferMode::kPush);
+  request.flags |= flume::roce::kSessionFlagPullTransfer;
+  FLUME_TEST_CHECK(flume::roce::EncodeSessionRequest(request, &wire));
+  FLUME_TEST_CHECK(flume::roce::DecodeSessionRequest(
+      wire.data(), wire.size(), &decoded_request));
+  FLUME_TEST_CHECK(flume::roce::SessionTransferMode(decoded_request) ==
+                   flume::roce::TransferMode::kPull);
   request.completion.address = 1;
   FLUME_TEST_CHECK(!flume::roce::EncodeSessionRequest(request, &wire));
 
@@ -109,20 +118,41 @@ int main() {
   FLUME_TEST_CHECK(decoded_response.server_capabilities == response.server_capabilities);
 
   const std::string tcp_marker = flume::roce::MakeHostRaSuccessMarker(
-      flume::roce::ControlMode::kTcp, flume::roce::Operation::kRead,
+      flume::roce::ControlMode::kTcp, flume::roce::TransferMode::kPush,
+      flume::roce::Operation::kRead,
       flume::roce::kServerCapabilityMemoryNamespace);
   FLUME_TEST_CHECK(tcp_marker.find("control_path=tcp") != std::string::npos);
+  FLUME_TEST_CHECK(tcp_marker.find("transfer_mode=push") != std::string::npos);
+  FLUME_TEST_CHECK(tcp_marker.find("data_plane=local-host-verbs") !=
+                   std::string::npos);
   FLUME_TEST_CHECK(tcp_marker.find(
       "payload_path=server-memory->rnic->npu-hbm") != std::string::npos);
   FLUME_TEST_CHECK(tcp_marker.find("compute_host_payload_bytes=0") !=
                    std::string::npos);
   FLUME_TEST_CHECK(tcp_marker.find("fallback=none") != std::string::npos);
   const std::string npu_ra_marker = flume::roce::MakeHostRaSuccessMarker(
-      flume::roce::ControlMode::kNpuRa, flume::roce::Operation::kWrite,
-      flume::roce::kServerCapabilityPosixNamespace);
+      flume::roce::ControlMode::kNpuRa, flume::roce::TransferMode::kPush,
+      flume::roce::Operation::kWrite,
+      flume::roce::kServerCapabilityPosixNamespace |
+          flume::roce::kServerCapabilityControlProxyUsed);
   FLUME_TEST_CHECK(npu_ra_marker.find("control_path=npu-ra") != std::string::npos);
   FLUME_TEST_CHECK(npu_ra_marker.find(
       "payload_path=npu-hbm->rnic->server-posix") != std::string::npos);
+  FLUME_TEST_CHECK(npu_ra_marker.find("data_plane=remote-rnic") !=
+                   std::string::npos);
+  FLUME_TEST_CHECK(flume::roce::DataPlaneRouteImplemented(
+      flume::roce::DataPlaneRoute::kLocalHostVerbs));
+  FLUME_TEST_CHECK(flume::roce::DataPlaneRouteImplemented(
+      flume::roce::DataPlaneRoute::kLocalNpuRaRelay));
+  FLUME_TEST_CHECK(flume::roce::DataPlaneRouteImplemented(
+      flume::roce::DataPlaneRoute::kRemoteRnic));
+
+  flume::roce::HostRaConfig pull_config;
+  pull_config.transfer_mode = flume::roce::TransferMode::kPull;
+  flume::roce::HostRaSession pull_session;
+  std::string pull_error;
+  FLUME_TEST_CHECK(!pull_session.Open(pull_config, &pull_error));
+  FLUME_TEST_CHECK(pull_error.find("pull transfer mode") != std::string::npos);
 
   flume::roce::SessionLifecycle lifecycle;
   FLUME_TEST_CHECK(lifecycle.LocalResourcesReady());

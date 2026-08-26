@@ -80,6 +80,11 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
   }
   const bool tcp_control =
       (request.flags & flume::roce::kSessionFlagTcpControl) != 0;
+  if (flume::roce::SessionTransferMode(request) !=
+      flume::roce::TransferMode::kPush) {
+    std::cerr << "pull transfer mode is reserved but not implemented\n";
+    return 1;
+  }
   flume::roce::VerbsBackend verbs;
   if (!verbs.Open(verbs_device, verbs_port, gid_index, kDefaultQueueDepth, &error) ||
       !verbs.Connect(ToVerbsEndpoint(request.endpoint), &error)) {
@@ -156,7 +161,7 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
         command.length > static_cast<uint64_t>(SIZE_MAX) ||
         command.storage_offset > storage->size() ||
         command.length > storage->size() - command.storage_offset) {
-      completion.status = 1;
+      completion.status = flume::roce::kCompletionStatusInvalidRequest;
     } else {
       std::vector<uint8_t> staging(static_cast<size_t>(command.length));
       flume::roce::VerbsMemoryRegion mr;
@@ -170,7 +175,8 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
              storage->Write(command.storage_offset, staging.data(), staging.size(), &error);
       }
       if (registered) verbs.Deregister(&mr, nullptr);
-      completion.status = ok ? 0 : 2;
+      completion.status = ok ? flume::roce::kCompletionStatusSuccess :
+                               flume::roce::kCompletionStatusBackendError;
       completion.bytes = ok ? command.length : 0;
       completion.checksum = ok ? flume::roce::Checksum(staging.data(), staging.size()) : 0;
       if (!ok) std::cerr << "request " << command.request_id << " failed: " << error << "\n";
@@ -199,6 +205,7 @@ int main(int argc, char** argv) {
   std::string listen = "0.0.0.0";
   std::string storage_file;
   std::string verbs_device;
+  std::string data_mover = "host-verbs";
   size_t namespace_bytes = 64U * 1024U * 1024U;
   uint32_t control_port = 0;
   uint32_t timeout_ms = kDefaultTransferTimeoutMs;
@@ -212,6 +219,8 @@ int main(int argc, char** argv) {
       storage_file = argv[++index];
     } else if (arg == "--verbs-device" && index + 1 < argc) {
       verbs_device = argv[++index];
+    } else if (arg == "--data-mover" && index + 1 < argc) {
+      data_mover = argv[++index];
     } else if (arg == "--namespace-bytes" && index + 1 < argc) {
       namespace_bytes = static_cast<size_t>(std::strtoull(argv[++index], nullptr, 10));
     } else if (arg == "--control-port" && index + 1 < argc) {
@@ -225,10 +234,21 @@ int main(int argc, char** argv) {
     } else {
       std::cerr << "usage: flume-roce-storage-server [--listen ip] "
                 << "[--namespace-bytes bytes] [--storage-file path] "
+                << "[--data-mover host-verbs|npu-ra-relay] "
                 << "[--verbs-device name] [--verbs-port N] [--gid-index N] "
                 << "[--control-port port] [--timeout-ms ms]\n";
       return 2;
     }
+  }
+  if (data_mover != "host-verbs" && data_mover != "npu-ra-relay") {
+    std::cerr << "invalid --data-mover\n";
+    return 2;
+  }
+  if (data_mover == "npu-ra-relay") {
+    std::cerr << "roce storage server unsupported: transfer_mode=push "
+                 "data_mover=npu-ra-relay reason=\"use the separately built "
+                 "flume-roce-npu-relay-server target\" fallback=none\n";
+    return 3;
   }
   std::unique_ptr<flume::roce::StorageBackend> storage;
   if (storage_file.empty()) {
@@ -243,6 +263,7 @@ int main(int argc, char** argv) {
   std::cout << "flume RoCE storage server scaffold "
             << "listen=" << listen << " namespace_bytes=" << storage->size() << " "
             << "protocol=flume-roce-v2 control_modes=tcp,npu-ra "
+            << "transfer_modes=push data_mover=" << data_mover << " "
             << "storage_backend="
             << (storage_file.empty() ? "memory" : "posix") << " "
             << "verbs_backend=" << (flume::roce::VerbsAvailable() ? "available" : "unavailable") << " "

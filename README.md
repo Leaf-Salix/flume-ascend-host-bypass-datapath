@@ -192,6 +192,14 @@ POSIX/memory backend still stages bytes in storage-server DRAM. See
 [`docs/stage-4-host-ra-baseline.md`](docs/stage-4-host-ra-baseline.md) for the
 exact boundary, clean-room provenance, and hardware checklist.
 
+Stage 4 now uses push-first storage reads. The data node may send through a
+standard host RNIC or through the standalone CPU-server/NPU-RA data mover. A
+separate control node can transparently proxy session, request, and completion
+messages to a RoCE-connected data node while forwarding zero payload bytes.
+The `pull` mode is reserved in the API but intentionally returns unsupported.
+See [`docs/stage-4-push-routing.md`](docs/stage-4-push-routing.md) for the route
+matrix and commands.
+
 If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
 
 Status: Host B (CANN 9.0) has validated this path with a local SSD input file and a 16 MiB byte payload. The marker `storage_hbm=hccl-p2p-staging` appeared on both ranks and the rank1 checksum matched the source slice.

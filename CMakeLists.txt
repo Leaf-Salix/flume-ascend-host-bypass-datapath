@@ -27,9 +27,11 @@ add_library(flume STATIC
   src/hcomm_payload/payload_backend.cc
   src/protocol/framing.cc
   src/roce_storage/control_channel.cc
+  src/roce_storage/control_proxy.cc
   src/roce_storage/roce_storage.cc
   src/roce_storage/cann_ra_loader.cc
   src/roce_storage/host_ra_session.cc
+  src/roce_storage/npu_ra_push_mover.cc
   src/roce_storage/storage_backend.cc
   src/roce_storage/verbs_backend.cc
   src/storage/posix_file.cc
@@ -819,6 +821,10 @@ add_executable(flume-roce-storage-server apps/flume-roce-storage-server.cc)
 target_link_libraries(flume-roce-storage-server PRIVATE flume)
 target_include_directories(flume-roce-storage-server PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+add_executable(flume-roce-storage-proxy apps/flume-roce-storage-proxy.cc)
+target_link_libraries(flume-roce-storage-proxy PRIVATE flume)
+target_include_directories(flume-roce-storage-proxy PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
 if(FLUME_ENABLE_HCCL)
   add_executable(flume-acl-runtime-probe apps/flume-acl-runtime-probe.cc)
   target_link_libraries(flume-acl-runtime-probe PRIVATE flume)
@@ -847,6 +853,14 @@ if(FLUME_ENABLE_ROCE_STORAGE AND ACL_INCLUDE_DIR AND ASCENDCL_LIBRARY)
   add_executable(flume-roce-hbm-write-smoke apps/flume-roce-storage-client.cc)
   target_link_libraries(flume-roce-hbm-write-smoke PRIVATE flume ${ASCENDCL_LIBRARY})
   target_include_directories(flume-roce-hbm-write-smoke PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${ACL_INCLUDE_DIR})
+
+  add_executable(flume-roce-npu-relay-server
+    apps/flume-roce-npu-relay-server.cc)
+  target_link_libraries(flume-roce-npu-relay-server PRIVATE
+    flume ${ASCENDCL_LIBRARY})
+  target_include_directories(flume-roce-npu-relay-server PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${ACL_INCLUDE_DIR})
 elseif(FLUME_ENABLE_ROCE_STORAGE)
@@ -1007,6 +1021,12 @@ if(FLUME_BUILD_TESTS)
   target_include_directories(test_roce_tcp_control_sim PRIVATE ${PROJECT_SOURCE_DIR}/src)
   add_test(NAME roce_tcp_control_sim COMMAND test_roce_tcp_control_sim)
 
+  add_executable(test_roce_control_proxy tests/test_roce_control_proxy.cc)
+  target_link_libraries(test_roce_control_proxy PRIVATE flume)
+  target_include_directories(test_roce_control_proxy PRIVATE
+    ${PROJECT_SOURCE_DIR}/src)
+  add_test(NAME roce_control_proxy COMMAND test_roce_control_proxy)
+
   add_executable(test_cann_ra_loader tests/test_cann_ra_loader.cc)
   target_link_libraries(test_cann_ra_loader PRIVATE flume)
   target_include_directories(test_cann_ra_loader PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -1027,6 +1047,31 @@ if(FLUME_BUILD_TESTS)
         $<TARGET_FILE:test_cann_ra_core_fixture>
         $<TARGET_FILE:test_cann_runtime_core_fixture>
         $<TARGET_FILE:test_cann_acl_core_fixture>)
+
+    add_library(test_cann_ra_push_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_ra_push_fixture PRIVATE
+      FLUME_RA_PUSH_FIXTURE=1)
+    target_include_directories(test_cann_ra_push_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_runtime_push_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_runtime_push_fixture PRIVATE
+      FLUME_RUNTIME_PUSH_FIXTURE=1)
+    target_include_directories(test_cann_runtime_push_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_acl_push_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_acl_push_fixture PRIVATE
+      FLUME_ACL_PUSH_FIXTURE=1)
+    target_include_directories(test_cann_acl_push_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_executable(test_npu_ra_push_mover tests/test_npu_ra_push_mover.cc)
+    target_link_libraries(test_npu_ra_push_mover PRIVATE flume)
+    target_include_directories(test_npu_ra_push_mover PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_test(NAME npu_ra_push_mover
+      COMMAND test_npu_ra_push_mover
+        $<TARGET_FILE:test_cann_ra_push_fixture>
+        $<TARGET_FILE:test_cann_runtime_push_fixture>
+        $<TARGET_FILE:test_cann_acl_push_fixture>)
   endif()
 
   set(FLUME_CANN_SOURCE_HCCP_INCLUDE
@@ -1060,5 +1105,11 @@ if(FLUME_BUILD_TESTS)
         -I${PROJECT_SOURCE_DIR}/src
         -I${FLUME_CANN_SOURCE_ACL_INCLUDE}
         ${PROJECT_SOURCE_DIR}/apps/flume-roce-storage-client.cc)
+
+    add_test(NAME roce_npu_relay_cann_fixture_syntax
+      COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -fsyntax-only
+        -I${PROJECT_SOURCE_DIR}/src
+        -I${FLUME_CANN_SOURCE_ACL_INCLUDE}
+        ${PROJECT_SOURCE_DIR}/apps/flume-roce-npu-relay-server.cc)
   endif()
 endif()

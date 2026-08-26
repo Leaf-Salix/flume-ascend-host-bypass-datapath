@@ -32,6 +32,7 @@ class CannRaApi {
   int (*ra_register_mr)(const void*, cann::MrInfo*, void**) = nullptr;
   int (*ra_deregister_mr)(const void*, void*) = nullptr;
   int (*ra_typical_send_wr)(void*, cann::SendWr*, cann::SendWrResponse*) = nullptr;
+  int (*ra_poll_cq)(void*, bool, unsigned, void*) = nullptr;
 
   int (*rt_set_device)(int32_t) = nullptr;
   int (*rt_open_net_service)(const cann::RtNetServiceOpenArgs*) = nullptr;

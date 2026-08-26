@@ -352,11 +352,47 @@ const char* ControlModeName(ControlMode mode) {
   return "unknown";
 }
 
-std::string MakeHostRaSuccessMarker(ControlMode mode, Operation operation,
+const char* TransferModeName(TransferMode mode) {
+  switch (mode) {
+    case TransferMode::kPush:
+      return "push";
+    case TransferMode::kPull:
+      return "pull";
+  }
+  return "unknown";
+}
+
+const char* DataPlaneRouteName(DataPlaneRoute route) {
+  switch (route) {
+    case DataPlaneRoute::kLocalHostVerbs:
+      return "local-host-verbs";
+    case DataPlaneRoute::kLocalNpuRaRelay:
+      return "npu-ra-relay";
+    case DataPlaneRoute::kRemoteRnic:
+      return "remote-rnic";
+  }
+  return "unknown";
+}
+
+bool DataPlaneRouteImplemented(DataPlaneRoute route) {
+  return route == DataPlaneRoute::kLocalHostVerbs ||
+         route == DataPlaneRoute::kLocalNpuRaRelay ||
+         route == DataPlaneRoute::kRemoteRnic;
+}
+
+TransferMode SessionTransferMode(const SessionRequest& request) {
+  return (request.flags & kSessionFlagPullTransfer) != 0 ?
+      TransferMode::kPull : TransferMode::kPush;
+}
+
+std::string MakeHostRaSuccessMarker(ControlMode mode,
+                                    TransferMode transfer_mode,
+                                    Operation operation,
                                     uint32_t server_capabilities) {
   std::ostringstream marker;
   marker << "roce_storage=host-ra-passed roce_protocol=flume-roce-v2 "
          << "control_path=" << ControlModeName(mode) << " "
+         << "transfer_mode=" << TransferModeName(transfer_mode) << " "
          << "npu_hbm_mr=registered qp_state=rtr-rts server_rdma_cq=success "
          << "compute_host_payload_bytes=0 compute_host_post=used ";
   if (mode == ControlMode::kTcp) {
@@ -367,6 +403,16 @@ std::string MakeHostRaSuccessMarker(ControlMode mode, Operation operation,
   const char* backend =
       (server_capabilities & kServerCapabilityPosixNamespace) != 0 ?
           "posix" : "memory";
+  const bool proxied =
+      (server_capabilities & kServerCapabilityControlProxyUsed) != 0;
+  marker << "control_proxy=" << (proxied ? "used" : "not-used") << " ";
+  if ((server_capabilities & kServerCapabilityNpuRaRelay) != 0) {
+    marker << "data_plane=npu-ra-relay ";
+  } else if (proxied) {
+    marker << "data_plane=remote-rnic ";
+  } else {
+    marker << "data_plane=local-host-verbs ";
+  }
   marker << "payload_path=";
   if (operation == Operation::kRead) {
     marker << "server-" << backend << "->rnic->npu-hbm";

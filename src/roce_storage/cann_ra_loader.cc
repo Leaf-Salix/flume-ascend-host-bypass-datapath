@@ -80,6 +80,7 @@ bool CannRaApi::Open(bool require_command_posting, std::string* error) {
   FLUME_LOAD(acl_library_, acl_get_physical_device, "aclrtGetPhyDevIdByLogicDevId")
   if (require_command_posting) {
     FLUME_LOAD(ra_library_, ra_typical_send_wr, "RaTypicalSendWr")
+    FLUME_LOAD(ra_library_, ra_poll_cq, "RaPollCq")
     FLUME_LOAD(runtime_library_, rt_rdma_db_send, "rtRDMADBSend")
     FLUME_LOAD(acl_library_, acl_malloc, "aclrtMalloc")
     FLUME_LOAD(acl_library_, acl_free, "aclrtFree")
@@ -108,7 +109,8 @@ void CannRaApi::Close() {
   FLUME_CLEAR(ra_rdev_deinit); FLUME_CLEAR(ra_typical_qp_create);
   FLUME_CLEAR(ra_typical_qp_modify); FLUME_CLEAR(ra_qp_destroy);
   FLUME_CLEAR(ra_register_mr); FLUME_CLEAR(ra_deregister_mr);
-  FLUME_CLEAR(ra_typical_send_wr); FLUME_CLEAR(rt_set_device);
+  FLUME_CLEAR(ra_typical_send_wr); FLUME_CLEAR(ra_poll_cq);
+  FLUME_CLEAR(rt_set_device);
   FLUME_CLEAR(rt_open_net_service); FLUME_CLEAR(rt_close_net_service);
   FLUME_CLEAR(rt_rdma_db_send); FLUME_CLEAR(acl_get_physical_device);
   FLUME_CLEAR(acl_malloc); FLUME_CLEAR(acl_free); FLUME_CLEAR(acl_memcpy);

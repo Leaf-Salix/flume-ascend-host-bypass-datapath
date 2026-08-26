@@ -237,6 +237,7 @@ struct flume_roce_storage_session {
   uint32_t timeout_ms = 0;
   flume_roce_post_mode_t post_mode = FLUME_ROCE_POST_AUTO;
   flume_roce_control_mode_t control_mode = FLUME_ROCE_CONTROL_TCP;
+  flume_roce_transfer_mode_t transfer_mode = FLUME_ROCE_TRANSFER_PUSH;
   flume_roce_storage_backend_t storage_backend = FLUME_ROCE_STORAGE_MEMORY;
   bool require_compute_host_bypass = true;
   std::shared_ptr<flume::roce::HostRaSession> host_ra;
@@ -7895,6 +7896,10 @@ int flume_roce_storage_session_open(
       options->control_mode != FLUME_ROCE_CONTROL_NPU_RA) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
+  if (options->transfer_mode != FLUME_ROCE_TRANSFER_PUSH &&
+      options->transfer_mode != FLUME_ROCE_TRANSFER_PULL) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
   if (options->storage_backend != FLUME_ROCE_STORAGE_MEMORY &&
       options->storage_backend != FLUME_ROCE_STORAGE_POSIX &&
       options->storage_backend != FLUME_ROCE_STORAGE_SPDK) {
@@ -7912,6 +7917,7 @@ int flume_roce_storage_session_open(
   session->timeout_ms = options->timeout_ms;
   session->post_mode = options->post_mode;
   session->control_mode = options->control_mode;
+  session->transfer_mode = options->transfer_mode;
   session->storage_backend = options->storage_backend;
   session->require_compute_host_bypass = options->require_compute_host_bypass != 0;
   session->host_ra = std::make_shared<flume::roce::HostRaSession>();
@@ -7928,6 +7934,10 @@ int flume_roce_storage_session_open(
     config.timeout_ms = session->timeout_ms;
     config.control_mode = session->control_mode == FLUME_ROCE_CONTROL_TCP ?
         flume::roce::ControlMode::kTcp : flume::roce::ControlMode::kNpuRa;
+    config.transfer_mode =
+        session->transfer_mode == FLUME_ROCE_TRANSFER_PUSH ?
+            flume::roce::TransferMode::kPush :
+            flume::roce::TransferMode::kPull;
     session->host_ra->Open(config, &session->native_open_error);
   }
   *out = session;

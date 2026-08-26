@@ -20,14 +20,36 @@ constexpr size_t kEndpointWireBytes = 32;
 constexpr uint32_t kMemoryRemoteWrite = 1U << 0;
 constexpr uint32_t kMemoryRemoteRead = 1U << 1;
 
+constexpr uint32_t kCompletionStatusSuccess = 0;
+constexpr uint32_t kCompletionStatusInvalidRequest = 1;
+constexpr uint32_t kCompletionStatusBackendError = 2;
+constexpr uint32_t kCompletionStatusUnsupported = 3;
+
 constexpr uint32_t kServerCapabilityMemoryNamespace = 1U << 0;
 constexpr uint32_t kServerCapabilityPosixNamespace = 1U << 1;
+// Set by a transparent control proxy. The bit says nothing about the sender
+// implementation: the upstream data node may use host verbs or an NPU relay.
+constexpr uint32_t kServerCapabilityControlProxyUsed = 1U << 2;
+constexpr uint32_t kServerCapabilityNpuRaRelay = 1U << 3;
 constexpr uint16_t kSessionFlagTcpControl = 1U << 0;
-constexpr uint16_t kSessionKnownFlags = kSessionFlagTcpControl;
+constexpr uint16_t kSessionFlagPullTransfer = 1U << 1;
+constexpr uint16_t kSessionKnownFlags =
+    kSessionFlagTcpControl | kSessionFlagPullTransfer;
 
 enum class ControlMode : uint16_t {
   kTcp = 0,
   kNpuRa = 1,
+};
+
+enum class TransferMode : uint16_t {
+  kPush = 0,
+  kPull = 1,
+};
+
+enum class DataPlaneRoute : uint16_t {
+  kLocalHostVerbs = 0,
+  kLocalNpuRaRelay = 1,
+  kRemoteRnic = 2,
 };
 
 enum class Operation : uint16_t {
@@ -127,7 +149,12 @@ bool EncodeSessionResponse(const SessionResponse& response, std::vector<uint8_t>
 bool DecodeSessionResponse(const uint8_t* wire, size_t len, SessionResponse* response);
 uint32_t Checksum(const uint8_t* data, size_t len);
 const char* ControlModeName(ControlMode mode);
-std::string MakeHostRaSuccessMarker(ControlMode mode, Operation operation,
+const char* TransferModeName(TransferMode mode);
+const char* DataPlaneRouteName(DataPlaneRoute route);
+bool DataPlaneRouteImplemented(DataPlaneRoute route);
+TransferMode SessionTransferMode(const SessionRequest& request);
+std::string MakeHostRaSuccessMarker(ControlMode mode, TransferMode transfer_mode,
+                                    Operation operation,
                                     uint32_t server_capabilities);
 
 // The protocol compiles on every development host. Native Host-RA support is

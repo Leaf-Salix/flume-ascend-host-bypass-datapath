@@ -111,6 +111,12 @@ typedef enum {
 } flume_roce_control_mode_t;
 
 typedef enum {
+  FLUME_ROCE_TRANSFER_PUSH = 0,
+  /* Reserved for a future remote-read data mover; currently unsupported. */
+  FLUME_ROCE_TRANSFER_PULL = 1
+} flume_roce_transfer_mode_t;
+
+typedef enum {
   FLUME_ROCE_STORAGE_MEMORY = 0,
   FLUME_ROCE_STORAGE_POSIX = 1,
   FLUME_ROCE_STORAGE_SPDK = 2
@@ -147,6 +153,7 @@ typedef struct {
   flume_roce_storage_backend_t storage_backend;
   uint32_t require_compute_host_bypass;
   flume_roce_control_mode_t control_mode;
+  flume_roce_transfer_mode_t transfer_mode;
 } flume_roce_storage_options_t;
 
 typedef struct {

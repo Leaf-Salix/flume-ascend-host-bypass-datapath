@@ -1,0 +1,239 @@
+#include <acl/acl.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "roce_storage/control_channel.h"
+#include "roce_storage/npu_ra_push_mover.h"
+#include "roce_storage/roce_storage.h"
+#include "roce_storage/storage_backend.h"
+
+namespace {
+
+constexpr uint64_t kDefaultNamespaceBytes = 64U * 1024U * 1024U;
+
+int Listen(const std::string& ip, uint16_t port, std::string* error) {
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    *error = "failed to create NPU relay listener";
+    return -1;
+  }
+  int reuse = 1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(port);
+  if (inet_pton(AF_INET, ip.c_str(), &address.sin_addr) != 1 ||
+      bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0 ||
+      listen(fd, 8) != 0) {
+    close(fd);
+    *error = "failed to bind/listen on NPU relay control endpoint";
+    return -1;
+  }
+  return fd;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  std::string listen_ip = "0.0.0.0";
+  std::string storage_file;
+  std::string npu_rnic_ip;
+  uint32_t control_port = 0;
+  uint32_t logical_device = 0;
+  uint32_t gid_index = 0;
+  uint32_t timeout_ms = 30000;
+  size_t namespace_bytes = kDefaultNamespaceBytes;
+  for (int index = 1; index < argc; ++index) {
+    const std::string arg = argv[index];
+    if (arg == "--listen" && index + 1 < argc) {
+      listen_ip = argv[++index];
+    } else if (arg == "--storage-file" && index + 1 < argc) {
+      storage_file = argv[++index];
+    } else if (arg == "--namespace-bytes" && index + 1 < argc) {
+      namespace_bytes = std::strtoull(argv[++index], nullptr, 10);
+    } else if (arg == "--npu-rnic-ip" && index + 1 < argc) {
+      npu_rnic_ip = argv[++index];
+    } else if (arg == "--device" && index + 1 < argc) {
+      logical_device = std::strtoul(argv[++index], nullptr, 10);
+    } else if (arg == "--gid-index" && index + 1 < argc) {
+      gid_index = std::strtoul(argv[++index], nullptr, 10);
+    } else if (arg == "--control-port" && index + 1 < argc) {
+      control_port = std::strtoul(argv[++index], nullptr, 10);
+    } else if (arg == "--timeout-ms" && index + 1 < argc) {
+      timeout_ms = std::strtoul(argv[++index], nullptr, 10);
+    } else {
+      std::cerr << "usage: flume-roce-npu-relay-server [--listen ip] "
+                   "[--storage-file path|--namespace-bytes bytes] "
+                   "--npu-rnic-ip ip --device logical-id "
+                   "--gid-index N --control-port port [--timeout-ms ms]\n";
+      return arg == "--help" ? 0 : 2;
+    }
+  }
+  if (npu_rnic_ip.empty() || control_port == 0 ||
+      control_port > UINT16_MAX || timeout_ms == 0 || namespace_bytes == 0) {
+    std::cerr << "NPU relay requires valid NPU and control endpoints\n";
+    return 2;
+  }
+
+  std::unique_ptr<flume::roce::StorageBackend> storage;
+  if (storage_file.empty()) {
+    storage = std::make_unique<flume::roce::MemoryStorageBackend>(namespace_bytes);
+  } else {
+    storage = std::make_unique<flume::roce::PosixStorageBackend>(storage_file);
+    if (storage->size() == 0) {
+      std::cerr << "failed to open nonempty storage file\n";
+      return 1;
+    }
+  }
+
+  bool acl_initialized = false;
+  bool device_set = false;
+  aclrtStream stream = nullptr;
+  int downstream = -1;
+  int listener = -1;
+  int exit_code = 1;
+  std::string error;
+  flume::roce::NpuRaPushMover mover;
+  if (aclInit(nullptr) != ACL_SUCCESS) {
+    std::cerr << "NPU relay failed: aclInit\n";
+    goto cleanup;
+  }
+  acl_initialized = true;
+  if (aclrtSetDevice(static_cast<int32_t>(logical_device)) != ACL_SUCCESS) {
+    std::cerr << "NPU relay failed: aclrtSetDevice\n";
+    goto cleanup;
+  }
+  device_set = true;
+  if (aclrtCreateStream(&stream) != ACL_SUCCESS) {
+    std::cerr << "NPU relay failed: aclrtCreateStream\n";
+    goto cleanup;
+  }
+  listener = Listen(listen_ip, static_cast<uint16_t>(control_port), &error);
+  if (listener < 0) {
+    std::cerr << error << "\n";
+    goto cleanup;
+  }
+  std::cout << "flume NPU-RA relay waiting: transfer_mode=push "
+               "data_mover=npu-ra-relay storage_side_staging=host+hbm\n";
+  downstream = accept(listener, nullptr, nullptr);
+  close(listener);
+  listener = -1;
+  if (downstream < 0) {
+    std::cerr << "failed to accept NPU relay client\n";
+    goto cleanup;
+  }
+
+  {
+    std::vector<uint8_t> wire(flume::roce::kSessionRequestWireBytes);
+    flume::roce::SessionRequest request;
+    if (flume::roce::ControlReadAll(downstream, wire.data(), wire.size(),
+                                    &error) !=
+            flume::roce::ControlReadResult::kSuccess ||
+        !flume::roce::DecodeSessionRequest(wire.data(), wire.size(), &request) ||
+        (request.flags & flume::roce::kSessionFlagTcpControl) == 0 ||
+        flume::roce::SessionTransferMode(request) !=
+            flume::roce::TransferMode::kPush) {
+      std::cerr << "NPU relay requires a TCP-controlled push session\n";
+      goto cleanup;
+    }
+
+    flume::roce::NpuRaPushConfig config;
+    config.npu_rnic_ip = npu_rnic_ip;
+    config.logical_device = logical_device;
+    config.gid_index = gid_index;
+    config.timeout_ms = timeout_ms;
+    flume::roce::Endpoint local_endpoint;
+    if (!mover.Open(config, request.endpoint, &local_endpoint, &error)) {
+      std::cerr << "NPU relay QP setup failed: " << error << "\n";
+      goto cleanup;
+    }
+
+    flume::roce::SessionResponse response;
+    response.endpoint = local_endpoint;
+    response.namespace_capacity = storage->size();
+    response.max_transfer_bytes =
+        std::min<uint64_t>(storage->size(), kDefaultNamespaceBytes);
+    response.server_capabilities =
+        (storage_file.empty() ?
+             flume::roce::kServerCapabilityMemoryNamespace :
+             flume::roce::kServerCapabilityPosixNamespace) |
+        flume::roce::kServerCapabilityNpuRaRelay;
+    if (!flume::roce::EncodeSessionResponse(response, &wire) ||
+        !flume::roce::ControlWriteAll(downstream, wire.data(), wire.size(),
+                                      &error)) {
+      std::cerr << "failed to send NPU relay session response\n";
+      goto cleanup;
+    }
+
+    while (true) {
+      flume::roce::Command command;
+      const auto read = flume::roce::ReceiveCommand(downstream, &command,
+                                                     &error);
+      if (read == flume::roce::ControlReadResult::kPeerClosed) {
+        exit_code = 0;
+        break;
+      }
+      if (read != flume::roce::ControlReadResult::kSuccess) {
+        std::cerr << "failed to receive NPU relay command: " << error << "\n";
+        break;
+      }
+      flume::roce::Completion completion;
+      completion.request_id = command.request_id;
+      if (command.operation != flume::roce::Operation::kRead ||
+          command.object_id != 0 || command.length > response.max_transfer_bytes ||
+          command.storage_offset > storage->size() ||
+          command.length > storage->size() - command.storage_offset) {
+        completion.status = command.operation == flume::roce::Operation::kRead ?
+            flume::roce::kCompletionStatusInvalidRequest :
+            flume::roce::kCompletionStatusUnsupported;
+      } else {
+        std::vector<uint8_t> staging(static_cast<size_t>(command.length));
+        void* relay_hbm = nullptr;
+        bool ok = storage->Read(command.storage_offset, staging.data(),
+                                staging.size(), &error) &&
+            aclrtMalloc(&relay_hbm, staging.size(), ACL_MEM_MALLOC_HUGE_FIRST) ==
+                ACL_SUCCESS;
+        if (ok) {
+          ok = aclrtMemcpy(relay_hbm, staging.size(), staging.data(),
+                           staging.size(), ACL_MEMCPY_HOST_TO_DEVICE) ==
+                   ACL_SUCCESS;
+        }
+        flume::roce::MemoryWindow target{command.npu_address, command.length,
+                                         command.npu_rkey,
+                                         command.npu_access};
+        if (ok) {
+          ok = mover.Push(relay_hbm, staging.size(), target, stream, &error);
+        }
+        if (relay_hbm != nullptr) aclrtFree(relay_hbm);
+        completion.status = ok ? flume::roce::kCompletionStatusSuccess :
+                                 flume::roce::kCompletionStatusBackendError;
+        completion.bytes = ok ? command.length : 0;
+        completion.checksum = ok ?
+            flume::roce::Checksum(staging.data(), staging.size()) : 0;
+        if (!ok) std::cerr << "NPU relay request failed: " << error << "\n";
+      }
+      if (!flume::roce::SendCompletion(downstream, completion, &error)) {
+        std::cerr << "failed to send NPU relay completion: " << error << "\n";
+        break;
+      }
+    }
+  }
+
+cleanup:
+  mover.Close(nullptr);
+  if (downstream >= 0) close(downstream);
+  if (listener >= 0) close(listener);
+  if (stream != nullptr) aclrtDestroyStream(stream);
+  if (device_set) aclrtResetDevice(static_cast<int32_t>(logical_device));
+  if (acl_initialized) aclFinalize();
+  return exit_code;
+}

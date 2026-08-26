@@ -19,6 +19,7 @@ struct HostRaConfig {
   uint32_t timeout_ms = 30000;
   int hdc_type = 18;
   ControlMode control_mode = ControlMode::kTcp;
+  TransferMode transfer_mode = TransferMode::kPush;
 };
 
 struct HostRaResult {
