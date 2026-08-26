@@ -52,6 +52,10 @@ data mover node 使用本机 NPU HCCN 作为 sender，可运行
 `flume-roce-storage-proxy` 只转发控制消息。Pull 接口暂时返回 unsupported。
 三种部署的完整命令和验收边界见 `docs/stage-4-push-routing.md`。
 
+这里的 proxy 上游必须运行 Flume daemon。若 RoCE sender 是不能部署通用
+Linux 进程的 storage appliance，当前工具不能直接拉起其 RNIC；需要先实现
+该设备原生 control/storage protocol 的 controller-side adapter。
+
 ### 本地 storage direct sim smoke
 
 `flume-storage-direct-sim-smoke` 不声明真实硬件 host-bypass。它验证的是

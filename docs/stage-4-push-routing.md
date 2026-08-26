@@ -2,6 +2,11 @@
 
 ## Decision
 
+> Scope correction: the Linux host-verbs sender, NPU-RA relay, and transparent
+> proxy in this document are executable baselines. They do **not** yet control
+> a storage appliance that cannot run Flume. That deployment requires an
+> external-storage-target adapter on the controller and is described below.
+
 Storage reads use **push** first:
 
 ```text
@@ -85,7 +90,7 @@ publishing completion.
 This route bypasses compute-host payload memory but currently uses both
 storage-host DRAM and relay HBM staging.
 
-### Route C: separate control node and directly connected data node
+### Route C: separate control node and Linux data mover
 
 This is the three-node layout. The control node may reach both peers through
 ordinary TCP even when it is not attached to the RoCE payload fabric.
@@ -105,7 +110,41 @@ endpoint, target `address/rkey/length`, data-node endpoint, command, and
 completion. It never terminates the RC QP and reports `payload_proxy_bytes=0`.
 The data mover can use either Route A's host verbs sender or Route B's NPU
 sender. Its POSIX path can refer to a storage namespace mounted from another
-node.
+node. The upstream must run a Flume daemon and speak `flume-roce-v2`; this is
+not the external storage-appliance path.
+
+### Target route: controller plus external storage appliance
+
+The intended deployment may place the RoCE sender inside a storage appliance
+that cannot run a general Linux Flume process:
+
+```mermaid
+sequenceDiagram
+  participant C as Compute client
+  participant O as Flume controller
+  participant S as External storage appliance
+  participant H as Registered NPU HBM
+  C->>O: NPU endpoint + HBM window descriptor
+  O->>S: vendor/storage control API: create session
+  S-->>O: appliance RNIC endpoint
+  O-->>C: appliance endpoint
+  C->>O: READ namespace, offset, length, target window
+  O->>S: translated storage command
+  S->>H: appliance RNIC RDMA Write
+  S-->>O: completion
+  O-->>C: completion
+```
+
+The controller cannot operate a remote RNIC through ordinary TCP alone. The
+appliance must expose an API that can create/connect its QP and accept a target
+HBM descriptor, or the compute client must implement the appliance's native
+storage initiator protocol. Standard NVMe-oF does not automatically authorize
+a controller on a third host to supply another machine's `addr/rkey`; its QP
+and registered memory normally belong to the initiator endpoint.
+
+Current status: **not implemented until the appliance control/data protocol is
+identified**. The required new component is a controller-side
+`ExternalStorageTargetAdapter`, not a daemon installed on the appliance.
 
 ## Code Map
 
@@ -116,6 +155,7 @@ node.
 | Transparent control proxy | `control_proxy.*`, `flume-roce-storage-proxy.cc` | Implemented and locally simulated |
 | Host RNIC sender | `verbs_backend.*`, `flume-roce-storage-server.cc` | Implemented; hardware proof pending |
 | NPU data mover | `npu_ra_push_mover.*`, `flume-roce-npu-relay-server.cc` | Implemented; fake-CANN and source-ABI checked; hardware proof pending |
+| External appliance adapter | controller-side adapter for appliance API | TODO; appliance protocol required |
 | Pull sender | reserved protocol/API surface | TODO; no fallback |
 | SSD peer/direct DMA | no backend yet | TODO |
 
@@ -160,7 +200,7 @@ build-roce-push/flume-roce-storage-server \
   --control-port <data-mover-control-port>
 ```
 
-Optional separate control proxy:
+Optional separate control proxy for an upstream **Flume daemon**:
 
 ```bash
 build-roce-push/flume-roce-storage-proxy \
@@ -210,3 +250,8 @@ These markers prove that compute-host DRAM and the optional control proxy did
 not carry payload. They do not prove that the storage-side CPU or DRAM was
 bypassed. That later claim requires SPDK/NVMe-oF or a supported peer/direct DMA
 backend and separate performance/trace evidence.
+
+They also do not qualify an external storage appliance. That gate requires a
+real adapter for the appliance's management/storage protocol, QP endpoint
+exchange with the compute client, and a checksum-verified appliance-RNIC to
+NPU-HBM transfer.

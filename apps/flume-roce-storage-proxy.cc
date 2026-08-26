@@ -96,7 +96,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "flume storage control proxy waiting: transfer_mode=push "
-               "control_proxy=used payload_proxy_bytes=0\n";
+               "upstream_protocol=flume-roce-v2 "
+               "requires_upstream_daemon=yes control_proxy=used "
+               "payload_proxy_bytes=0\n";
   const int downstream = accept(listener, nullptr, nullptr);
   close(listener);
   if (downstream < 0) {
@@ -121,7 +123,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::cout << "storage control proxy passed: transfer_mode=push "
-            << "data_plane=remote-rnic control_proxy=used requests="
+            << "upstream_protocol=flume-roce-v2 "
+               "requires_upstream_daemon=yes data_plane=remote-rnic "
+               "control_proxy=used requests="
             << stats.requests << " control_bytes="
             << (stats.session_bytes + stats.command_bytes +
                 stats.completion_bytes)

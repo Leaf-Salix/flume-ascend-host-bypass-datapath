@@ -200,6 +200,10 @@ The `pull` mode is reserved in the API but intentionally returns unsupported.
 See [`docs/stage-4-push-routing.md`](docs/stage-4-push-routing.md) for the route
 matrix and commands.
 
+The current proxy requires an upstream Flume daemon. A storage appliance that
+cannot run Flume needs a controller-side adapter for its native control/storage
+protocol; that external-appliance route is designed but not implemented.
+
 If `--storage-smoke-file` is omitted, `flume_tool.py` generates a deterministic input file in the run log directory. `--storage-smoke-bytes` must fit in the per-rank smoke HBM buffer, so either keep it at the default 4096 bytes or set `--hccl-count >= ceil(bytes / 4)`.
 
 Status: Host B (CANN 9.0) has validated this path with a local SSD input file and a 16 MiB byte payload. The marker `storage_hbm=hccl-p2p-staging` appeared on both ranks and the rank1 checksum matched the source slice.
