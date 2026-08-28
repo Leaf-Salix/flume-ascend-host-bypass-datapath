@@ -67,7 +67,8 @@ flume::roce::VerbsEndpoint ToVerbsEndpoint(const flume::roce::Endpoint& endpoint
 }
 
 int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::string& verbs_device,
-                   uint8_t verbs_port, uint8_t gid_index, uint32_t timeout_ms) {
+                   uint8_t verbs_port, uint8_t gid_index, uint32_t timeout_ms,
+                   bool allow_writes) {
   std::vector<uint8_t> wire(flume::roce::kSessionRequestWireBytes);
   flume::roce::SessionRequest request;
   std::string error;
@@ -131,6 +132,9 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
   response.server_capabilities = dynamic_cast<flume::roce::MemoryStorageBackend*>(storage) != nullptr ?
       flume::roce::kServerCapabilityMemoryNamespace :
       flume::roce::kServerCapabilityPosixNamespace;
+  if (allow_writes) {
+    response.server_capabilities |= flume::roce::kServerCapabilityStorageWrite;
+  }
   if (!flume::roce::EncodeSessionResponse(response, &wire) ||
       !flume::roce::ControlWriteAll(fd, wire.data(), wire.size(), &error)) {
     std::cerr << "failed to send storage-node RoCE session response\n";
@@ -162,6 +166,9 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
         command.storage_offset > storage->size() ||
         command.length > storage->size() - command.storage_offset) {
       completion.status = flume::roce::kCompletionStatusInvalidRequest;
+    } else if (command.operation == flume::roce::Operation::kWrite &&
+               !allow_writes) {
+      completion.status = flume::roce::kCompletionStatusUnsupported;
     } else {
       std::vector<uint8_t> staging(static_cast<size_t>(command.length));
       flume::roce::VerbsMemoryRegion mr;
@@ -179,7 +186,22 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
                                flume::roce::kCompletionStatusBackendError;
       completion.bytes = ok ? command.length : 0;
       completion.checksum = ok ? flume::roce::Checksum(staging.data(), staging.size()) : 0;
-      if (!ok) std::cerr << "request " << command.request_id << " failed: " << error << "\n";
+      if (ok) {
+        std::cout << "flume_storage_request=passed request_id="
+                  << command.request_id << " operation="
+                  << (command.operation == flume::roce::Operation::kRead ?
+                          "storage-read" : "storage-write")
+                  << " rdma_operation="
+                  << (command.operation == flume::roce::Operation::kRead ?
+                          "write-to-hbm" : "read-from-hbm")
+                  << " bytes=" << completion.bytes
+                  << " checksum=" << completion.checksum
+                  << " storage_side_staging=host-dram"
+                     " compute_host_payload_bytes=0 fallback=none\n";
+      } else {
+        std::cerr << "flume_storage_request=failed request_id="
+                  << command.request_id << " detail=\"" << error << "\"\n";
+      }
     }
     if (tcp_control) {
       if (!flume::roce::SendCompletion(fd, completion, &error)) {
@@ -211,6 +233,7 @@ int main(int argc, char** argv) {
   uint32_t timeout_ms = kDefaultTransferTimeoutMs;
   uint32_t verbs_port = 1;
   uint32_t gid_index = 0;
+  bool allow_writes = false;
   for (int index = 1; index < argc; ++index) {
     const std::string arg = argv[index];
     if (arg == "--listen" && index + 1 < argc) {
@@ -231,12 +254,14 @@ int main(int argc, char** argv) {
       verbs_port = static_cast<uint32_t>(std::strtoul(argv[++index], nullptr, 10));
     } else if (arg == "--gid-index" && index + 1 < argc) {
       gid_index = static_cast<uint32_t>(std::strtoul(argv[++index], nullptr, 10));
+    } else if (arg == "--allow-writes") {
+      allow_writes = true;
     } else {
       std::cerr << "usage: flume-roce-storage-server [--listen ip] "
                 << "[--namespace-bytes bytes] [--storage-file path] "
                 << "[--data-mover host-verbs|npu-ra-relay] "
                 << "[--verbs-device name] [--verbs-port N] [--gid-index N] "
-                << "[--control-port port] [--timeout-ms ms]\n";
+                << "[--control-port port] [--timeout-ms ms] [--allow-writes]\n";
       return 2;
     }
   }
@@ -266,6 +291,7 @@ int main(int argc, char** argv) {
             << "transfer_modes=push data_mover=" << data_mover << " "
             << "storage_backend="
             << (storage_file.empty() ? "memory" : "posix") << " "
+            << "storage_writes=" << (allow_writes ? "enabled" : "disabled") << " "
             << "verbs_backend=" << (flume::roce::VerbsAvailable() ? "available" : "unavailable") << " "
             << "native_transport=" << (flume::roce::NativeTransportCompiled() ? "on" : "off")
             << " detail=\"" << flume::roce::NativeTransportReason() << "\"\n";
@@ -307,7 +333,8 @@ int main(int argc, char** argv) {
     }
     const int result = ServeOneClient(client, storage.get(), verbs_device,
                                       static_cast<uint8_t>(verbs_port),
-                                      static_cast<uint8_t>(gid_index), timeout_ms);
+                                      static_cast<uint8_t>(gid_index), timeout_ms,
+                                      allow_writes);
     close(client);
     return result;
   }

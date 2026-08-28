@@ -31,16 +31,24 @@ void RunServer(int fd, flume::roce::StorageBackend* storage,
                    flume::roce::ControlReadResult::kSuccess);
   flume::roce::Completion completion;
   completion.request_id = command.request_id;
-  if (command.operation != flume::roce::Operation::kRead ||
-      command.npu_address != reinterpret_cast<uint64_t>(registered_hbm->data()) ||
+  if (command.npu_address != reinterpret_cast<uint64_t>(registered_hbm->data()) ||
       command.npu_rkey != kSimRkey || command.length > registered_hbm->size()) {
     completion.status = 1;
   } else {
     std::vector<uint8_t> staging(static_cast<size_t>(command.length));
-    const bool ok = storage->Read(command.storage_offset, staging.data(),
-                                  staging.size(), &error);
+    bool ok = false;
+    if (command.operation == flume::roce::Operation::kRead) {
+      ok = storage->Read(command.storage_offset, staging.data(),
+                         staging.size(), &error);
+      if (ok) {
+        std::memcpy(registered_hbm->data(), staging.data(), staging.size());
+      }
+    } else if (command.operation == flume::roce::Operation::kWrite) {
+      std::memcpy(staging.data(), registered_hbm->data(), staging.size());
+      ok = storage->Write(command.storage_offset, staging.data(),
+                          staging.size(), &error);
+    }
     if (ok) {
-      std::memcpy(registered_hbm->data(), staging.data(), staging.size());
       completion.bytes = staging.size();
       completion.checksum = flume::roce::Checksum(staging.data(), staging.size());
     } else {
@@ -51,12 +59,17 @@ void RunServer(int fd, flume::roce::StorageBackend* storage,
   close(fd);
 }
 
-void RunCase(flume::roce::StorageBackend* storage, bool server_first) {
+void RunCase(flume::roce::StorageBackend* storage,
+             flume::roce::Operation operation, bool server_first) {
   constexpr size_t kOffset = 17;
   constexpr size_t kBytes = 1024;
   int sockets[2] = {-1, -1};
   FLUME_TEST_CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
   std::vector<uint8_t> registered_hbm(kBytes, 0);
+  if (operation == flume::roce::Operation::kWrite) {
+    FillPattern(&registered_hbm);
+  }
+  const std::vector<uint8_t> expected = registered_hbm;
   std::thread server;
   if (server_first) {
     server = std::thread(RunServer, sockets[1], storage, &registered_hbm);
@@ -64,12 +77,13 @@ void RunCase(flume::roce::StorageBackend* storage, bool server_first) {
 
   flume::roce::Command command;
   command.request_id = server_first ? 1 : 2;
-  command.operation = flume::roce::Operation::kRead;
+  command.operation = operation;
   command.storage_offset = kOffset;
   command.length = kBytes;
   command.npu_address = reinterpret_cast<uint64_t>(registered_hbm.data());
   command.npu_rkey = kSimRkey;
-  command.npu_access = flume::roce::kMemoryRemoteWrite;
+  command.npu_access = operation == flume::roce::Operation::kRead ?
+      flume::roce::kMemoryRemoteWrite : flume::roce::kMemoryRemoteRead;
   std::string error;
   FLUME_TEST_CHECK(flume::roce::SendCommand(sockets[0], command, &error));
   if (!server_first) {
@@ -82,8 +96,16 @@ void RunCase(flume::roce::StorageBackend* storage, bool server_first) {
   close(sockets[0]);
   FLUME_TEST_CHECK(completion.status == 0);
   FLUME_TEST_CHECK(completion.bytes == kBytes);
-  FLUME_TEST_CHECK(completion.checksum ==
-                   flume::roce::Checksum(registered_hbm.data(), registered_hbm.size()));
+  if (operation == flume::roce::Operation::kRead) {
+    FLUME_TEST_CHECK(completion.checksum == flume::roce::Checksum(
+        registered_hbm.data(), registered_hbm.size()));
+  } else {
+    std::vector<uint8_t> stored(kBytes);
+    FLUME_TEST_CHECK(storage->Read(kOffset, stored.data(), stored.size(), &error));
+    FLUME_TEST_CHECK(stored == expected);
+    FLUME_TEST_CHECK(completion.checksum ==
+                     flume::roce::Checksum(expected.data(), expected.size()));
+  }
 }
 
 void RunRejectedWindowCase(flume::roce::StorageBackend* storage) {
@@ -121,8 +143,10 @@ int main() {
   flume::roce::MemoryStorageBackend memory(kStorageBytes);
   std::string error;
   FLUME_TEST_CHECK(memory.Write(0, fixture.data(), fixture.size(), &error));
-  RunCase(&memory, false);
-  RunCase(&memory, true);
+  RunCase(&memory, flume::roce::Operation::kRead, false);
+  RunCase(&memory, flume::roce::Operation::kRead, true);
+  RunCase(&memory, flume::roce::Operation::kWrite, false);
+  RunCase(&memory, flume::roce::Operation::kWrite, true);
   RunRejectedWindowCase(&memory);
 
   const fs::path root = fs::temp_directory_path() / "flume-roce-tcp-control-sim";
@@ -134,7 +158,8 @@ int main() {
     out.write(reinterpret_cast<const char*>(fixture.data()), fixture.size());
   }
   flume::roce::PosixStorageBackend posix(file.string());
-  RunCase(&posix, true);
+  RunCase(&posix, flume::roce::Operation::kRead, true);
+  RunCase(&posix, flume::roce::Operation::kWrite, true);
 
   int sockets[2] = {-1, -1};
   FLUME_TEST_CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);

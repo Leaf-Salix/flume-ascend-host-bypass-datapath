@@ -94,25 +94,27 @@ class HostRaSession::Impl {
     }
     if (!api.Open(npu_command_posting, error)) return Fail();
     capability_loaded = true;
-    int32_t physical = -1;
-    if (api.rt_set_device(static_cast<int32_t>(config.logical_device)) != cann::kSuccess ||
-        api.acl_get_physical_device(static_cast<int32_t>(config.logical_device), &physical) != cann::kSuccess ||
-        physical < 0) {
-      if (error != nullptr) *error = "failed to select NPU device or resolve physical device id";
+    if (api.SetDevice(static_cast<int32_t>(config.logical_device)) !=
+            cann::kSuccess ||
+        !api.ResolvePhysicalDevice(static_cast<int32_t>(config.logical_device),
+                                   config.physical_device, &physical_device,
+                                   error)) {
+      if (error != nullptr && error->empty()) {
+        *error = "failed to select NPU device or resolve physical device id";
+      }
       return Fail();
     }
-    physical_device = static_cast<unsigned>(physical);
     const std::string hdc_arg = "--hdcType=" + std::to_string(config.hdc_type);
     cann::RtProcExtParam parameter{hdc_arg.c_str(), hdc_arg.size()};
     cann::RtNetServiceOpenArgs open_args{&parameter, 1};
-    if (api.rt_open_net_service(&open_args) != cann::kSuccess) {
+    if (api.OpenNetService(&open_args) != cann::kSuccess) {
       if (error != nullptr) *error = "rtOpenNetService failed for Host-RA";
       return Fail();
     }
     net_service_open = true;
     init_config = {physical_device, cann::kNicDeploymentDevice,
                    config.hdc_type, false};
-    if (api.ra_init(&init_config) != cann::kSuccess) {
+    if (api.Init(&init_config) != cann::kSuccess) {
       if (error != nullptr) *error = "RaInit failed";
       return Fail();
     }
@@ -127,13 +129,17 @@ class HostRaSession::Impl {
     cann::RdevInitInfo rdev_init{};
     rdev_init.mode = cann::kNetworkOffline;
     rdev_init.notify_type = cann::kNotify;
-    if (api.ra_rdev_init_v2(rdev_init, rdev, &rdma_handle) != cann::kSuccess || rdma_handle == nullptr) {
-      if (error != nullptr) *error = "RaRdevInitV2 failed";
+    if (api.RdevInit(rdev_init, rdev, &rdma_handle) != cann::kSuccess ||
+        rdma_handle == nullptr) {
+      if (error != nullptr) {
+        *error = std::string(api.rdev_init_profile_name()) + " failed";
+      }
       return Fail();
     }
     local_qp.gid_index = config.gid_index;
-    if (api.ra_typical_qp_create(rdma_handle, 0, cann::kOpbaseQpMode,
-                                 &local_qp, &qp_handle) != cann::kSuccess || qp_handle == nullptr) {
+    if (api.TypicalQpCreate(rdma_handle, 0, cann::kOpbaseQpMode, &local_qp,
+                            &qp_handle) != cann::kSuccess ||
+        qp_handle == nullptr) {
       if (error != nullptr) *error = "RaTypicalQpCreate failed";
       return Fail();
     }
@@ -178,7 +184,8 @@ class HostRaSession::Impl {
     cann::TypicalQp remote_qp = ToTypicalQp(response.endpoint);
     local_qp.retry_count = 7;
     local_qp.retry_time = 14;
-    if (api.ra_typical_qp_modify(qp_handle, &local_qp, &remote_qp) != cann::kSuccess) {
+    if (api.TypicalQpModify(qp_handle, &local_qp, &remote_qp) !=
+        cann::kSuccess) {
       if (error != nullptr) *error = "RaTypicalQpModify failed";
       return Fail();
     }
@@ -201,13 +208,22 @@ class HostRaSession::Impl {
       if (error != nullptr) *error = "invalid or concurrent Host-RA storage request";
       return false;
     }
+    if (operation == Operation::kWrite &&
+        (server_capabilities & kServerCapabilityStorageWrite) == 0) {
+      lifecycle.CompleteRequest(request_id);
+      if (error != nullptr) {
+        *error = "storage server is read-only; restart it with explicit write permission";
+      }
+      return false;
+    }
     cann::MrInfo payload_mr{};
     payload_mr.address = npu_buffer;
     payload_mr.size = length;
     payload_mr.access = cann::kRaAccessLocalWrite |
         (operation == Operation::kRead ? cann::kRaAccessRemoteWrite : cann::kRaAccessRemoteRead);
     void* payload_mr_handle = nullptr;
-    if (api.ra_register_mr(rdma_handle, &payload_mr, &payload_mr_handle) != cann::kSuccess ||
+    if (api.RegisterMr(rdma_handle, &payload_mr, &payload_mr_handle) !=
+            cann::kSuccess ||
         payload_mr_handle == nullptr) {
       if (error != nullptr) *error = "RaRegisterMr failed for NPU HBM payload window";
       lifecycle.Fail();
@@ -232,23 +248,31 @@ class HostRaSession::Impl {
       std::vector<uint8_t> command_wire;
       std::vector<uint8_t> completion_zero(kCompletionWireBytes, 0);
       ok = EncodeCommand(command, &command_wire) &&
-          api.acl_memcpy(command_device, kCommandWireBytes, command_wire.data(),
-                         command_wire.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess &&
-          api.acl_memcpy(completion_device, kCompletionWireBytes, completion_zero.data(),
-                         completion_zero.size(), cann::kAclMemcpyHostToDevice) == cann::kSuccess;
+          api.DeviceMemcpy(command_device, kCommandWireBytes,
+                           command_wire.data(), command_wire.size(),
+                           cann::kAclMemcpyHostToDevice) == cann::kSuccess &&
+          api.DeviceMemcpy(completion_device, kCompletionWireBytes,
+                           completion_zero.data(), completion_zero.size(),
+                           cann::kAclMemcpyHostToDevice) == cann::kSuccess;
       cann::SgList sge{reinterpret_cast<uint64_t>(command_device),
                        static_cast<uint32_t>(kCommandWireBytes), command_mr.lkey};
       cann::SendWr wr{&sge, 1, 0, 0, cann::kRaWrSend, cann::kRaSendSignaled};
       cann::SendWrResponse response{};
-      if (ok) ok = api.ra_typical_send_wr(qp_handle, &wr, &response) == cann::kSuccess;
-      if (ok) ok = api.rt_rdma_db_send(response.db.index, response.db.info, acl_stream) == cann::kSuccess;
+      if (ok) {
+        ok = api.TypicalSendWr(qp_handle, &wr, &response) == cann::kSuccess;
+      }
+      if (ok) {
+        ok = api.RdmaDbSend(response.db.index, response.db.info, acl_stream) ==
+             cann::kSuccess;
+      }
 
       const auto deadline = std::chrono::steady_clock::now() +
                             std::chrono::milliseconds(config.timeout_ms);
       std::vector<uint8_t> completion_wire(kCompletionWireBytes);
       while (ok && std::chrono::steady_clock::now() < deadline) {
-        ok = api.acl_memcpy(completion_wire.data(), completion_wire.size(), completion_device,
-                            kCompletionWireBytes, cann::kAclMemcpyDeviceToHost) == cann::kSuccess;
+        ok = api.DeviceMemcpy(completion_wire.data(), completion_wire.size(),
+                              completion_device, kCompletionWireBytes,
+                              cann::kAclMemcpyDeviceToHost) == cann::kSuccess;
         if (ok && DecodeCompletion(completion_wire.data(), completion_wire.size(), &completion) &&
             completion.request_id == request_id) {
           break;
@@ -273,7 +297,15 @@ class HostRaSession::Impl {
       ok = false;
       if (error != nullptr) *error = "storage server returned a short RDMA completion";
     }
-    api.ra_deregister_mr(rdma_handle, payload_mr_handle);
+    const int deregister_status =
+        api.DeregisterMr(rdma_handle, payload_mr_handle);
+    if (deregister_status != cann::kSuccess) {
+      if (error != nullptr) {
+        if (!error->empty()) *error += "; ";
+        *error += "RaDeregisterMr failed for NPU HBM payload window";
+      }
+      ok = false;
+    }
     if (!ok) {
       lifecycle.Fail();
       return false;
@@ -283,7 +315,9 @@ class HostRaSession::Impl {
     result->checksum = completion.checksum;
     result->marker = MakeHostRaSuccessMarker(config.control_mode,
                                              config.transfer_mode, operation,
-                                             server_capabilities);
+                                             server_capabilities) +
+        " cann_ra_symbol_profile=" + api.symbol_profile_name() +
+        " cann_ra_rdev_init=" + api.rdev_init_profile_name();
     return true;
   }
 
@@ -303,14 +337,16 @@ class HostRaSession::Impl {
 
   bool AllocateAndRegister(size_t bytes, int access, void** address,
                            cann::MrInfo* mr, void** mr_handle, std::string* error) {
-    if (api.acl_malloc(address, bytes, cann::kAclMallocNormalOnly) != cann::kSuccess) {
+    if (api.DeviceMalloc(address, bytes, cann::kAclMallocNormalOnly) !=
+        cann::kSuccess) {
       if (error != nullptr) *error = "aclrtMalloc failed for Host-RA control buffer";
       return false;
     }
     mr->address = *address;
     mr->size = bytes;
     mr->access = access;
-    if (api.ra_register_mr(rdma_handle, mr, mr_handle) != cann::kSuccess || *mr_handle == nullptr) {
+    if (api.RegisterMr(rdma_handle, mr, mr_handle) != cann::kSuccess ||
+        *mr_handle == nullptr) {
       if (error != nullptr) *error = "RaRegisterMr failed for Host-RA control buffer";
       return false;
     }
@@ -325,21 +361,25 @@ class HostRaSession::Impl {
 
   void Cleanup() {
     if (control_fd >= 0) { close(control_fd); control_fd = -1; }
-    if (completion_mr_handle != nullptr) api.ra_deregister_mr(rdma_handle, completion_mr_handle);
-    if (command_mr_handle != nullptr) api.ra_deregister_mr(rdma_handle, command_mr_handle);
+    if (completion_mr_handle != nullptr) {
+      api.DeregisterMr(rdma_handle, completion_mr_handle);
+    }
+    if (command_mr_handle != nullptr) {
+      api.DeregisterMr(rdma_handle, command_mr_handle);
+    }
     completion_mr_handle = nullptr;
     command_mr_handle = nullptr;
-    if (completion_device != nullptr) api.acl_free(completion_device);
-    if (command_device != nullptr) api.acl_free(command_device);
+    if (completion_device != nullptr) api.DeviceFree(completion_device);
+    if (command_device != nullptr) api.DeviceFree(command_device);
     completion_device = nullptr;
     command_device = nullptr;
-    if (qp_handle != nullptr) api.ra_qp_destroy(qp_handle);
+    if (qp_handle != nullptr) api.QpDestroy(qp_handle);
     qp_handle = nullptr;
-    if (rdma_handle != nullptr) api.ra_rdev_deinit(rdma_handle, cann::kNotify);
+    if (rdma_handle != nullptr) api.RdevDeinit(rdma_handle, cann::kNotify);
     rdma_handle = nullptr;
-    if (ra_initialized) api.ra_deinit(&init_config);
+    if (ra_initialized) api.Deinit(&init_config);
     ra_initialized = false;
-    if (net_service_open) api.rt_close_net_service();
+    if (net_service_open) api.CloseNetService();
     net_service_open = false;
     api.Close();
   }

@@ -54,10 +54,13 @@ standard-verbs RDMA into the returned HBM address/rkey.
 | Completion | Receive TCP completion | Wait local CQ, then send status/checksum |
 | Verification | D2H read after completion, smoke only | Server checksum is returned as metadata |
 
-The dynamic CANN loader separates QP/MR core capability from optional NPU
-command posting. Missing core symbols produce `unsupported`; a runtime failure
-after successful capability loading produces a backend failure. CANN 8.5/9.0
-differences therefore do not cause an unconditional build failure.
+The dynamic CANN adapter separates QP/MR core capability from optional NPU
+command posting. It routes current CamelCase RA exports and legacy lowercase
+exports, and falls back from `RaRdevInitV2` to `RaRdevInit` when necessary.
+Missing core symbols produce `unsupported`; a runtime failure after successful
+capability loading produces a backend failure. CANN 8.2 RC1 and 9.0 therefore
+share the same storage/session implementation. See
+[`cann-ra-version-adaptation.md`](cann-ra-version-adaptation.md).
 
 ## Clean-Room Boundary
 
@@ -78,9 +81,10 @@ ctest --test-dir build-local-roce --output-on-failure
 ```
 
 The tests cover TCP framing and partial-frame failure, send-first and
-receive-first sequencing, memory/POSIX storage into a registered simulated HBM
-window, checksums, both session modes, CANN/HCCP source-fixture ABI sizes, and
-CANN ACL fixture syntax for the standalone smoke.
+receive-first sequencing, both StorageRead and StorageWrite against
+memory/POSIX backends, registered simulated HBM windows, checksums, both
+session modes, CANN/HCCP source-fixture ABI sizes, and CANN ACL fixture syntax
+for the standalone smoke.
 
 ## Hardware Preconditions
 
@@ -97,6 +101,17 @@ python3 tools/flume_tool.py \
   --enable-roce-storage \
   ascend-probe
 ```
+
+Before occupying a device, inspect the installed RA surface:
+
+```bash
+build-roce-tcp/flume-cann-ra-compat-probe
+```
+
+If it reports `physical_device_lookup=explicit-required`, append
+`--physical-device <physical-device-id>` to the hardware client command. This
+is expected on some legacy CANN layouts and does not change the logical device
+used by ACL.
 
 ### Memory Canary
 
@@ -139,6 +154,10 @@ verification_d2h_bytes=4096
 checksum=matched
 fallback=none
 ```
+
+For the bidirectional tensor-swap gate and the fail-closed write flags, use
+`flume-roce-swap-smoke` as documented in
+[`stage-4-tensor-swap.md`](stage-4-tensor-swap.md).
 
 ### POSIX Smoke
 

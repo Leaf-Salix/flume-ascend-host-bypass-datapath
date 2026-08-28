@@ -194,6 +194,16 @@ POSIX/memory backend still stages bytes in storage-server DRAM. See
 [`docs/stage-4-host-ra-baseline.md`](docs/stage-4-host-ra-baseline.md) for the
 exact boundary, clean-room provenance, and hardware checklist.
 
+The Host-RA adapter supports current CANN 9.x exports and a CANN 8.2 RC1
+legacy route without branching the storage logic. It accepts current or
+lowercase RA symbols, falls back to legacy `RaRdevInit`, and permits an
+explicit physical device ID when the old runtime lacks logical-to-physical
+mapping. `flume-cann-ra-compat-probe` checks this surface without selecting a
+device and reports `cann_ra_symbol_probe=passed` together with
+`cann_ra_compat=unqualified`; only a real QP/MR/RDMA checksum smoke qualifies
+the ABI. See
+[`docs/cann-ra-version-adaptation.md`](docs/cann-ra-version-adaptation.md).
+
 Stage 4 now uses push-first storage reads. The data node may send through a
 standard host RNIC or through the standalone CPU-server/NPU-RA data mover. A
 separate control node can transparently proxy session, request, and completion
@@ -201,6 +211,13 @@ messages to a RoCE-connected data node while forwarding zero payload bytes.
 The `pull` mode is reserved in the API but intentionally returns unsupported.
 See [`docs/stage-4-push-routing.md`](docs/stage-4-push-routing.md) for the route
 matrix and commands.
+
+The application-facing byte-swap API now exposes `flume_swap_in_async` and
+`flume_swap_out_async`. The standalone `flume-roce-swap-smoke` validates both
+directions on one Host-RA session: server RDMA Write for swap-in and server
+RDMA Read for swap-out. Storage writes are fail-closed unless the server uses
+`--allow-writes` and the smoke uses `--confirm-storage-write`. See
+[`docs/stage-4-tensor-swap.md`](docs/stage-4-tensor-swap.md).
 
 The current proxy requires an upstream Flume daemon. A storage appliance that
 cannot run Flume needs a controller-side adapter for its native control/storage

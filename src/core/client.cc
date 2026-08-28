@@ -227,11 +227,16 @@ struct flume_storage_direct_plan {
 };
 
 struct flume_roce_storage_session {
+  static constexpr uint64_t kIdle = 0;
+  static constexpr uint64_t kActive = 1;
+  static constexpr uint64_t kClosing = std::numeric_limits<uint64_t>::max();
+
   flume_client_t* client = nullptr;
   std::string storage_server;
   std::string npu_rnic_ip;
   std::string storage_rnic_ip;
   uint32_t npu_device = 0;
+  int32_t npu_physical_device = -1;
   uint32_t gid_index = 0;
   uint32_t bootstrap_port = 0;
   uint32_t timeout_ms = 0;
@@ -243,7 +248,7 @@ struct flume_roce_storage_session {
   std::shared_ptr<flume::roce::HostRaSession> host_ra;
   std::string native_open_error;
   std::atomic<uint64_t> next_request_id{1};
-  std::atomic<size_t> active_requests{0};
+  std::atomic<uint64_t> request_state{kIdle};
 };
 
 struct flume_io {
@@ -7880,7 +7885,8 @@ int flume_roce_storage_session_open(
     const flume_roce_storage_options_t* options,
     flume_roce_storage_session_t** out) {
   if (client == nullptr || options == nullptr || out == nullptr ||
-      options->size < sizeof(flume_roce_storage_options_t) ||
+      options->size < offsetof(flume_roce_storage_options_t,
+                               npu_physical_device_valid) ||
       options->storage_server == nullptr || options->storage_server[0] == '\0' ||
       options->npu_rnic_ip == nullptr || options->npu_rnic_ip[0] == '\0' ||
       options->bootstrap_port == 0 || options->timeout_ms == 0) {
@@ -7912,6 +7918,16 @@ int flume_roce_storage_session_open(
   session->storage_rnic_ip = options->storage_rnic_ip == nullptr ?
       "" : options->storage_rnic_ip;
   session->npu_device = options->npu_device;
+  if (options->size >= sizeof(flume_roce_storage_options_t) &&
+      options->npu_physical_device_valid != 0) {
+    if (options->npu_physical_device >
+        static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+      delete session;
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+    session->npu_physical_device =
+        static_cast<int32_t>(options->npu_physical_device);
+  }
   session->gid_index = options->gid_index;
   session->bootstrap_port = options->bootstrap_port;
   session->timeout_ms = options->timeout_ms;
@@ -7929,6 +7945,7 @@ int flume_roce_storage_session_open(
     config.storage_server = session->storage_server;
     config.npu_rnic_ip = session->npu_rnic_ip;
     config.logical_device = session->npu_device;
+    config.physical_device = session->npu_physical_device;
     config.gid_index = session->gid_index;
     config.bootstrap_port = session->bootstrap_port;
     config.timeout_ms = session->timeout_ms;
@@ -7946,12 +7963,17 @@ int flume_roce_storage_session_open(
 
 int flume_roce_storage_session_close(flume_roce_storage_session_t* session) {
   if (session == nullptr) return FLUME_OK;
-  if (session->active_requests.load(std::memory_order_acquire) != 0) {
+  uint64_t expected = flume_roce_storage_session::kIdle;
+  if (!session->request_state.compare_exchange_strong(
+          expected, flume_roce_storage_session::kClosing,
+          std::memory_order_acq_rel, std::memory_order_acquire)) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   std::string error;
   if (session->host_ra != nullptr && session->host_ra->available() &&
       !session->host_ra->Close(&error)) {
+    session->request_state.store(flume_roce_storage_session::kIdle,
+                                 std::memory_order_release);
     return FLUME_ERR_BACKEND;
   }
   delete session;
@@ -7983,14 +8005,28 @@ int SubmitRoceStorage(flume_roce_storage_session_t* session,
                       size_t len,
                       void* acl_stream,
                       flume_io_t** out) {
-  if (session == nullptr || buffer == nullptr || out == nullptr ||
-      buffer->client != session->client || len == 0 ||
-      !ValidateRange(buffer, buffer_offset, len)) {
+  if (session == nullptr || buffer == nullptr || out == nullptr) {
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   *out = nullptr;
+  uint64_t expected = flume_roce_storage_session::kIdle;
+  if (!session->request_state.compare_exchange_strong(
+          expected, flume_roce_storage_session::kActive,
+          std::memory_order_acq_rel, std::memory_order_acquire)) {
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
+  const auto release_request = [session]() {
+    session->request_state.store(flume_roce_storage_session::kIdle,
+                                 std::memory_order_release);
+  };
+  if (buffer->client != session->client || len == 0 ||
+      !ValidateRange(buffer, buffer_offset, len)) {
+    release_request();
+    return FLUME_ERR_INVALID_ARGUMENT;
+  }
   if (buffer->type != FLUME_BUFFER_ASCEND_HBM &&
       buffer->type != FLUME_BUFFER_HCCL_COMM) {
+    release_request();
     return FLUME_ERR_INVALID_ARGUMENT;
   }
   if (session->host_ra == nullptr || !session->host_ra->available()) {
@@ -8007,11 +8043,8 @@ int SubmitRoceStorage(flume_roce_storage_session_t* session,
            << "\"";
     *out = MakeIo(capability_available ? FLUME_ERR_BACKEND : FLUME_ERR_UNSUPPORTED,
                   0, 0, marker.str());
+    release_request();
     return FLUME_OK;
-  }
-  if (session->active_requests.fetch_add(1, std::memory_order_acq_rel) != 0) {
-    session->active_requests.fetch_sub(1, std::memory_order_acq_rel);
-    return FLUME_ERR_INVALID_ARGUMENT;
   }
   const uint64_t request_id = session->next_request_id.fetch_add(1, std::memory_order_relaxed);
   auto* io = MakePendingIo();
@@ -8020,19 +8053,27 @@ int SubmitRoceStorage(flume_roce_storage_session_t* session,
   *out = io;
   std::shared_ptr<flume::roce::HostRaSession> host_ra = session->host_ra;
   void* npu_address = static_cast<uint8_t*>(buffer->ptr) + buffer_offset;
-  std::thread([session, host_ra, operation, request_id, object_id, storage_offset,
-               npu_address, len, acl_stream, buffer, io]() {
-    flume::roce::HostRaResult result;
-    std::string error;
-    const bool ok = host_ra->SubmitAndWait(operation, request_id, object_id,
-                                           storage_offset, npu_address, len,
-                                           acl_stream, &result, &error);
+  try {
+    std::thread([session, host_ra, operation, request_id, object_id,
+                 storage_offset, npu_address, len, acl_stream, buffer, io]() {
+      flume::roce::HostRaResult result;
+      std::string error;
+      const bool ok = host_ra->SubmitAndWait(operation, request_id, object_id,
+                                             storage_offset, npu_address, len,
+                                             acl_stream, &result, &error);
+      ReleasePendingBuffer(buffer);
+      session->request_state.store(flume_roce_storage_session::kIdle,
+                                   std::memory_order_release);
+      CompletePendingIo(io, ok ? FLUME_OK : FLUME_ERR_BACKEND,
+                        ok ? result.bytes : 0, ok ? result.checksum : 0,
+                        ok ? result.marker : "Host-RA request failed: " + error);
+    }).detach();
+  } catch (...) {
     ReleasePendingBuffer(buffer);
-    session->active_requests.fetch_sub(1, std::memory_order_acq_rel);
-    CompletePendingIo(io, ok ? FLUME_OK : FLUME_ERR_BACKEND,
-                      ok ? result.bytes : 0, ok ? result.checksum : 0,
-                      ok ? result.marker : "Host-RA request failed: " + error);
-  }).detach();
+    release_request();
+    CompletePendingIo(io, FLUME_ERR_BACKEND, 0, 0,
+                      "failed to start Host-RA request worker");
+  }
   return FLUME_OK;
 }
 
@@ -8062,6 +8103,30 @@ int flume_roce_storage_write_async(
     flume_io_t** out) {
   return SubmitRoceStorage(session, flume::roce::Operation::kWrite, object_id,
                            storage_offset, src, src_offset, len, acl_stream, out);
+}
+
+int flume_swap_in_async(
+    flume_roce_storage_session_t* session,
+    uint64_t storage_offset,
+    flume_buffer_t* dst_hbm,
+    size_t dst_offset,
+    size_t len,
+    void* acl_stream,
+    flume_io_t** out) {
+  return flume_roce_storage_read_async(session, 0, storage_offset, dst_hbm,
+                                       dst_offset, len, acl_stream, out);
+}
+
+int flume_swap_out_async(
+    flume_roce_storage_session_t* session,
+    flume_buffer_t* src_hbm,
+    size_t src_offset,
+    uint64_t storage_offset,
+    size_t len,
+    void* acl_stream,
+    flume_io_t** out) {
+  return flume_roce_storage_write_async(session, 0, storage_offset, src_hbm,
+                                        src_offset, len, acl_stream, out);
 }
 
 int flume_allreduce_async(flume_client_t* client, flume_buffer_t* dst,

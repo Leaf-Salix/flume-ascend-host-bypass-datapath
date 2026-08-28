@@ -154,6 +154,10 @@ typedef struct {
   uint32_t require_compute_host_bypass;
   flume_roce_control_mode_t control_mode;
   flume_roce_transfer_mode_t transfer_mode;
+  // Set valid to 1 when an older CANN build cannot map a logical device id.
+  // Zero keeps the runtime mapping used by current CANN releases.
+  uint32_t npu_physical_device_valid;
+  uint32_t npu_physical_device;
 } flume_roce_storage_options_t;
 
 typedef struct {
@@ -454,6 +458,24 @@ int flume_roce_storage_write_async(
     uint64_t storage_offset,
     flume_buffer_t *src,
     size_t src_offset,
+    size_t len,
+    void *acl_stream,
+    flume_io_t **out);
+
+int flume_swap_in_async(
+    flume_roce_storage_session_t *session,
+    uint64_t storage_offset,
+    flume_buffer_t *dst_hbm,
+    size_t dst_offset,
+    size_t len,
+    void *acl_stream,
+    flume_io_t **out);
+
+int flume_swap_out_async(
+    flume_roce_storage_session_t *session,
+    flume_buffer_t *src_hbm,
+    size_t src_offset,
+    uint64_t storage_offset,
     size_t len,
     void *acl_stream,
     flume_io_t **out);

@@ -45,6 +45,12 @@ int main(int argc, char** argv) {
   FLUME_TEST_CHECK(mover.Push(source.data(), source.size(), target,
                               reinterpret_cast<void*>(1), &error));
 
+  setenv("FLUME_RA_FIXTURE_DEREG_MODE", "error", 1);
+  FLUME_TEST_CHECK(!mover.Push(source.data(), source.size(), target,
+                               reinterpret_cast<void*>(1), &error));
+  FLUME_TEST_CHECK(error.find("RaDeregisterMr failed") != std::string::npos);
+  unsetenv("FLUME_RA_FIXTURE_DEREG_MODE");
+
   setenv("FLUME_RA_FIXTURE_POLL_MODE", "error", 1);
   FLUME_TEST_CHECK(!mover.Push(source.data(), source.size(), target,
                                reinterpret_cast<void*>(1), &error));

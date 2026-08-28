@@ -5,8 +5,10 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,6 +21,19 @@
 namespace {
 
 constexpr uint64_t kDefaultNamespaceBytes = 64U * 1024U * 1024U;
+
+bool ParseU64(const std::string& text, uint64_t* value) {
+  if (value == nullptr || text.empty() || text[0] == '-') return false;
+  try {
+    size_t parsed = 0;
+    const uint64_t result = std::stoull(text, &parsed, 0);
+    if (parsed != text.size()) return false;
+    *value = result;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
 
 int Listen(const std::string& ip, uint16_t port, std::string* error) {
   const int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -47,42 +62,67 @@ int main(int argc, char** argv) {
   std::string listen_ip = "0.0.0.0";
   std::string storage_file;
   std::string npu_rnic_ip;
-  uint32_t control_port = 0;
-  uint32_t logical_device = 0;
-  uint32_t gid_index = 0;
-  uint32_t timeout_ms = 30000;
-  size_t namespace_bytes = kDefaultNamespaceBytes;
+  uint64_t parsed_control_port = 0;
+  uint64_t parsed_logical_device = 0;
+  uint64_t parsed_physical_device = 0;
+  uint64_t parsed_gid_index = 0;
+  uint64_t parsed_timeout_ms = 30000;
+  uint64_t parsed_namespace_bytes = kDefaultNamespaceBytes;
+  bool parse_ok = true;
+  bool physical_device_set = false;
   for (int index = 1; index < argc; ++index) {
     const std::string arg = argv[index];
+    auto next_u64 = [&](uint64_t* output) {
+      return index + 1 < argc && ParseU64(argv[++index], output);
+    };
     if (arg == "--listen" && index + 1 < argc) {
       listen_ip = argv[++index];
     } else if (arg == "--storage-file" && index + 1 < argc) {
       storage_file = argv[++index];
-    } else if (arg == "--namespace-bytes" && index + 1 < argc) {
-      namespace_bytes = std::strtoull(argv[++index], nullptr, 10);
+    } else if (arg == "--namespace-bytes") {
+      parse_ok = next_u64(&parsed_namespace_bytes) && parse_ok;
     } else if (arg == "--npu-rnic-ip" && index + 1 < argc) {
       npu_rnic_ip = argv[++index];
-    } else if (arg == "--device" && index + 1 < argc) {
-      logical_device = std::strtoul(argv[++index], nullptr, 10);
-    } else if (arg == "--gid-index" && index + 1 < argc) {
-      gid_index = std::strtoul(argv[++index], nullptr, 10);
-    } else if (arg == "--control-port" && index + 1 < argc) {
-      control_port = std::strtoul(argv[++index], nullptr, 10);
-    } else if (arg == "--timeout-ms" && index + 1 < argc) {
-      timeout_ms = std::strtoul(argv[++index], nullptr, 10);
+    } else if (arg == "--device") {
+      parse_ok = next_u64(&parsed_logical_device) && parse_ok;
+    } else if (arg == "--physical-device") {
+      parse_ok = next_u64(&parsed_physical_device) && parse_ok;
+      physical_device_set = true;
+    } else if (arg == "--gid-index") {
+      parse_ok = next_u64(&parsed_gid_index) && parse_ok;
+    } else if (arg == "--control-port") {
+      parse_ok = next_u64(&parsed_control_port) && parse_ok;
+    } else if (arg == "--timeout-ms") {
+      parse_ok = next_u64(&parsed_timeout_ms) && parse_ok;
     } else {
       std::cerr << "usage: flume-roce-npu-relay-server [--listen ip] "
                    "[--storage-file path|--namespace-bytes bytes] "
                    "--npu-rnic-ip ip --device logical-id "
+                   "[--physical-device physical-id] "
                    "--gid-index N --control-port port [--timeout-ms ms]\n";
       return arg == "--help" ? 0 : 2;
     }
   }
-  if (npu_rnic_ip.empty() || control_port == 0 ||
-      control_port > UINT16_MAX || timeout_ms == 0 || namespace_bytes == 0) {
+  if (!parse_ok || npu_rnic_ip.empty() || parsed_control_port == 0 ||
+      parsed_control_port > UINT16_MAX || parsed_timeout_ms == 0 ||
+      parsed_timeout_ms > std::numeric_limits<uint32_t>::max() ||
+      parsed_logical_device >
+          static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) ||
+      parsed_physical_device >
+          static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) ||
+      parsed_gid_index > UINT8_MAX || parsed_namespace_bytes == 0 ||
+      parsed_namespace_bytes > std::numeric_limits<size_t>::max()) {
     std::cerr << "NPU relay requires valid NPU and control endpoints\n";
     return 2;
   }
+  const uint32_t control_port = static_cast<uint32_t>(parsed_control_port);
+  const uint32_t logical_device =
+      static_cast<uint32_t>(parsed_logical_device);
+  const int32_t physical_device =
+      physical_device_set ? static_cast<int32_t>(parsed_physical_device) : -1;
+  const uint32_t gid_index = static_cast<uint32_t>(parsed_gid_index);
+  const uint32_t timeout_ms = static_cast<uint32_t>(parsed_timeout_ms);
+  const size_t namespace_bytes = static_cast<size_t>(parsed_namespace_bytes);
 
   std::unique_ptr<flume::roce::StorageBackend> storage;
   if (storage_file.empty()) {
@@ -149,6 +189,7 @@ int main(int argc, char** argv) {
     flume::roce::NpuRaPushConfig config;
     config.npu_rnic_ip = npu_rnic_ip;
     config.logical_device = logical_device;
+    config.physical_device = physical_device;
     config.gid_index = gid_index;
     config.timeout_ms = timeout_ms;
     flume::roce::Endpoint local_endpoint;

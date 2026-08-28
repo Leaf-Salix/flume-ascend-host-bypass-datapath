@@ -31,6 +31,7 @@ constexpr uint32_t kServerCapabilityPosixNamespace = 1U << 1;
 // implementation: the upstream data node may use host verbs or an NPU relay.
 constexpr uint32_t kServerCapabilityControlProxyUsed = 1U << 2;
 constexpr uint32_t kServerCapabilityNpuRaRelay = 1U << 3;
+constexpr uint32_t kServerCapabilityStorageWrite = 1U << 4;
 constexpr uint16_t kSessionFlagTcpControl = 1U << 0;
 constexpr uint16_t kSessionFlagPullTransfer = 1U << 1;
 constexpr uint16_t kSessionKnownFlags =

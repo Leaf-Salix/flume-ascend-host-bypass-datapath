@@ -44,6 +44,21 @@ Server/Client 命令与验收 marker 见
 `docs/stage-4-host-ra-baseline.md`。默认 control mode 是 `tcp`；只有在 TCP
 基线通过后，才建议使用 `--control-mode npu-ra` 做实验对照。
 
+在 CANN 8.2 RC1 或未知 toolkit 上，先运行只读兼容探针：
+
+```bash
+build-roce-tcp/flume-cann-ra-compat-probe
+```
+
+它只做 `dlopen`/`dlsym`，不会选卡、注册 HBM 或建 QP。CANN 9.x 通常显示
+`cann_ra_symbol_probe=passed cann_ra_compat=unqualified` 以及
+`symbol_profile=modern-camelcase rdev_init=rdev-init-v2`；旧布局可显示
+`legacy-lowercase`、`mixed` 或 `rdev-init-legacy`。若显示
+`physical_device_lookup=explicit-required`，hardware smoke 追加
+`--physical-device <physical-device>`。只有 QP/MR/RDMA checksum 真机 smoke
+通过后才能把该 ABI 视为 qualified。完整兼容边界见
+`docs/cann-ra-version-adaptation.md`。
+
 Storage read 默认使用 `--transfer-mode push`。如果 data mover node 与
 compute NPU 直接共享 RoCE fabric，可运行 `flume-roce-storage-server`；其
 `--storage-file` 可以是本地文件或远端 storage backend 的挂载路径。如果
@@ -82,6 +97,15 @@ python3 tools/flume_tool.py \
 payload staging。写入测试只允许未挂载的专用 scratch namespace，并必须显式
 使用 `--nvme-direction write-roundtrip --confirm-scratch-namespace`。详细安全
 边界和 marker 见 `docs/stage-4-native-nvme-hbm-canary.md`。
+
+### Storage-host RNIC tensor swap
+
+当 storage host 有标准 verbs RNIC、计算节点 NPU HCCN 与其处于同一 RoCE
+fabric 时，使用 `flume-roce-storage-server` 配合
+`flume-roce-swap-smoke` 验证双向 byte swap。`swap-in` 对应 server RDMA
+Write 到 HBM，`swap-out` 对应 server RDMA Read HBM。写入默认关闭，server
+和 client 必须分别传 `--allow-writes` 与 `--confirm-storage-write`。双机命令、
+marker 和 POSIX scratch-file 约束见 `docs/stage-4-tensor-swap.md`。
 
 ### 本地 storage direct sim smoke
 

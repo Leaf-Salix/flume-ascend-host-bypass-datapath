@@ -52,27 +52,27 @@ class NpuRaPushMover::Impl {
     if (!api.Open(true, error)) return false;
     capability_loaded = true;
 
-    int32_t physical = -1;
-    if (api.rt_set_device(static_cast<int32_t>(config.logical_device)) !=
+    if (api.SetDevice(static_cast<int32_t>(config.logical_device)) !=
             cann::kSuccess ||
-        api.acl_get_physical_device(static_cast<int32_t>(config.logical_device),
-                                    &physical) != cann::kSuccess ||
-        physical < 0) {
-      if (error != nullptr) *error = "failed to select NPU relay device";
+        !api.ResolvePhysicalDevice(static_cast<int32_t>(config.logical_device),
+                                   config.physical_device, &physical_device,
+                                   error)) {
+      if (error != nullptr && error->empty()) {
+        *error = "failed to select NPU relay device";
+      }
       return Fail();
     }
-    physical_device = static_cast<unsigned>(physical);
     const std::string hdc_arg = "--hdcType=" + std::to_string(config.hdc_type);
     cann::RtProcExtParam parameter{hdc_arg.c_str(), hdc_arg.size()};
     cann::RtNetServiceOpenArgs open_args{&parameter, 1};
-    if (api.rt_open_net_service(&open_args) != cann::kSuccess) {
+    if (api.OpenNetService(&open_args) != cann::kSuccess) {
       if (error != nullptr) *error = "rtOpenNetService failed for NPU relay";
       return Fail();
     }
     net_service_open = true;
     init_config = {physical_device, cann::kNicDeploymentDevice,
                    config.hdc_type, false};
-    if (api.ra_init(&init_config) != cann::kSuccess) {
+    if (api.Init(&init_config) != cann::kSuccess) {
       if (error != nullptr) *error = "RaInit failed for NPU relay";
       return Fail();
     }
@@ -89,14 +89,17 @@ class NpuRaPushMover::Impl {
     cann::RdevInitInfo rdev_init{};
     rdev_init.mode = cann::kNetworkOffline;
     rdev_init.notify_type = cann::kNotify;
-    if (api.ra_rdev_init_v2(rdev_init, rdev, &rdma_handle) != cann::kSuccess ||
+    if (api.RdevInit(rdev_init, rdev, &rdma_handle) != cann::kSuccess ||
         rdma_handle == nullptr) {
-      if (error != nullptr) *error = "RaRdevInitV2 failed for NPU relay";
+      if (error != nullptr) {
+        *error = std::string(api.rdev_init_profile_name()) +
+                 " failed for NPU relay";
+      }
       return Fail();
     }
     local_qp.gid_index = config.gid_index;
-    if (api.ra_typical_qp_create(rdma_handle, 0, cann::kOpbaseQpMode,
-                                 &local_qp, &qp_handle) != cann::kSuccess ||
+    if (api.TypicalQpCreate(rdma_handle, 0, cann::kOpbaseQpMode, &local_qp,
+                            &qp_handle) != cann::kSuccess ||
         qp_handle == nullptr) {
       if (error != nullptr) *error = "RaTypicalQpCreate failed for NPU relay";
       return Fail();
@@ -104,7 +107,7 @@ class NpuRaPushMover::Impl {
     cann::TypicalQp peer_qp = ToTypicalQp(peer);
     local_qp.retry_count = 7;
     local_qp.retry_time = 14;
-    if (api.ra_typical_qp_modify(qp_handle, &local_qp, &peer_qp) !=
+    if (api.TypicalQpModify(qp_handle, &local_qp, &peer_qp) !=
         cann::kSuccess) {
       if (error != nullptr) *error = "RaTypicalQpModify failed for NPU relay";
       return Fail();
@@ -129,7 +132,7 @@ class NpuRaPushMover::Impl {
     source_mr.size = length;
     source_mr.access = cann::kRaAccessLocalWrite;
     void* source_mr_handle = nullptr;
-    if (api.ra_register_mr(rdma_handle, &source_mr, &source_mr_handle) !=
+    if (api.RegisterMr(rdma_handle, &source_mr, &source_mr_handle) !=
             cann::kSuccess ||
         source_mr_handle == nullptr) {
       if (error != nullptr) *error = "RaRegisterMr failed for relay HBM";
@@ -141,10 +144,10 @@ class NpuRaPushMover::Impl {
     cann::SendWr wr{&sge, 1, target.address, target.rkey,
                     cann::kRaWrRdmaWrite, cann::kRaSendSignaled};
     cann::SendWrResponse response{};
-    bool ok = api.ra_typical_send_wr(qp_handle, &wr, &response) ==
+    bool ok = api.TypicalSendWr(qp_handle, &wr, &response) ==
                   cann::kSuccess &&
-              api.rt_rdma_db_send(response.db.index, response.db.info,
-                                  acl_stream) == cann::kSuccess;
+              api.RdmaDbSend(response.db.index, response.db.info, acl_stream) ==
+                  cann::kSuccess;
     if (!ok && error != nullptr) {
       *error = "failed to submit NPU-RA RDMA Write doorbell";
     }
@@ -154,7 +157,7 @@ class NpuRaPushMover::Impl {
     bool completion_seen = false;
     while (ok && std::chrono::steady_clock::now() < deadline) {
       cann::WorkCompletion completion{};
-      const int count = api.ra_poll_cq(qp_handle, true, 1, &completion);
+      const int count = api.PollCq(qp_handle, true, 1, &completion);
       if (count < 0) {
         ok = false;
         if (error != nullptr) *error = "RaPollCq failed for NPU relay send CQ";
@@ -174,7 +177,14 @@ class NpuRaPushMover::Impl {
       ok = false;
       if (error != nullptr) *error = "timed out waiting for NPU relay send CQ";
     }
-    api.ra_deregister_mr(rdma_handle, source_mr_handle);
+    const int deregister_status =
+        api.DeregisterMr(rdma_handle, source_mr_handle);
+    if (deregister_status != cann::kSuccess) {
+      ok = false;
+      if (error != nullptr) {
+        *error = "RaDeregisterMr failed for relay HBM";
+      }
+    }
     return ok;
   }
 
@@ -193,13 +203,13 @@ class NpuRaPushMover::Impl {
   }
   void Cleanup() {
     opened = false;
-    if (qp_handle != nullptr) api.ra_qp_destroy(qp_handle);
+    if (qp_handle != nullptr) api.QpDestroy(qp_handle);
     qp_handle = nullptr;
-    if (rdma_handle != nullptr) api.ra_rdev_deinit(rdma_handle, cann::kNotify);
+    if (rdma_handle != nullptr) api.RdevDeinit(rdma_handle, cann::kNotify);
     rdma_handle = nullptr;
-    if (ra_initialized) api.ra_deinit(&init_config);
+    if (ra_initialized) api.Deinit(&init_config);
     ra_initialized = false;
-    if (net_service_open) api.rt_close_net_service();
+    if (net_service_open) api.CloseNetService();
     net_service_open = false;
     api.Close();
   }

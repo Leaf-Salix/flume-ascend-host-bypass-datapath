@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <sstream>
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -14,30 +15,72 @@
 namespace flume::roce {
 namespace {
 
+constexpr int kUnavailable = -1;
+
 #if FLUME_HAVE_DLOPEN
 const char* LibraryName(const char* env_name, const char* fallback) {
   const char* value = std::getenv(env_name);
   return value != nullptr && value[0] != '\0' ? value : fallback;
 }
 
+enum class SymbolStyle {
+  kModern,
+  kLegacyLowercase,
+};
+
 template <typename Function>
-bool LoadSymbol(void* library, const char* name, Function* out, std::string* error) {
-  void* symbol = dlsym(library, name);
-  if (symbol == nullptr) {
-    if (error != nullptr) *error = std::string("missing CANN symbol ") + name;
-    return false;
+bool LoadSymbolAny(void* library,
+                   std::initializer_list<const char*> names,
+                   Function* out,
+                   SymbolStyle* style,
+                   std::string* error,
+                   bool required = true) {
+  size_t index = 0;
+  for (const char* name : names) {
+    dlerror();
+    void* symbol = dlsym(library, name);
+    if (symbol != nullptr) {
+      static_assert(sizeof(*out) == sizeof(symbol),
+                    "function pointer size is unsupported");
+      std::memcpy(out, &symbol, sizeof(symbol));
+      if (style != nullptr) {
+        *style = index == 0 ? SymbolStyle::kModern
+                            : SymbolStyle::kLegacyLowercase;
+      }
+      return true;
+    }
+    ++index;
   }
-  static_assert(sizeof(*out) == sizeof(symbol), "function pointer size is unsupported");
-  std::memcpy(out, &symbol, sizeof(symbol));
-  return true;
+  if (!required) return false;
+  if (error != nullptr) {
+    std::ostringstream message;
+    message << "missing CANN symbol ";
+    size_t name_index = 0;
+    for (const char* name : names) {
+      if (name_index++ != 0) message << '/';
+      message << name;
+    }
+    *error = message.str();
+  }
+  return false;
 }
 
-void* OpenLibrary(const char* env_name, const char* fallback, std::string* error) {
+void UpdateProfile(SymbolStyle style, bool* modern, bool* legacy) {
+  if (style == SymbolStyle::kModern) {
+    *modern = true;
+  } else {
+    *legacy = true;
+  }
+}
+
+void* OpenLibrary(const char* env_name, const char* fallback,
+                  std::string* error) {
   const char* path = LibraryName(env_name, fallback);
   void* library = dlopen(path, RTLD_NOW | RTLD_LOCAL);
   if (library == nullptr && error != nullptr) {
     const char* detail = dlerror();
-    *error = std::string("failed to load ") + path + (detail == nullptr ? "" : ": ") +
+    *error = std::string("failed to load ") + path +
+             (detail == nullptr ? "" : ": ") +
              (detail == nullptr ? "" : detail);
   }
   return library;
@@ -53,41 +96,94 @@ bool CannRaApi::Open(std::string* error) { return Open(true, error); }
 bool CannRaApi::Open(bool require_command_posting, std::string* error) {
   Close();
 #if !FLUME_HAVE_DLOPEN
-  if (error != nullptr) *error = "dynamic library loading is unavailable on this host";
+  if (error != nullptr) {
+    *error = "dynamic library loading is unavailable on this host";
+  }
   return false;
 #else
   ra_library_ = OpenLibrary("FLUME_CANN_RA_LIBRARY", "libra.so", error);
   if (ra_library_ == nullptr) return false;
-  runtime_library_ = OpenLibrary("FLUME_CANN_RUNTIME_LIBRARY", "libruntime.so", error);
-  if (runtime_library_ == nullptr) { Close(); return false; }
-  acl_library_ = OpenLibrary("FLUME_CANN_ACL_LIBRARY", "libascendcl.so", error);
-  if (acl_library_ == nullptr) { Close(); return false; }
+  runtime_library_ =
+      OpenLibrary("FLUME_CANN_RUNTIME_LIBRARY", "libruntime.so", error);
+  if (runtime_library_ == nullptr) {
+    Close();
+    return false;
+  }
+  acl_library_ =
+      OpenLibrary("FLUME_CANN_ACL_LIBRARY", "libascendcl.so", error);
+  if (acl_library_ == nullptr) {
+    Close();
+    return false;
+  }
 
-#define FLUME_LOAD(lib, field, symbol) \
-  if (!LoadSymbol(lib, symbol, &field, error)) { Close(); return false; }
-  FLUME_LOAD(ra_library_, ra_init, "RaInit")
-  FLUME_LOAD(ra_library_, ra_deinit, "RaDeinit")
-  FLUME_LOAD(ra_library_, ra_rdev_init_v2, "RaRdevInitV2")
-  FLUME_LOAD(ra_library_, ra_rdev_deinit, "RaRdevDeinit")
-  FLUME_LOAD(ra_library_, ra_typical_qp_create, "RaTypicalQpCreate")
-  FLUME_LOAD(ra_library_, ra_typical_qp_modify, "RaTypicalQpModify")
-  FLUME_LOAD(ra_library_, ra_qp_destroy, "RaQpDestroy")
-  FLUME_LOAD(ra_library_, ra_register_mr, "RaRegisterMr")
-  FLUME_LOAD(ra_library_, ra_deregister_mr, "RaDeregisterMr")
-  FLUME_LOAD(runtime_library_, rt_set_device, "rtSetDevice")
-  FLUME_LOAD(runtime_library_, rt_open_net_service, "rtOpenNetService")
-  FLUME_LOAD(runtime_library_, rt_close_net_service, "rtCloseNetService")
-  FLUME_LOAD(acl_library_, acl_get_physical_device, "aclrtGetPhyDevIdByLogicDevId")
+  bool modern = false;
+  bool legacy = false;
+  SymbolStyle style = SymbolStyle::kModern;
+#define FLUME_LOAD_RA(field, modern_name, legacy_name)                         \
+  do {                                                                         \
+    if (!LoadSymbolAny(ra_library_, {modern_name, legacy_name}, &field,       \
+                       &style, error)) {                                       \
+      Close();                                                                 \
+      return false;                                                            \
+    }                                                                          \
+    UpdateProfile(style, &modern, &legacy);                                   \
+  } while (0)
+#define FLUME_LOAD(lib, field, symbol)                                         \
+  do {                                                                         \
+    if (!LoadSymbolAny(lib, {symbol}, &field, nullptr, error)) {              \
+      Close();                                                                 \
+      return false;                                                            \
+    }                                                                          \
+  } while (0)
+
+  FLUME_LOAD_RA(ra_init_, "RaInit", "ra_init");
+  FLUME_LOAD_RA(ra_deinit_, "RaDeinit", "ra_deinit");
+  if (LoadSymbolAny(ra_library_, {"RaRdevInitV2", "ra_rdev_init_v2"},
+                    &ra_rdev_init_v2_, &style, nullptr, false)) {
+    UpdateProfile(style, &modern, &legacy);
+    rdev_init_profile_ = CannRaRdevInitProfile::kV2;
+  } else if (LoadSymbolAny(ra_library_, {"RaRdevInit", "ra_rdev_init"},
+                           &ra_rdev_init_legacy_, &style, error)) {
+    UpdateProfile(style, &modern, &legacy);
+    rdev_init_profile_ = CannRaRdevInitProfile::kLegacy;
+  } else {
+    Close();
+    return false;
+  }
+  FLUME_LOAD_RA(ra_rdev_deinit_, "RaRdevDeinit", "ra_rdev_deinit");
+  FLUME_LOAD_RA(ra_typical_qp_create_, "RaTypicalQpCreate",
+                "ra_typical_qp_create");
+  FLUME_LOAD_RA(ra_typical_qp_modify_, "RaTypicalQpModify",
+                "ra_typical_qp_modify");
+  FLUME_LOAD_RA(ra_qp_destroy_, "RaQpDestroy", "ra_qp_destroy");
+  FLUME_LOAD_RA(ra_register_mr_, "RaRegisterMr", "ra_register_mr");
+  FLUME_LOAD_RA(ra_deregister_mr_, "RaDeregisterMr", "ra_deregister_mr");
+  FLUME_LOAD(runtime_library_, rt_set_device_, "rtSetDevice");
+  FLUME_LOAD(runtime_library_, rt_open_net_service_, "rtOpenNetService");
+  FLUME_LOAD(runtime_library_, rt_close_net_service_, "rtCloseNetService");
+  LoadSymbolAny(acl_library_, {"aclrtGetPhyDevIdByLogicDevId"},
+                &acl_get_physical_device_, nullptr, nullptr, false);
   if (require_command_posting) {
-    FLUME_LOAD(ra_library_, ra_typical_send_wr, "RaTypicalSendWr")
-    FLUME_LOAD(ra_library_, ra_poll_cq, "RaPollCq")
-    FLUME_LOAD(runtime_library_, rt_rdma_db_send, "rtRDMADBSend")
-    FLUME_LOAD(acl_library_, acl_malloc, "aclrtMalloc")
-    FLUME_LOAD(acl_library_, acl_free, "aclrtFree")
-    FLUME_LOAD(acl_library_, acl_memcpy, "aclrtMemcpy")
+    if (!LoadSymbolAny(ra_library_,
+                       {"RaTypicalSendWr", "ra_typical_send_wr", "ra_send_wr"},
+                       &ra_typical_send_wr_, &style, error)) {
+      Close();
+      return false;
+    }
+    UpdateProfile(style, &modern, &legacy);
+    FLUME_LOAD_RA(ra_poll_cq_, "RaPollCq", "ra_poll_cq");
+    FLUME_LOAD(runtime_library_, rt_rdma_db_send_, "rtRDMADBSend");
+    FLUME_LOAD(acl_library_, acl_malloc_, "aclrtMalloc");
+    FLUME_LOAD(acl_library_, acl_free_, "aclrtFree");
+    FLUME_LOAD(acl_library_, acl_memcpy_, "aclrtMemcpy");
     command_posting_available_ = true;
   }
 #undef FLUME_LOAD
+#undef FLUME_LOAD_RA
+
+  symbol_profile_ = modern && legacy ? CannRaSymbolProfile::kMixed
+                    : legacy         ? CannRaSymbolProfile::kLegacyLowercase
+                                     : CannRaSymbolProfile::kModern;
   available_ = true;
   return true;
 #endif
@@ -96,6 +192,8 @@ bool CannRaApi::Open(bool require_command_posting, std::string* error) {
 void CannRaApi::Close() {
   available_ = false;
   command_posting_available_ = false;
+  symbol_profile_ = CannRaSymbolProfile::kUnavailable;
+  rdev_init_profile_ = CannRaRdevInitProfile::kUnavailable;
 #if FLUME_HAVE_DLOPEN
   if (acl_library_ != nullptr) dlclose(acl_library_);
   if (runtime_library_ != nullptr) dlclose(runtime_library_);
@@ -105,16 +203,188 @@ void CannRaApi::Close() {
   runtime_library_ = nullptr;
   ra_library_ = nullptr;
 #define FLUME_CLEAR(field) field = nullptr
-  FLUME_CLEAR(ra_init); FLUME_CLEAR(ra_deinit); FLUME_CLEAR(ra_rdev_init_v2);
-  FLUME_CLEAR(ra_rdev_deinit); FLUME_CLEAR(ra_typical_qp_create);
-  FLUME_CLEAR(ra_typical_qp_modify); FLUME_CLEAR(ra_qp_destroy);
-  FLUME_CLEAR(ra_register_mr); FLUME_CLEAR(ra_deregister_mr);
-  FLUME_CLEAR(ra_typical_send_wr); FLUME_CLEAR(ra_poll_cq);
-  FLUME_CLEAR(rt_set_device);
-  FLUME_CLEAR(rt_open_net_service); FLUME_CLEAR(rt_close_net_service);
-  FLUME_CLEAR(rt_rdma_db_send); FLUME_CLEAR(acl_get_physical_device);
-  FLUME_CLEAR(acl_malloc); FLUME_CLEAR(acl_free); FLUME_CLEAR(acl_memcpy);
+  FLUME_CLEAR(ra_init_);
+  FLUME_CLEAR(ra_deinit_);
+  FLUME_CLEAR(ra_rdev_init_v2_);
+  FLUME_CLEAR(ra_rdev_init_legacy_);
+  FLUME_CLEAR(ra_rdev_deinit_);
+  FLUME_CLEAR(ra_typical_qp_create_);
+  FLUME_CLEAR(ra_typical_qp_modify_);
+  FLUME_CLEAR(ra_qp_destroy_);
+  FLUME_CLEAR(ra_register_mr_);
+  FLUME_CLEAR(ra_deregister_mr_);
+  FLUME_CLEAR(ra_typical_send_wr_);
+  FLUME_CLEAR(ra_poll_cq_);
+  FLUME_CLEAR(rt_set_device_);
+  FLUME_CLEAR(rt_open_net_service_);
+  FLUME_CLEAR(rt_close_net_service_);
+  FLUME_CLEAR(rt_rdma_db_send_);
+  FLUME_CLEAR(acl_get_physical_device_);
+  FLUME_CLEAR(acl_malloc_);
+  FLUME_CLEAR(acl_free_);
+  FLUME_CLEAR(acl_memcpy_);
 #undef FLUME_CLEAR
+}
+
+const char* CannRaApi::symbol_profile_name() const {
+  switch (symbol_profile_) {
+    case CannRaSymbolProfile::kModern:
+      return "modern-camelcase";
+    case CannRaSymbolProfile::kLegacyLowercase:
+      return "legacy-lowercase";
+    case CannRaSymbolProfile::kMixed:
+      return "mixed";
+    case CannRaSymbolProfile::kUnavailable:
+      return "unavailable";
+  }
+  return "unavailable";
+}
+
+const char* CannRaApi::rdev_init_profile_name() const {
+  switch (rdev_init_profile_) {
+    case CannRaRdevInitProfile::kV2:
+      return "rdev-init-v2";
+    case CannRaRdevInitProfile::kLegacy:
+      return "rdev-init-legacy";
+    case CannRaRdevInitProfile::kUnavailable:
+      return "unavailable";
+  }
+  return "unavailable";
+}
+
+int CannRaApi::SetDevice(int32_t logical_device) const {
+  return rt_set_device_ == nullptr ? kUnavailable
+                                   : rt_set_device_(logical_device);
+}
+
+bool CannRaApi::ResolvePhysicalDevice(int32_t logical_device,
+                                      int32_t explicit_physical_device,
+                                      uint32_t* physical_device,
+                                      std::string* error) const {
+  if (physical_device == nullptr) {
+    if (error != nullptr) *error = "physical device output is null";
+    return false;
+  }
+  if (explicit_physical_device >= 0) {
+    *physical_device = static_cast<uint32_t>(explicit_physical_device);
+    return true;
+  }
+  if (acl_get_physical_device_ == nullptr) {
+    if (error != nullptr) {
+      *error = "aclrtGetPhyDevIdByLogicDevId is unavailable in this CANN "
+               "build; provide an explicit physical device id";
+    }
+    return false;
+  }
+  int32_t resolved = -1;
+  if (acl_get_physical_device_(logical_device, &resolved) != cann::kSuccess ||
+      resolved < 0) {
+    if (error != nullptr) *error = "failed to resolve physical device id";
+    return false;
+  }
+  *physical_device = static_cast<uint32_t>(resolved);
+  return true;
+}
+
+int CannRaApi::OpenNetService(const cann::RtNetServiceOpenArgs* args) const {
+  return rt_open_net_service_ == nullptr ? kUnavailable
+                                         : rt_open_net_service_(args);
+}
+
+int CannRaApi::CloseNetService() const {
+  return rt_close_net_service_ == nullptr ? kUnavailable
+                                          : rt_close_net_service_();
+}
+
+int CannRaApi::Init(cann::RaInitConfig* config) const {
+  return ra_init_ == nullptr ? kUnavailable : ra_init_(config);
+}
+
+int CannRaApi::Deinit(cann::RaInitConfig* config) const {
+  return ra_deinit_ == nullptr ? kUnavailable : ra_deinit_(config);
+}
+
+int CannRaApi::RdevInit(cann::RdevInitInfo init_info, cann::Rdev rdev,
+                        void** handle) const {
+  if (ra_rdev_init_v2_ != nullptr) {
+    return ra_rdev_init_v2_(init_info, rdev, handle);
+  }
+  return ra_rdev_init_legacy_ == nullptr
+             ? kUnavailable
+             : ra_rdev_init_legacy_(init_info.mode, init_info.notify_type,
+                                    rdev, handle);
+}
+
+int CannRaApi::RdevDeinit(void* handle, unsigned notify_type) const {
+  return ra_rdev_deinit_ == nullptr ? kUnavailable
+                                    : ra_rdev_deinit_(handle, notify_type);
+}
+
+int CannRaApi::TypicalQpCreate(void* rdma_handle, int qp_type, int qp_mode,
+                               cann::TypicalQp* qp, void** handle) const {
+  return ra_typical_qp_create_ == nullptr
+             ? kUnavailable
+             : ra_typical_qp_create_(rdma_handle, qp_type, qp_mode, qp,
+                                     handle);
+}
+
+int CannRaApi::TypicalQpModify(void* qp_handle, cann::TypicalQp* local,
+                               cann::TypicalQp* remote) const {
+  return ra_typical_qp_modify_ == nullptr
+             ? kUnavailable
+             : ra_typical_qp_modify_(qp_handle, local, remote);
+}
+
+int CannRaApi::QpDestroy(void* qp_handle) const {
+  return ra_qp_destroy_ == nullptr ? kUnavailable : ra_qp_destroy_(qp_handle);
+}
+
+int CannRaApi::RegisterMr(const void* rdma_handle, cann::MrInfo* info,
+                          void** mr_handle) const {
+  return ra_register_mr_ == nullptr
+             ? kUnavailable
+             : ra_register_mr_(rdma_handle, info, mr_handle);
+}
+
+int CannRaApi::DeregisterMr(const void* rdma_handle, void* mr_handle) const {
+  return ra_deregister_mr_ == nullptr
+             ? kUnavailable
+             : ra_deregister_mr_(rdma_handle, mr_handle);
+}
+
+int CannRaApi::TypicalSendWr(void* qp_handle, cann::SendWr* wr,
+                             cann::SendWrResponse* response) const {
+  return ra_typical_send_wr_ == nullptr
+             ? kUnavailable
+             : ra_typical_send_wr_(qp_handle, wr, response);
+}
+
+int CannRaApi::PollCq(void* qp_handle, bool send, unsigned count,
+                      void* output) const {
+  return ra_poll_cq_ == nullptr ? kUnavailable
+                                : ra_poll_cq_(qp_handle, send, count, output);
+}
+
+int CannRaApi::RdmaDbSend(uint32_t index, uint64_t info, void* stream) const {
+  return rt_rdma_db_send_ == nullptr ? kUnavailable
+                                     : rt_rdma_db_send_(index, info, stream);
+}
+
+int CannRaApi::DeviceMalloc(void** address, size_t bytes, int policy) const {
+  return acl_malloc_ == nullptr ? kUnavailable
+                                : acl_malloc_(address, bytes, policy);
+}
+
+int CannRaApi::DeviceFree(void* address) const {
+  return acl_free_ == nullptr ? kUnavailable : acl_free_(address);
+}
+
+int CannRaApi::DeviceMemcpy(void* destination, size_t destination_bytes,
+                            const void* source, size_t bytes, int kind) const {
+  return acl_memcpy_ == nullptr
+             ? kUnavailable
+             : acl_memcpy_(destination, destination_bytes, source, bytes,
+                           kind);
 }
 
 bool CannRaLoaderCompiled() { return FLUME_HAVE_DLOPEN != 0; }

@@ -81,9 +81,9 @@ Storage backend 与 data mover 可以分属不同节点：当前 data mover 可�
 物理所在节点是否具备 RNIC。
 
 上述三种都是可运行 Flume daemon 的 sender baseline。若实际 RoCE sender
-是不能运行通用进程的 storage appliance，则 37 类 controller 必须通过该
+是不能运行通用进程的 storage appliance，则外部 control node 必须通过该
 设备已有的管理/存储协议拉起 QP 和提交 READ，Flume 需要新增 controller-side
-external target adapter。普通 TCP proxy 不能远程替代 57 类设备的 RNIC
+external target adapter。普通 TCP proxy 不能远程替代 storage appliance 的 RNIC
 doorbell；当前代码尚未实现这一 appliance adapter。
 
 因此本文档中的 “host-bypass” 不是指 host 完全退出系统，而是指 **payload 不经 host memory staging**。host 仍负责初始化、建链、任务下发、错误诊断和 fallback 决策。最终目标是在 storage->HBM payload 上也达到类似 HCCL tensor 通信的数据路径属性。
@@ -131,6 +131,7 @@ doorbell；当前代码尚未实现这一 appliance adapter。
 | storage direct transfer sim | 本地已实现 host-bypass 语义骨架 | `ctest --test-dir build-local-direct -R storage_direct_sim`、`flume-storage-direct-sim-smoke --strict-direct-only` 或 `flume-storage-read-to-rank-demo` | `flume_register_storage_target_memory`、`flume_storage_direct_plan_create` 和 `flume_read_storage_to_hbm_async` 当前模拟 `storage block -> registered target window -> storage fabric sim -> HCOMM payload sim -> target SIM_HBM`，输出 `storage_fabric=sim-rdma`、`storage_memory_registration=sim-hbm-window`、`storage_host_payload_copy=not-used`、`fallback=none`；这只证明 API / 状态机 / 路由语义，不声明真实 RDMA/HBM bypass |
 | Ascend full matrix | Host B (CANN 9.0) 真机已通过；CANN 8.5 构建和 feature probe 已通过，smoke 受 Host A 资源占用影响未完成 | `tools/flume_tool.py --build-dir build-full --hccl-devices <device-a>,<device-b> --hccl-host-ifname <host-ifname> --hccl-host-ip <host-ip> --hccl-debug-logs ascend-full-matrix` | Host B HCCS_SW 卡对通过 required 步，包括 Stage 3A storage-HBM fallback；未安装 payload package 时 strict payload-copy 是 optional expected negative；package preflight 为 payload-ready 时 strict payload-copy 会升级为 required positive；Host A 当前因 NPU 任务占满导致 VNIC socket listen 失败，不归类为代码问题 |
 | Host-RA push + Linux RNIC/NPU data mover | 已实现并静态验证，待真机 | `ctest -R 'roce_|cann_ra|npu_ra'`；真机见 `docs/stage-4-push-routing.md` | TCP 传 command/completion；RA/HCCP 注册 NPU HBM；host verbs 或 NPU RA sender 执行 RDMA Write；proxy 上游必须运行 Flume daemon |
+| Tensor swap over storage-host RNIC | 双向代码与本地仿真已实现，待双机真机 | `flume-roce-swap-smoke --operation roundtrip`；见 `docs/stage-4-tensor-swap.md` | `swap_in = server RDMA Write`，`swap_out = server RDMA Read`；payload 不进入计算节点 host DRAM；server DRAM staging 仍存在；写入默认关闭并要求双端显式授权 |
 | Native NVMe namespace -> NPU HBM canary | 独立实现，待真机 | `tools/flume_tool.py ... native-nvme-hbm-canary` | 已映射的 Linux NVMe namespace 直接接收 HBM data pointer；无 host-staging fallback；成功后仍需排除内核 bounce buffer |
 | External storage appliance -> NPU HBM | 架构已定义，adapter 未实现 | 需要先确认 appliance control/storage protocol | Controller 翻译 endpoint/window/READ；appliance RNIC 直接 RDMA Write；不能假设 appliance 可运行 Flume server |
 

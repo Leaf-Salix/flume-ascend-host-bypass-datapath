@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 
+#include "flume/flume.h"
 #include "roce_storage/roce_storage.h"
 #include "roce_storage/host_ra_session.h"
 #include "test_util.h"
@@ -107,7 +108,9 @@ int main() {
   response.endpoint = endpoint;
   response.namespace_capacity = 64U * 1024U * 1024U;
   response.max_transfer_bytes = 16U * 1024U * 1024U;
-  response.server_capabilities = flume::roce::kServerCapabilityMemoryNamespace;
+  response.server_capabilities =
+      flume::roce::kServerCapabilityMemoryNamespace |
+      flume::roce::kServerCapabilityStorageWrite;
   FLUME_TEST_CHECK(flume::roce::EncodeSessionResponse(response, &wire));
   FLUME_TEST_CHECK(wire.size() == flume::roce::kSessionResponseWireBytes);
   flume::roce::SessionResponse decoded_response;
@@ -116,6 +119,8 @@ int main() {
   FLUME_TEST_CHECK(decoded_response.namespace_capacity == response.namespace_capacity);
   FLUME_TEST_CHECK(decoded_response.max_transfer_bytes == response.max_transfer_bytes);
   FLUME_TEST_CHECK(decoded_response.server_capabilities == response.server_capabilities);
+  FLUME_TEST_CHECK((decoded_response.server_capabilities &
+                    flume::roce::kServerCapabilityStorageWrite) != 0);
 
   const std::string tcp_marker = flume::roce::MakeHostRaSuccessMarker(
       flume::roce::ControlMode::kTcp, flume::roce::TransferMode::kPush,
@@ -153,6 +158,14 @@ int main() {
   std::string pull_error;
   FLUME_TEST_CHECK(!pull_session.Open(pull_config, &pull_error));
   FLUME_TEST_CHECK(pull_error.find("pull transfer mode") != std::string::npos);
+
+  flume_io_t* invalid_io = nullptr;
+  FLUME_TEST_CHECK(flume_swap_in_async(nullptr, 0, nullptr, 0, 4096,
+                                       nullptr, &invalid_io) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
+  FLUME_TEST_CHECK(flume_swap_out_async(nullptr, nullptr, 0, 0, 4096,
+                                        nullptr, &invalid_io) ==
+                   FLUME_ERR_INVALID_ARGUMENT);
 
   flume::roce::SessionLifecycle lifecycle;
   FLUME_TEST_CHECK(lifecycle.LocalResourcesReady());

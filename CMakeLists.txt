@@ -849,6 +849,14 @@ add_executable(flume-roce-storage-proxy apps/flume-roce-storage-proxy.cc)
 target_link_libraries(flume-roce-storage-proxy PRIVATE flume)
 target_include_directories(flume-roce-storage-proxy PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+if(FLUME_ENABLE_ROCE_STORAGE)
+  add_executable(flume-cann-ra-compat-probe
+    apps/flume-cann-ra-compat-probe.cc)
+  target_link_libraries(flume-cann-ra-compat-probe PRIVATE flume)
+  target_include_directories(flume-cann-ra-compat-probe PRIVATE
+    ${PROJECT_SOURCE_DIR}/src)
+endif()
+
 if(FLUME_ENABLE_NATIVE_NVME_HBM_CANARY)
   add_executable(flume-nvme-hbm-canary apps/flume-nvme-hbm-canary.cc)
   target_link_libraries(flume-nvme-hbm-canary PRIVATE flume ${ASCENDCL_LIBRARY})
@@ -879,6 +887,12 @@ if(FLUME_ENABLE_ROCE_STORAGE AND ACL_INCLUDE_DIR AND ASCENDCL_LIBRARY)
   add_executable(flume-roce-storage-client apps/flume-roce-storage-client.cc)
   target_link_libraries(flume-roce-storage-client PRIVATE flume ${ASCENDCL_LIBRARY})
   target_include_directories(flume-roce-storage-client PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${ACL_INCLUDE_DIR})
+
+  add_executable(flume-roce-swap-smoke apps/flume-roce-storage-client.cc)
+  target_link_libraries(flume-roce-swap-smoke PRIVATE flume ${ASCENDCL_LIBRARY})
+  target_include_directories(flume-roce-swap-smoke PRIVATE
     ${PROJECT_SOURCE_DIR}/src
     ${ACL_INCLUDE_DIR})
 
@@ -1087,6 +1101,43 @@ if(FLUME_BUILD_TESTS)
         $<TARGET_FILE:test_cann_runtime_core_fixture>
         $<TARGET_FILE:test_cann_acl_core_fixture>)
 
+    add_library(test_cann_ra_legacy_fixture SHARED
+      tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_ra_legacy_fixture PRIVATE
+      FLUME_RA_LEGACY_FIXTURE=1)
+    target_include_directories(test_cann_ra_legacy_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_acl_legacy_fixture SHARED
+      tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_acl_legacy_fixture PRIVATE
+      FLUME_ACL_LEGACY_FIXTURE=1)
+    target_include_directories(test_cann_acl_legacy_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    add_test(NAME cann_ra_loader_legacy_82
+      COMMAND test_cann_ra_loader
+        $<TARGET_FILE:test_cann_ra_legacy_fixture>
+        $<TARGET_FILE:test_cann_runtime_core_fixture>
+        $<TARGET_FILE:test_cann_acl_legacy_fixture>
+        legacy)
+    if(TARGET flume-cann-ra-compat-probe)
+      add_test(NAME cann_ra_compat_probe_legacy_82
+        COMMAND ${CMAKE_COMMAND} -E env
+          FLUME_CANN_RA_LIBRARY=$<TARGET_FILE:test_cann_ra_legacy_fixture>
+          FLUME_CANN_RUNTIME_LIBRARY=$<TARGET_FILE:test_cann_runtime_core_fixture>
+          FLUME_CANN_ACL_LIBRARY=$<TARGET_FILE:test_cann_acl_legacy_fixture>
+          $<TARGET_FILE:flume-cann-ra-compat-probe>)
+      set_tests_properties(cann_ra_compat_probe_legacy_82 PROPERTIES
+        PASS_REGULAR_EXPRESSION
+          "cann_ra_symbol_probe=passed.*cann_ra_compat=unqualified.*symbol_profile=legacy-lowercase.*rdev_init=rdev-init-legacy.*physical_device_lookup=explicit-required.*abi_qualified=no.*hardware_gate=required")
+    endif()
+
+    add_library(test_cann_ra_legacy_push_fixture SHARED
+      tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_ra_legacy_push_fixture PRIVATE
+      FLUME_RA_LEGACY_FIXTURE=1 FLUME_RA_LEGACY_PUSH_FIXTURE=1)
+    target_include_directories(test_cann_ra_legacy_push_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+
     add_library(test_cann_ra_push_fixture SHARED tests/cann_ra_loader_fixture.cc)
     target_compile_definitions(test_cann_ra_push_fixture PRIVATE
       FLUME_RA_PUSH_FIXTURE=1)
@@ -1109,6 +1160,11 @@ if(FLUME_BUILD_TESTS)
     add_test(NAME npu_ra_push_mover
       COMMAND test_npu_ra_push_mover
         $<TARGET_FILE:test_cann_ra_push_fixture>
+        $<TARGET_FILE:test_cann_runtime_push_fixture>
+        $<TARGET_FILE:test_cann_acl_push_fixture>)
+    add_test(NAME npu_ra_push_mover_legacy_82
+      COMMAND test_npu_ra_push_mover
+        $<TARGET_FILE:test_cann_ra_legacy_push_fixture>
         $<TARGET_FILE:test_cann_runtime_push_fixture>
         $<TARGET_FILE:test_cann_acl_push_fixture>)
   endif()
