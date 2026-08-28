@@ -104,20 +104,25 @@ class HostRaSession::Impl {
       }
       return Fail();
     }
-    const std::string hdc_arg = "--hdcType=" + std::to_string(config.hdc_type);
-    cann::RtProcExtParam parameter{hdc_arg.c_str(), hdc_arg.size()};
-    cann::RtNetServiceOpenArgs open_args{&parameter, 1};
-    if (api.explicit_net_service_available()) {
-      if (api.OpenNetService(&open_args) != cann::kSuccess) {
-        if (error != nullptr) *error = "rtOpenNetService failed for Host-RA";
-        return Fail();
+    effective_hdc_type = api.EffectiveHdcType(config.hdc_type);
+    const int bootstrap_status = api.BootstrapNetwork(
+        static_cast<int32_t>(config.logical_device), effective_hdc_type);
+    if (bootstrap_status != cann::kSuccess) {
+      if (error != nullptr) {
+        *error = std::string("CANN network bootstrap failed via ") +
+                 api.network_bootstrap_profile_name() + " (status=" +
+                 std::to_string(bootstrap_status) + ")";
       }
-      net_service_open = true;
+      return Fail();
     }
+    network_bootstrapped = true;
     init_config = {physical_device, cann::kNicDeploymentDevice,
-                   config.hdc_type, false};
-    if (api.Init(&init_config) != cann::kSuccess) {
-      if (error != nullptr) *error = "RaInit failed";
+                   effective_hdc_type, false};
+    const int init_status = api.Init(&init_config);
+    if (init_status != cann::kSuccess) {
+      if (error != nullptr) {
+        *error = "RaInit failed (status=" + std::to_string(init_status) + ")";
+      }
       return Fail();
     }
     ra_initialized = true;
@@ -320,7 +325,9 @@ class HostRaSession::Impl {
                                              server_capabilities) +
         " cann_ra_symbol_profile=" + api.symbol_profile_name() +
         " cann_ra_rdev_init=" + api.rdev_init_profile_name() +
-        " cann_ra_net_service=" + api.net_service_profile_name();
+        " cann_ra_network_bootstrap=" +
+        api.network_bootstrap_profile_name() + " cann_ra_hdc_type=" +
+        std::to_string(effective_hdc_type);
     return true;
   }
 
@@ -382,8 +389,10 @@ class HostRaSession::Impl {
     rdma_handle = nullptr;
     if (ra_initialized) api.Deinit(&init_config);
     ra_initialized = false;
-    if (net_service_open) api.CloseNetService();
-    net_service_open = false;
+    if (network_bootstrapped) {
+      api.ShutdownNetwork(static_cast<int32_t>(config.logical_device));
+    }
+    network_bootstrapped = false;
     api.Close();
   }
 
@@ -403,12 +412,13 @@ class HostRaSession::Impl {
   void* command_mr_handle = nullptr;
   void* completion_mr_handle = nullptr;
   int control_fd = -1;
-  bool net_service_open = false;
+  bool network_bootstrapped = false;
   bool ra_initialized = false;
   bool capability_loaded = false;
   uint64_t namespace_bytes = 0;
   uint64_t max_transfer = 0;
   uint32_t server_capabilities = 0;
+  int effective_hdc_type = cann::kDefaultHdcType;
 };
 
 HostRaSession::HostRaSession() : impl_(std::make_unique<Impl>()) {}

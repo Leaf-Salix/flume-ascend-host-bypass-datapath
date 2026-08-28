@@ -85,6 +85,23 @@ void* OpenLibrary(const char* env_name, const char* fallback,
   }
   return library;
 }
+
+void* OpenOptionalLibrary(const char* env_name, const char* fallback,
+                          std::string* error) {
+  const char* configured = std::getenv(env_name);
+  const char* path = configured != nullptr && configured[0] != '\0'
+                         ? configured
+                         : fallback;
+  void* library = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  if (library == nullptr && configured != nullptr && configured[0] != '\0' &&
+      error != nullptr) {
+    const char* detail = dlerror();
+    *error = std::string("failed to load ") + path +
+             (detail == nullptr ? "" : ": ") +
+             (detail == nullptr ? "" : detail);
+  }
+  return library;
+}
 #endif
 
 }  // namespace
@@ -173,9 +190,27 @@ bool CannRaApi::Open(bool require_command_posting, std::string* error) {
     Close();
     return false;
   }
-  net_service_profile_ = have_open_net_service
-      ? CannRaNetServiceProfile::kExplicitRuntime
-      : CannRaNetServiceProfile::kRaManaged;
+  if (have_open_net_service) {
+    network_bootstrap_profile_ =
+        CannRaNetworkBootstrapProfile::kExplicitRuntime;
+  } else {
+    tsd_library_ =
+        OpenOptionalLibrary("FLUME_CANN_TSD_LIBRARY", "libtsdclient.so",
+                            error);
+    if (tsd_library_ == nullptr ||
+        !LoadSymbolAny(tsd_library_, {"TsdOpen"}, &tsd_open_, nullptr,
+                       error) ||
+        !LoadSymbolAny(tsd_library_, {"TsdClose"}, &tsd_close_, nullptr,
+                       error)) {
+      if (error != nullptr && error->empty()) {
+        *error = "CANN runtime has no NetService API and legacy "
+                 "libtsdclient.so is unavailable";
+      }
+      Close();
+      return false;
+    }
+    network_bootstrap_profile_ = CannRaNetworkBootstrapProfile::kLegacyTsd;
+  }
   LoadSymbolAny(acl_library_, {"aclrtGetPhyDevIdByLogicDevId"},
                 &acl_get_physical_device_, nullptr, nullptr, false);
   if (require_command_posting) {
@@ -209,13 +244,16 @@ void CannRaApi::Close() {
   command_posting_available_ = false;
   symbol_profile_ = CannRaSymbolProfile::kUnavailable;
   rdev_init_profile_ = CannRaRdevInitProfile::kUnavailable;
-  net_service_profile_ = CannRaNetServiceProfile::kUnavailable;
+  network_bootstrap_profile_ =
+      CannRaNetworkBootstrapProfile::kUnavailable;
 #if FLUME_HAVE_DLOPEN
+  if (tsd_library_ != nullptr) dlclose(tsd_library_);
   if (acl_library_ != nullptr) dlclose(acl_library_);
   if (runtime_library_ != nullptr) dlclose(runtime_library_);
   if (ra_library_ != nullptr) dlclose(ra_library_);
 #endif
   acl_library_ = nullptr;
+  tsd_library_ = nullptr;
   runtime_library_ = nullptr;
   ra_library_ = nullptr;
 #define FLUME_CLEAR(field) field = nullptr
@@ -235,6 +273,8 @@ void CannRaApi::Close() {
   FLUME_CLEAR(rt_open_net_service_);
   FLUME_CLEAR(rt_close_net_service_);
   FLUME_CLEAR(rt_rdma_db_send_);
+  FLUME_CLEAR(tsd_open_);
+  FLUME_CLEAR(tsd_close_);
   FLUME_CLEAR(acl_get_physical_device_);
   FLUME_CLEAR(acl_malloc_);
   FLUME_CLEAR(acl_free_);
@@ -268,16 +308,23 @@ const char* CannRaApi::rdev_init_profile_name() const {
   return "unavailable";
 }
 
-const char* CannRaApi::net_service_profile_name() const {
-  switch (net_service_profile_) {
-    case CannRaNetServiceProfile::kExplicitRuntime:
+const char* CannRaApi::network_bootstrap_profile_name() const {
+  switch (network_bootstrap_profile_) {
+    case CannRaNetworkBootstrapProfile::kExplicitRuntime:
       return "explicit-runtime";
-    case CannRaNetServiceProfile::kRaManaged:
-      return "ra-managed";
-    case CannRaNetServiceProfile::kUnavailable:
+    case CannRaNetworkBootstrapProfile::kLegacyTsd:
+      return "legacy-tsd";
+    case CannRaNetworkBootstrapProfile::kUnavailable:
       return "unavailable";
   }
   return "unavailable";
+}
+
+int CannRaApi::EffectiveHdcType(int requested_hdc_type) const {
+  return network_bootstrap_profile_ ==
+                 CannRaNetworkBootstrapProfile::kLegacyTsd
+             ? cann::kLegacyHdcType
+             : requested_hdc_type;
 }
 
 int CannRaApi::SetDevice(int32_t logical_device) const {
@@ -314,14 +361,40 @@ bool CannRaApi::ResolvePhysicalDevice(int32_t logical_device,
   return true;
 }
 
-int CannRaApi::OpenNetService(const cann::RtNetServiceOpenArgs* args) const {
-  return rt_open_net_service_ == nullptr ? kUnavailable
-                                         : rt_open_net_service_(args);
+int CannRaApi::BootstrapNetwork(int32_t logical_device, int hdc_type) const {
+  if (network_bootstrap_profile_ ==
+      CannRaNetworkBootstrapProfile::kExplicitRuntime) {
+    const std::string hdc_arg = "--hdcType=" + std::to_string(hdc_type);
+    cann::RtProcExtParam parameter{hdc_arg.c_str(), hdc_arg.size()};
+    cann::RtNetServiceOpenArgs open_args{&parameter, 1};
+    return rt_open_net_service_ == nullptr ? kUnavailable
+                                           : rt_open_net_service_(&open_args);
+  }
+  if (network_bootstrap_profile_ ==
+      CannRaNetworkBootstrapProfile::kLegacyTsd) {
+    // The public legacy TSD contract starts HCCP only when rankSize > 1.
+    constexpr uint32_t kBootstrapRankSize = 2;
+    return tsd_open_ == nullptr
+               ? kUnavailable
+               : tsd_open_(static_cast<uint32_t>(logical_device),
+                           kBootstrapRankSize);
+  }
+  return kUnavailable;
 }
 
-int CannRaApi::CloseNetService() const {
-  return rt_close_net_service_ == nullptr ? kUnavailable
-                                          : rt_close_net_service_();
+int CannRaApi::ShutdownNetwork(int32_t logical_device) const {
+  if (network_bootstrap_profile_ ==
+      CannRaNetworkBootstrapProfile::kExplicitRuntime) {
+    return rt_close_net_service_ == nullptr ? kUnavailable
+                                            : rt_close_net_service_();
+  }
+  if (network_bootstrap_profile_ ==
+      CannRaNetworkBootstrapProfile::kLegacyTsd) {
+    return tsd_close_ == nullptr
+               ? kUnavailable
+               : tsd_close_(static_cast<uint32_t>(logical_device));
+  }
+  return kUnavailable;
 }
 
 int CannRaApi::Init(cann::RaInitConfig* config) const {

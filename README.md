@@ -199,7 +199,11 @@ legacy route without branching the storage logic. It accepts current or
 lowercase RA symbols, falls back to legacy `RaRdevInit`, and permits an
 explicit physical device ID when the old runtime lacks logical-to-physical
 mapping. Releases exporting both NetService lifecycle calls use them
-explicitly; legacy releases exporting neither use the RA-managed lifecycle.
+explicitly. The CANN 8.2 RC1 route loads `libtsdclient.so` and uses
+`TsdOpen(logical_device, 2)` before `ra_init`, matching the public legacy
+contract that starts HCCP only when rank size is greater than one. That route
+also selects legacy RDMA HDC type `6`; current NetService builds keep the
+requested process-scoped type, normally `18`.
 `flume-cann-ra-compat-probe` checks this surface without selecting a
 device and reports `cann_ra_symbol_probe=passed` together with
 `cann_ra_compat=unqualified`; only a real QP/MR/RDMA checksum smoke qualifies

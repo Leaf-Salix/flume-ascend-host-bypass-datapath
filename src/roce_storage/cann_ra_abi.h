@@ -18,6 +18,7 @@ constexpr unsigned kNotify = 1;
 // RDMA_V2 is process-scoped and is the mode used by current HCCL network
 // manager paths. Legacy RDMA (6) is intentionally not selected implicitly.
 constexpr int kDefaultHdcType = 18;
+constexpr int kLegacyHdcType = 6;
 constexpr int kOpbaseQpMode = 2;
 constexpr int kRaAccessLocalWrite = 1;
 constexpr int kRaAccessRemoteWrite = 1 << 1;

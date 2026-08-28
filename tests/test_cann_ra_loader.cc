@@ -17,11 +17,12 @@ int main(int argc, char** argv) {
   FLUME_TEST_CHECK(sizeof(flume::roce::cann::TypicalQp) == 184);
   FLUME_TEST_CHECK(sizeof(flume::roce::cann::MrInfo) == 32);
 #if defined(__unix__) || defined(__APPLE__)
-  if (argc == 4 || argc == 5) {
-    const bool expect_legacy = argc == 5 && std::string(argv[4]) == "legacy";
+  if (argc == 5 || argc == 6) {
+    const bool expect_legacy = argc == 6 && std::string(argv[5]) == "legacy";
     setenv("FLUME_CANN_RA_LIBRARY", argv[1], 1);
     setenv("FLUME_CANN_RUNTIME_LIBRARY", argv[2], 1);
     setenv("FLUME_CANN_ACL_LIBRARY", argv[3], 1);
+    setenv("FLUME_CANN_TSD_LIBRARY", argv[4], 1);
     flume::roce::CannRaApi core_api;
     std::string error;
     FLUME_TEST_CHECK(core_api.Open(false, &error));
@@ -37,10 +38,10 @@ int main(int argc, char** argv) {
         (expect_legacy ? flume::roce::CannRaRdevInitProfile::kLegacy
                        : flume::roce::CannRaRdevInitProfile::kV2));
     FLUME_TEST_CHECK(
-        core_api.net_service_profile() ==
+        core_api.network_bootstrap_profile() ==
         (expect_legacy
-             ? flume::roce::CannRaNetServiceProfile::kRaManaged
-             : flume::roce::CannRaNetServiceProfile::kExplicitRuntime));
+             ? flume::roce::CannRaNetworkBootstrapProfile::kLegacyTsd
+             : flume::roce::CannRaNetworkBootstrapProfile::kExplicitRuntime));
     flume::roce::cann::RdevInitInfo init_info{};
     flume::roce::cann::Rdev rdev{};
     void* rdev_handle = nullptr;

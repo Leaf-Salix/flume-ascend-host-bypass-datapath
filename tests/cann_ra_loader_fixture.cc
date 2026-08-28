@@ -15,7 +15,12 @@ int DeregisterResult() {
 }  // namespace
 
 #if defined(FLUME_RA_LEGACY_FIXTURE)
-extern "C" int ra_init(RaInitConfig*) { return 0; }
+extern "C" int ra_init(RaInitConfig* config) {
+  return std::getenv("FLUME_TEST_TSD_OPEN") == nullptr || config == nullptr ||
+                 config->hdc_type != kLegacyHdcType
+             ? -1
+             : 0;
+}
 extern "C" int ra_deinit(RaInitConfig*) { return 0; }
 extern "C" int ra_rdev_init(int, unsigned, Rdev, void** handle) {
   *handle = reinterpret_cast<void*>(1);
@@ -193,4 +198,13 @@ extern "C" int aclrtGetPhyDevIdByLogicDevId(int32_t logical, int32_t* physical) 
 }
 #elif defined(FLUME_ACL_LEGACY_FIXTURE)
 extern "C" int flume_acl_legacy_fixture_anchor() { return 0; }
+#elif defined(FLUME_TSD_FIXTURE)
+extern "C" int TsdOpen(uint32_t logical_device, uint32_t rank_size) {
+  if (logical_device != 0 || rank_size <= 1) return -1;
+  return setenv("FLUME_TEST_TSD_OPEN", "1", 1);
+}
+extern "C" int TsdClose(uint32_t logical_device) {
+  if (logical_device != 0) return -1;
+  return unsetenv("FLUME_TEST_TSD_OPEN");
+}
 #endif

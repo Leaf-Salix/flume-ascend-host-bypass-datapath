@@ -22,10 +22,10 @@ enum class CannRaRdevInitProfile {
   kLegacy,
 };
 
-enum class CannRaNetServiceProfile {
+enum class CannRaNetworkBootstrapProfile {
   kUnavailable,
   kExplicitRuntime,
-  kRaManaged,
+  kLegacyTsd,
 };
 
 // Isolates CANN/HCCP symbol and entry-point differences from the storage
@@ -50,23 +50,21 @@ class CannRaApi {
   CannRaRdevInitProfile rdev_init_profile() const {
     return rdev_init_profile_;
   }
-  CannRaNetServiceProfile net_service_profile() const {
-    return net_service_profile_;
-  }
-  bool explicit_net_service_available() const {
-    return net_service_profile_ == CannRaNetServiceProfile::kExplicitRuntime;
+  CannRaNetworkBootstrapProfile network_bootstrap_profile() const {
+    return network_bootstrap_profile_;
   }
   const char* symbol_profile_name() const;
   const char* rdev_init_profile_name() const;
-  const char* net_service_profile_name() const;
+  const char* network_bootstrap_profile_name() const;
+  int EffectiveHdcType(int requested_hdc_type) const;
 
   int SetDevice(int32_t logical_device) const;
   bool ResolvePhysicalDevice(int32_t logical_device,
                              int32_t explicit_physical_device,
                              uint32_t* physical_device,
                              std::string* error) const;
-  int OpenNetService(const cann::RtNetServiceOpenArgs* args) const;
-  int CloseNetService() const;
+  int BootstrapNetwork(int32_t logical_device, int hdc_type) const;
+  int ShutdownNetwork(int32_t logical_device) const;
   int Init(cann::RaInitConfig* config) const;
   int Deinit(cann::RaInitConfig* config) const;
   int RdevInit(cann::RdevInitInfo init_info, cann::Rdev rdev,
@@ -123,6 +121,9 @@ class CannRaApi {
   int (*rt_close_net_service_)() = nullptr;
   int (*rt_rdma_db_send_)(uint32_t, uint64_t, void*) = nullptr;
 
+  int (*tsd_open_)(uint32_t, uint32_t) = nullptr;
+  int (*tsd_close_)(uint32_t) = nullptr;
+
   int (*acl_get_physical_device_)(int32_t, int32_t*) = nullptr;
   int (*acl_malloc_)(void**, size_t, int) = nullptr;
   int (*acl_free_)(void*) = nullptr;
@@ -131,11 +132,12 @@ class CannRaApi {
   void* ra_library_ = nullptr;
   void* runtime_library_ = nullptr;
   void* acl_library_ = nullptr;
+  void* tsd_library_ = nullptr;
   CannRaSymbolProfile symbol_profile_ = CannRaSymbolProfile::kUnavailable;
   CannRaRdevInitProfile rdev_init_profile_ =
       CannRaRdevInitProfile::kUnavailable;
-  CannRaNetServiceProfile net_service_profile_ =
-      CannRaNetServiceProfile::kUnavailable;
+  CannRaNetworkBootstrapProfile network_bootstrap_profile_ =
+      CannRaNetworkBootstrapProfile::kUnavailable;
   bool available_ = false;
   bool command_posting_available_ = false;
 };

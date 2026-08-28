@@ -1022,25 +1022,27 @@ if(FLUME_BUILD_TESTS)
     ${PROJECT_SOURCE_DIR}/custom_ops/hcomm_payload_copy/include)
   add_test(NAME hcomm_canary_kernel COMMAND test_hcomm_canary_kernel)
 
-  add_test(NAME hcomm_package_preflight
-    COMMAND ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/test_hcomm_package_preflight.py
-      ${PROJECT_SOURCE_DIR})
+  if(FLUME_ENABLE_HCCL)
+    add_test(NAME hcomm_package_preflight
+      COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/test_hcomm_package_preflight.py
+        ${PROJECT_SOURCE_DIR})
 
-  add_test(NAME hcomm_installer
-    COMMAND ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/test_hcomm_installer.py
-      ${PROJECT_SOURCE_DIR})
+    add_test(NAME hcomm_installer
+      COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/test_hcomm_installer.py
+        ${PROJECT_SOURCE_DIR})
 
-  add_test(NAME hcomm_payload_source_gate
-    COMMAND ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/test_hcomm_payload_source_gate.py
-      ${PROJECT_SOURCE_DIR})
+    add_test(NAME hcomm_payload_source_gate
+      COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/test_hcomm_payload_source_gate.py
+        ${PROJECT_SOURCE_DIR})
 
-  add_test(NAME strict_positive_decision_tree
-    COMMAND ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/test_strict_positive_decision_tree.py
-      ${PROJECT_SOURCE_DIR})
+    add_test(NAME strict_positive_decision_tree
+      COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/test_strict_positive_decision_tree.py
+        ${PROJECT_SOURCE_DIR})
+  endif()
 
   add_test(NAME hccl_smoke_marker_contract
     COMMAND ${Python3_EXECUTABLE}
@@ -1086,6 +1088,12 @@ if(FLUME_BUILD_TESTS)
   add_test(NAME cann_ra_loader COMMAND test_cann_ra_loader)
 
   if(UNIX OR APPLE)
+    add_library(test_cann_tsd_fixture SHARED tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_tsd_fixture PRIVATE
+      FLUME_TSD_FIXTURE=1)
+    target_include_directories(test_cann_tsd_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+
     add_library(test_cann_ra_core_fixture SHARED tests/cann_ra_loader_fixture.cc)
     target_compile_definitions(test_cann_ra_core_fixture PRIVATE FLUME_RA_FIXTURE=1)
     target_include_directories(test_cann_ra_core_fixture PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -1099,7 +1107,8 @@ if(FLUME_BUILD_TESTS)
       COMMAND test_cann_ra_loader
         $<TARGET_FILE:test_cann_ra_core_fixture>
         $<TARGET_FILE:test_cann_runtime_core_fixture>
-        $<TARGET_FILE:test_cann_acl_core_fixture>)
+        $<TARGET_FILE:test_cann_acl_core_fixture>
+        $<TARGET_FILE:test_cann_tsd_fixture>)
 
     add_library(test_cann_ra_legacy_fixture SHARED
       tests/cann_ra_loader_fixture.cc)
@@ -1124,6 +1133,7 @@ if(FLUME_BUILD_TESTS)
         $<TARGET_FILE:test_cann_ra_legacy_fixture>
         $<TARGET_FILE:test_cann_runtime_legacy_fixture>
         $<TARGET_FILE:test_cann_acl_legacy_fixture>
+        $<TARGET_FILE:test_cann_tsd_fixture>
         legacy)
     if(TARGET flume-cann-ra-compat-probe)
       add_test(NAME cann_ra_compat_probe_legacy_82
@@ -1131,10 +1141,11 @@ if(FLUME_BUILD_TESTS)
           FLUME_CANN_RA_LIBRARY=$<TARGET_FILE:test_cann_ra_legacy_fixture>
           FLUME_CANN_RUNTIME_LIBRARY=$<TARGET_FILE:test_cann_runtime_legacy_fixture>
           FLUME_CANN_ACL_LIBRARY=$<TARGET_FILE:test_cann_acl_legacy_fixture>
+          FLUME_CANN_TSD_LIBRARY=$<TARGET_FILE:test_cann_tsd_fixture>
           $<TARGET_FILE:flume-cann-ra-compat-probe>)
       set_tests_properties(cann_ra_compat_probe_legacy_82 PROPERTIES
         PASS_REGULAR_EXPRESSION
-          "cann_ra_symbol_probe=passed.*cann_ra_compat=unqualified.*symbol_profile=legacy-lowercase.*rdev_init=rdev-init-legacy.*net_service=ra-managed.*physical_device_lookup=explicit-required.*abi_qualified=no.*hardware_gate=required")
+          "cann_ra_symbol_probe=passed.*cann_ra_compat=unqualified.*symbol_profile=legacy-lowercase.*rdev_init=rdev-init-legacy.*network_bootstrap=legacy-tsd.*physical_device_lookup=explicit-required.*abi_qualified=no.*hardware_gate=required")
     endif()
 
     add_library(test_cann_ra_legacy_push_fixture SHARED
@@ -1175,12 +1186,14 @@ if(FLUME_BUILD_TESTS)
       COMMAND test_npu_ra_push_mover
         $<TARGET_FILE:test_cann_ra_push_fixture>
         $<TARGET_FILE:test_cann_runtime_push_fixture>
-        $<TARGET_FILE:test_cann_acl_push_fixture>)
+        $<TARGET_FILE:test_cann_acl_push_fixture>
+        $<TARGET_FILE:test_cann_tsd_fixture>)
     add_test(NAME npu_ra_push_mover_legacy_82
       COMMAND test_npu_ra_push_mover
         $<TARGET_FILE:test_cann_ra_legacy_push_fixture>
         $<TARGET_FILE:test_cann_runtime_legacy_push_fixture>
-        $<TARGET_FILE:test_cann_acl_push_fixture>)
+        $<TARGET_FILE:test_cann_acl_push_fixture>
+        $<TARGET_FILE:test_cann_tsd_fixture>)
   endif()
 
   set(FLUME_CANN_SOURCE_HCCP_INCLUDE

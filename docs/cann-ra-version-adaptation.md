@@ -20,14 +20,17 @@ The adapter recognizes these compatibility dimensions independently:
 |---|---|---|
 | RA symbol spelling | `RaInit`, `RaRegisterMr`, ... | `ra_init`, `ra_register_mr`, ... |
 | rdev initialization | `RaRdevInitV2(info, rdev, out)` | `RaRdevInit(mode, notify, rdev, out)` |
-| NetService lifecycle | explicit `rtOpenNetService` / `rtCloseNetService` | RA-managed when both runtime symbols are absent |
+| network bootstrap | `rtOpenNetService` / `rtCloseNetService` | `TsdOpen(logical, 2)` / `TsdClose(logical)` from `libtsdclient.so` |
+| HDC service type | requested type, normally process-scoped RDMA_V2 (`18`) | legacy RDMA (`6`) selected by the adapter |
 | logical-to-physical mapping | `aclrtGetPhyDevIdByLogicDevId` | explicit physical device ID |
 | command submission | `RaTypicalSendWr` | `ra_typical_send_wr` or `ra_send_wr`; not required by TCP-control baseline |
 
 Flume always prefers current exports and `RaRdevInitV2`. It selects a legacy
-entry only when the preferred symbol is absent. The selected route is reported
-as `symbol_profile` and `rdev_init`; storage code contains no CANN-version
-branch.
+entry only when the preferred symbol is absent. Network bootstrap is selected
+independently: current runtimes use NetService, while the legacy route opens
+TSD with rank size 2 before RA initialization so HCCP is running. The selected
+route is reported as `symbol_profile`, `rdev_init`, and
+`network_bootstrap`; storage code contains no CANN-version branch.
 
 ## Read-Only Probe
 
@@ -47,7 +50,7 @@ cann_ra_symbol_probe=passed
 cann_ra_compat=unqualified
 symbol_profile=modern-camelcase|legacy-lowercase|mixed
 rdev_init=rdev-init-v2|rdev-init-legacy
-net_service=explicit-runtime|ra-managed
+network_bootstrap=explicit-runtime|legacy-tsd
 physical_device_lookup=available|explicit-required
 command_posting=not-required
 abi_profile=hccp-reduced-v1
@@ -86,7 +89,17 @@ modern and legacy symbol/entry routing. A new CANN package is accepted for
 payload use only after the read-only probe passes and a real QP/MR/RDMA smoke
 completes with checksum agreement.
 
-The public CANN 8.2 RC1 `cann-hccl` source tag does not contain the packaged
-HCCP RA headers or `libra.so` export table. Therefore the 8.2 route is prepared
-in code but remains hardware-qualified, not inferred solely from a version
-string.
+The public CANN 8.2 RC1 `cann-hccl` source tag documents
+`HcclNetInit(NIC_DEPLOYMENT_DEVICE, physical, logical, ...)`, while the public
+legacy GraphEngine TSD header documents that `TsdOpen` belongs to
+`libtsdclient.so` and starts HCCP only for rank size greater than one. The tag
+does not expose the packaged `libra.so` implementation or export table, so the
+reduced ABI still remains hardware-qualified rather than inferred from a
+version string.
+
+The hardware lifecycle is:
+
+```text
+SetDevice -> TsdOpen/rtOpenNetService -> ra_init -> rdev/QP/MR
+         -> ra_deinit -> TsdClose/rtCloseNetService
+```

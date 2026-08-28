@@ -16,10 +16,11 @@
 
 int main(int argc, char** argv) {
 #if defined(__unix__) || defined(__APPLE__)
-  FLUME_TEST_CHECK(argc == 4);
+  FLUME_TEST_CHECK(argc == 5);
   setenv("FLUME_CANN_RA_LIBRARY", argv[1], 1);
   setenv("FLUME_CANN_RUNTIME_LIBRARY", argv[2], 1);
   setenv("FLUME_CANN_ACL_LIBRARY", argv[3], 1);
+  setenv("FLUME_CANN_TSD_LIBRARY", argv[4], 1);
 
   flume::roce::Endpoint peer;
   peer.qpn = 303;
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
   unsetenv("FLUME_RA_FIXTURE_POLL_MODE");
   FLUME_TEST_CHECK(mover.Close(&error));
   FLUME_TEST_CHECK(!mover.available());
+  FLUME_TEST_CHECK(std::getenv("FLUME_TEST_TSD_OPEN") == nullptr);
 #else
   (void)argc;
   (void)argv;
