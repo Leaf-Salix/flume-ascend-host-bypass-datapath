@@ -158,6 +158,8 @@ typedef struct {
   // Zero keeps the runtime mapping used by current CANN releases.
   uint32_t npu_physical_device_valid;
   uint32_t npu_physical_device;
+  // Zero selects the conservative 1024-byte RoCE path MTU default.
+  uint32_t path_mtu_bytes;
 } flume_roce_storage_options_t;
 
 typedef struct {

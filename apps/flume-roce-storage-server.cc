@@ -87,11 +87,25 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
     return 1;
   }
   flume::roce::VerbsBackend verbs;
-  if (!verbs.Open(verbs_device, verbs_port, gid_index, kDefaultQueueDepth, &error) ||
-      !verbs.Connect(ToVerbsEndpoint(request.endpoint), &error)) {
+  if (!verbs.Open(verbs_device, verbs_port, gid_index, kDefaultQueueDepth,
+                  &error)) {
     std::cerr << "verbs connection setup failed: " << error << "\n";
     return 1;
   }
+  const flume::roce::Endpoint local_endpoint =
+      ToWireEndpoint(verbs.endpoint());
+  std::cout << "flume_roce_qp role=storage-local phase=created "
+            << flume::roce::FormatEndpoint(local_endpoint) << "\n"
+            << "flume_roce_qp role=npu-peer phase=received "
+            << flume::roce::FormatEndpoint(request.endpoint) << "\n";
+  if (!verbs.Connect(ToVerbsEndpoint(request.endpoint), &error)) {
+    std::cerr << "verbs connection setup failed: " << error << "\n";
+    return 1;
+  }
+  std::cout << "flume_roce_qp role=storage-local phase=connected "
+            << flume::roce::FormatEndpoint(local_endpoint)
+            << " selected_path_mtu=" << verbs.selected_path_mtu_bytes()
+            << "\n";
   std::vector<uint8_t> command_wire(flume::roce::kCommandWireBytes);
   std::vector<uint8_t> completion_wire(flume::roce::kCompletionWireBytes);
   flume::roce::VerbsMemoryRegion command_mr;
@@ -126,7 +140,7 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
   } region_cleanup{&verbs, &command_mr, &completion_mr,
                    command_registered, completion_registered};
   flume::roce::SessionResponse response;
-  response.endpoint = ToWireEndpoint(verbs.endpoint());
+  response.endpoint = local_endpoint;
   response.namespace_capacity = storage->size();
   response.max_transfer_bytes = std::min<uint64_t>(storage->size(), kDefaultMaxTransferBytes);
   response.server_capabilities = dynamic_cast<flume::roce::MemoryStorageBackend*>(storage) != nullptr ?
@@ -172,6 +186,18 @@ int ServeOneClient(int fd, flume::roce::StorageBackend* storage, const std::stri
     } else {
       std::vector<uint8_t> staging(static_cast<size_t>(command.length));
       flume::roce::VerbsMemoryRegion mr;
+      std::cout << "flume_storage_request=started request_id="
+                << command.request_id << " operation="
+                << (command.operation == flume::roce::Operation::kRead ?
+                        "storage-read" : "storage-write")
+                << " rdma_operation="
+                << (command.operation == flume::roce::Operation::kRead ?
+                        "write-to-hbm" : "read-from-hbm")
+                << " remote_address=0x" << std::hex << command.npu_address
+                << std::dec << " remote_rkey=" << command.npu_rkey
+                << " remote_access=" << command.npu_access
+                << " bytes=" << command.length
+                << " path_mtu=" << verbs.selected_path_mtu_bytes() << "\n";
       const bool registered = verbs.Register(staging.data(), staging.size(), false, false, &mr, &error);
       bool ok = registered;
       if (ok && command.operation == flume::roce::Operation::kRead) {
@@ -309,8 +335,8 @@ int main(int argc, char** argv) {
       return 1;
     }
     const auto endpoint = verbs.endpoint();
-    std::cout << "verbs endpoint initialized qpn=" << endpoint.qpn
-              << " psn=" << endpoint.psn << " port=" << static_cast<int>(endpoint.port) << "\n";
+    std::cout << "verbs endpoint initialized "
+              << flume::roce::FormatEndpoint(ToWireEndpoint(endpoint)) << "\n";
   }
   if (control_port != 0) {
     int listener = -1;

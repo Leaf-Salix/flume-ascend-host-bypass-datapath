@@ -12,14 +12,14 @@
 namespace flume::roce {
 namespace {
 
-Endpoint ToEndpoint(const cann::TypicalQp& qp) {
+Endpoint ToEndpoint(const cann::TypicalQp& qp, uint8_t path_mtu) {
   Endpoint endpoint;
   std::memcpy(endpoint.gid.data(), qp.gid, endpoint.gid.size());
   endpoint.qpn = qp.qpn;
   endpoint.psn = qp.psn;
   endpoint.port = 1;
   endpoint.gid_index = static_cast<uint8_t>(qp.gid_index);
-  endpoint.mtu = 5;
+  endpoint.mtu = path_mtu;
   return endpoint;
 }
 
@@ -49,6 +49,12 @@ class NpuRaPushMover::Impl {
       return false;
     }
     config = requested;
+    if (PathMtuBytes(config.path_mtu) < 1024) {
+      if (error != nullptr) {
+        *error = "NPU relay path MTU must be 1024, 2048, or 4096 bytes";
+      }
+      return false;
+    }
     if (!api.Open(true, error)) return false;
     capability_loaded = true;
 
@@ -120,7 +126,7 @@ class NpuRaPushMover::Impl {
       if (error != nullptr) *error = "RaTypicalQpModify failed for NPU relay";
       return Fail();
     }
-    *local = ToEndpoint(local_qp);
+    *local = ToEndpoint(local_qp, config.path_mtu);
     opened = true;
     return true;
   }

@@ -14,7 +14,7 @@ struct VerbsEndpoint {
   uint32_t psn = 0;
   uint8_t port = 1;
   uint8_t gid_index = 0;
-  uint8_t mtu = 4;
+  uint8_t mtu = 3;
 };
 
 struct VerbsMemoryRegion {
@@ -48,6 +48,7 @@ class VerbsBackend {
              size_t length, uint32_t timeout_ms, std::string* error);
   bool available() const;
   VerbsEndpoint endpoint() const;
+  uint32_t selected_path_mtu_bytes() const;
   void Close();
 
  private:
@@ -59,6 +60,7 @@ class VerbsBackend {
   void* cq_ = nullptr;
   void* qp_ = nullptr;
   VerbsEndpoint endpoint_;
+  uint8_t selected_path_mtu_ = 0;
 };
 
 bool VerbsAvailable();

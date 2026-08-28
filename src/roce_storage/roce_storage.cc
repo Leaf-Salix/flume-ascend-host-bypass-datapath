@@ -3,6 +3,7 @@
 #include "roce_storage/cann_ra_loader.h"
 
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 
 #ifndef FLUME_HAVE_IBVERBS
@@ -58,6 +59,49 @@ bool ReadU64(const uint8_t* wire, size_t len, size_t* offset, uint64_t* out) {
 }
 
 }  // namespace
+
+bool PathMtuFromBytes(uint32_t bytes, uint8_t* mtu) {
+  if (mtu == nullptr) return false;
+  switch (bytes) {
+    case 1024:
+      *mtu = 3;
+      return true;
+    case 2048:
+      *mtu = 4;
+      return true;
+    case 4096:
+      *mtu = 5;
+      return true;
+    default:
+      return false;
+  }
+}
+
+uint32_t PathMtuBytes(uint8_t mtu) {
+  switch (mtu) {
+    case 1: return 256;
+    case 2: return 512;
+    case 3: return 1024;
+    case 4: return 2048;
+    case 5: return 4096;
+    default: return 0;
+  }
+}
+
+std::string FormatEndpoint(const Endpoint& endpoint) {
+  std::ostringstream output;
+  output << "gid=";
+  for (size_t index = 0; index < endpoint.gid.size(); ++index) {
+    if (index != 0 && index % 2 == 0) output << ':';
+    output << std::hex << std::setw(2) << std::setfill('0')
+           << static_cast<unsigned>(endpoint.gid[index]);
+  }
+  output << std::dec << " qpn=" << endpoint.qpn << " psn=" << endpoint.psn
+         << " port=" << static_cast<unsigned>(endpoint.port)
+         << " gid_index=" << static_cast<unsigned>(endpoint.gid_index)
+         << " path_mtu=" << PathMtuBytes(endpoint.mtu);
+  return output.str();
+}
 
 bool EncodeCommand(const Command& command, std::vector<uint8_t>* wire) {
   const uint32_t required_access = command.operation == Operation::kRead ?
@@ -154,7 +198,7 @@ bool DecodeCompletion(const uint8_t* wire, size_t len, Completion* completion) {
 
 bool EncodeEndpoint(const Endpoint& endpoint, std::vector<uint8_t>* wire) {
   if (wire == nullptr || endpoint.qpn == 0 || endpoint.psn > 0x00ffffffU ||
-      endpoint.port == 0 || endpoint.mtu == 0) {
+      endpoint.port == 0 || PathMtuBytes(endpoint.mtu) == 0) {
     return false;
   }
   wire->clear();
@@ -183,7 +227,7 @@ bool DecodeEndpoint(const uint8_t* wire, size_t len, Endpoint* endpoint) {
   endpoint->mtu = wire[offset++];
   std::memcpy(padding, wire + offset, sizeof(padding));
   return endpoint->qpn != 0 && endpoint->psn <= 0x00ffffffU && endpoint->port != 0 &&
-         endpoint->mtu != 0 && padding[0] == 0 && padding[1] == 0 && padding[2] == 0 &&
+         PathMtuBytes(endpoint->mtu) != 0 && padding[0] == 0 && padding[1] == 0 && padding[2] == 0 &&
          padding[3] == 0 && padding[4] == 0;
 }
 

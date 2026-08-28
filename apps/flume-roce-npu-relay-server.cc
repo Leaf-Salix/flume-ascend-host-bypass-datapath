@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
   uint64_t parsed_logical_device = 0;
   uint64_t parsed_physical_device = 0;
   uint64_t parsed_gid_index = 0;
+  uint64_t parsed_path_mtu = 1024;
   uint64_t parsed_timeout_ms = 30000;
   uint64_t parsed_namespace_bytes = kDefaultNamespaceBytes;
   bool parse_ok = true;
@@ -90,6 +91,8 @@ int main(int argc, char** argv) {
       physical_device_set = true;
     } else if (arg == "--gid-index") {
       parse_ok = next_u64(&parsed_gid_index) && parse_ok;
+    } else if (arg == "--path-mtu") {
+      parse_ok = next_u64(&parsed_path_mtu) && parse_ok;
     } else if (arg == "--control-port") {
       parse_ok = next_u64(&parsed_control_port) && parse_ok;
     } else if (arg == "--timeout-ms") {
@@ -99,7 +102,8 @@ int main(int argc, char** argv) {
                    "[--storage-file path|--namespace-bytes bytes] "
                    "--npu-rnic-ip ip --device logical-id "
                    "[--physical-device physical-id] "
-                   "--gid-index N --control-port port [--timeout-ms ms]\n";
+                   "--gid-index N [--path-mtu 1024|2048|4096] "
+                   "--control-port port [--timeout-ms ms]\n";
       return arg == "--help" ? 0 : 2;
     }
   }
@@ -121,6 +125,13 @@ int main(int argc, char** argv) {
   const int32_t physical_device =
       physical_device_set ? static_cast<int32_t>(parsed_physical_device) : -1;
   const uint32_t gid_index = static_cast<uint32_t>(parsed_gid_index);
+  uint8_t path_mtu = 0;
+  if (parsed_path_mtu > std::numeric_limits<uint32_t>::max() ||
+      !flume::roce::PathMtuFromBytes(static_cast<uint32_t>(parsed_path_mtu),
+                                     &path_mtu)) {
+    std::cerr << "NPU relay path MTU must be 1024, 2048, or 4096\n";
+    return 2;
+  }
   const uint32_t timeout_ms = static_cast<uint32_t>(parsed_timeout_ms);
   const size_t namespace_bytes = static_cast<size_t>(parsed_namespace_bytes);
 
@@ -191,6 +202,7 @@ int main(int argc, char** argv) {
     config.logical_device = logical_device;
     config.physical_device = physical_device;
     config.gid_index = gid_index;
+    config.path_mtu = path_mtu;
     config.timeout_ms = timeout_ms;
     flume::roce::Endpoint local_endpoint;
     if (!mover.Open(config, request.endpoint, &local_endpoint, &error)) {

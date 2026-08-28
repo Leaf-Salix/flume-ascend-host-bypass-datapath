@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <sstream>
 #include <thread>
+
+#include "roce_storage/roce_storage.h"
 
 #ifndef FLUME_HAVE_IBVERBS
 #define FLUME_HAVE_IBVERBS 0
@@ -22,6 +25,10 @@ VerbsBackend::~VerbsBackend() { Close(); }
 namespace {
 
 void SetError(std::string* error, const char* message) {
+  if (error != nullptr) *error = message;
+}
+
+void SetError(std::string* error, const std::string& message) {
   if (error != nullptr) *error = message;
 }
 
@@ -128,14 +135,16 @@ bool VerbsBackend::Open(const std::string& device_name, uint8_t port, uint8_t gi
 }
 
 bool VerbsBackend::Connect(const VerbsEndpoint& peer, std::string* error) {
-  if (!available() || peer.qpn == 0) {
+  if (!available() || peer.qpn == 0 || PathMtuBytes(peer.mtu) == 0 ||
+      PathMtuBytes(endpoint_.mtu) == 0) {
     SetError(error, "verbs QP and peer endpoint are required");
     return false;
   }
   ibv_qp* qp = static_cast<ibv_qp*>(qp_);
   ibv_qp_attr attr{};
   attr.qp_state = IBV_QPS_RTR;
-  attr.path_mtu = ToMtu(std::min(endpoint_.mtu, peer.mtu));
+  selected_path_mtu_ = std::min(endpoint_.mtu, peer.mtu);
+  attr.path_mtu = ToMtu(selected_path_mtu_);
   attr.dest_qp_num = peer.qpn;
   attr.rq_psn = peer.psn;
   attr.max_dest_rd_atomic = 1;
@@ -149,6 +158,7 @@ bool VerbsBackend::Connect(const VerbsEndpoint& peer, std::string* error) {
                                IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC |
                                IBV_QP_MIN_RNR_TIMER) != 0) {
     SetError(error, "failed to move RC QP to RTR");
+    selected_path_mtu_ = 0;
     return false;
   }
   attr = {};
@@ -161,6 +171,7 @@ bool VerbsBackend::Connect(const VerbsEndpoint& peer, std::string* error) {
   if (ibv_modify_qp(qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT |
                                IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC) != 0) {
     SetError(error, "failed to move RC QP to RTS");
+    selected_path_mtu_ = 0;
     return false;
   }
   return true;
@@ -227,8 +238,19 @@ bool VerbsBackend::WaitForReceive(uint32_t timeout_ms, std::string* error) {
   while (std::chrono::steady_clock::now() < deadline) {
     ibv_wc completion{};
     const int count = ibv_poll_cq(static_cast<ibv_cq*>(cq_), 1, &completion);
-    if (count < 0 || (count == 1 && (completion.status != IBV_WC_SUCCESS || completion.opcode != IBV_WC_RECV))) {
-      SetError(error, "unexpected verbs receive completion");
+    if (count < 0) {
+      SetError(error, "ibv_poll_cq failed while waiting for receive");
+      return false;
+    }
+    if (count == 1 && (completion.status != IBV_WC_SUCCESS ||
+                       completion.opcode != IBV_WC_RECV)) {
+      std::ostringstream detail;
+      detail << "unexpected verbs receive completion status="
+             << ibv_wc_status_str(completion.status) << '(' << completion.status
+             << ") opcode=" << completion.opcode
+             << " vendor_err=" << completion.vendor_err
+             << " qp_num=" << completion.qp_num;
+      SetError(error, detail.str());
       return false;
     }
     if (count == 1) return true;
@@ -257,16 +279,31 @@ bool VerbsBackend::Transfer(bool read, const VerbsMemoryRegion& local, uint64_t 
   wr.wr.rdma.remote_addr = remote_address;
   wr.wr.rdma.rkey = remote_rkey;
   ibv_send_wr* bad = nullptr;
-  if (ibv_post_send(static_cast<ibv_qp*>(qp_), &wr, &bad) != 0) {
-    SetError(error, "ibv_post_send RDMA transfer failed");
+  const int post_status = ibv_post_send(static_cast<ibv_qp*>(qp_), &wr, &bad);
+  if (post_status != 0) {
+    SetError(error, std::string("ibv_post_send RDMA transfer failed: ") +
+                        std::strerror(post_status));
     return false;
   }
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
   while (std::chrono::steady_clock::now() < deadline) {
     ibv_wc completion{};
     const int count = ibv_poll_cq(static_cast<ibv_cq*>(cq_), 1, &completion);
-    if (count < 0 || (count == 1 && completion.status != IBV_WC_SUCCESS)) {
-      SetError(error, "verbs RDMA transfer completion failed");
+    if (count < 0) {
+      SetError(error, "ibv_poll_cq failed while waiting for RDMA transfer");
+      return false;
+    }
+    if (count == 1 && completion.status != IBV_WC_SUCCESS) {
+      std::ostringstream detail;
+      detail << "verbs RDMA " << (read ? "read" : "write")
+             << " completion failed status="
+             << ibv_wc_status_str(completion.status) << '(' << completion.status
+             << ") opcode=" << completion.opcode
+             << " vendor_err=" << completion.vendor_err
+             << " qp_num=" << completion.qp_num
+             << " byte_len=" << completion.byte_len
+             << " path_mtu=" << PathMtuBytes(selected_path_mtu_);
+      SetError(error, detail.str());
       return false;
     }
     if (count == 1) return true;
@@ -288,6 +325,9 @@ bool VerbsBackend::Write(const VerbsMemoryRegion& local, uint64_t remote_address
 
 bool VerbsBackend::available() const { return qp_ != nullptr; }
 VerbsEndpoint VerbsBackend::endpoint() const { return endpoint_; }
+uint32_t VerbsBackend::selected_path_mtu_bytes() const {
+  return PathMtuBytes(selected_path_mtu_);
+}
 
 void VerbsBackend::Close() {
   if (qp_ != nullptr) ibv_destroy_qp(static_cast<ibv_qp*>(qp_));
@@ -299,6 +339,7 @@ void VerbsBackend::Close() {
   cq_ = nullptr;
   qp_ = nullptr;
   endpoint_ = {};
+  selected_path_mtu_ = 0;
 }
 
 bool VerbsAvailable() { return true; }
@@ -319,6 +360,7 @@ bool VerbsBackend::Read(const VerbsMemoryRegion&, uint64_t, uint32_t, size_t, ui
 bool VerbsBackend::Write(const VerbsMemoryRegion&, uint64_t, uint32_t, size_t, uint32_t, std::string* error) { if (error != nullptr) *error = VerbsUnavailableReason(); return false; }
 bool VerbsBackend::available() const { return false; }
 VerbsEndpoint VerbsBackend::endpoint() const { return {}; }
+uint32_t VerbsBackend::selected_path_mtu_bytes() const { return 0; }
 void VerbsBackend::Close() {}
 bool VerbsAvailable() { return false; }
 const char* VerbsUnavailableReason() { return "libibverbs headers and library were not found at CMake configure time"; }

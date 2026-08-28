@@ -16,6 +16,7 @@ struct HostRaConfig {
   uint32_t logical_device = 0;
   int32_t physical_device = -1;
   uint32_t gid_index = 0;
+  uint8_t path_mtu = kDefaultPathMtu;
   uint32_t bootstrap_port = 0;
   uint32_t timeout_ms = 30000;
   int hdc_type = 18;

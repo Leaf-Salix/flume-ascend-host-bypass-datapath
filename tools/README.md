@@ -109,6 +109,9 @@ fabric 时，使用 `flume-roce-storage-server` 配合
 Write 到 HBM，`swap-out` 对应 server RDMA Read HBM。写入默认关闭，server
 和 client 必须分别传 `--allow-writes` 与 `--confirm-storage-write`。双机命令、
 marker 和 POSIX scratch-file 约束见 `docs/stage-4-tensor-swap.md`。
+NPU endpoint 的 path MTU 默认是保守的 1024 字节；只有两端都确认支持时才用
+`--path-mtu 2048` 或 `--path-mtu 4096` 覆盖。失败日志会打印实际 RDMA
+read/write、WC status、vendor error 和最终协商 MTU。
 
 ### 本地 storage direct sim smoke
 

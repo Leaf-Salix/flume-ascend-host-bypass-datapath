@@ -224,6 +224,9 @@ directions on one Host-RA session: server RDMA Write for swap-in and server
 RDMA Read for swap-out. Storage writes are fail-closed unless the server uses
 `--allow-writes` and the smoke uses `--confirm-storage-write`. See
 [`docs/stage-4-tensor-swap.md`](docs/stage-4-tensor-swap.md).
+The NPU endpoint now defaults to a 1024-byte path MTU rather than assuming
+4096; the standalone smoke exposes `--path-mtu 1024|2048|4096`, and the public
+session options expose the same override as `path_mtu_bytes`.
 
 The current proxy requires an upstream Flume daemon. A storage appliance that
 cannot run Flume needs a controller-side adapter for its native control/storage

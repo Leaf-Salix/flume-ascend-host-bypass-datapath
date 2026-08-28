@@ -238,6 +238,7 @@ struct flume_roce_storage_session {
   uint32_t npu_device = 0;
   int32_t npu_physical_device = -1;
   uint32_t gid_index = 0;
+  uint8_t path_mtu = flume::roce::kDefaultPathMtu;
   uint32_t bootstrap_port = 0;
   uint32_t timeout_ms = 0;
   flume_roce_post_mode_t post_mode = FLUME_ROCE_POST_AUTO;
@@ -7929,6 +7930,16 @@ int flume_roce_storage_session_open(
         static_cast<int32_t>(options->npu_physical_device);
   }
   session->gid_index = options->gid_index;
+  if (options->size >=
+          offsetof(flume_roce_storage_options_t, path_mtu_bytes) +
+              sizeof(options->path_mtu_bytes) &&
+      options->path_mtu_bytes != 0) {
+    if (!flume::roce::PathMtuFromBytes(options->path_mtu_bytes,
+                                       &session->path_mtu)) {
+      delete session;
+      return FLUME_ERR_INVALID_ARGUMENT;
+    }
+  }
   session->bootstrap_port = options->bootstrap_port;
   session->timeout_ms = options->timeout_ms;
   session->post_mode = options->post_mode;
@@ -7947,6 +7958,7 @@ int flume_roce_storage_session_open(
     config.logical_device = session->npu_device;
     config.physical_device = session->npu_physical_device;
     config.gid_index = session->gid_index;
+    config.path_mtu = session->path_mtu;
     config.bootstrap_port = session->bootstrap_port;
     config.timeout_ms = session->timeout_ms;
     config.control_mode = session->control_mode == FLUME_ROCE_CONTROL_TCP ?

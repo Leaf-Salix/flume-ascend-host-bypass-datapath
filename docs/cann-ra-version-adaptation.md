@@ -71,6 +71,7 @@ separately from the ACL logical device ID:
 flume-roce-swap-smoke \
   --device <logical-device> \
   --physical-device <physical-device> \
+  --path-mtu 1024 \
   ...
 ```
 
@@ -78,6 +79,12 @@ Library users set `npu_physical_device_valid=1` and
 `npu_physical_device=<physical-device>` in
 `flume_roce_storage_options_t`. The default remains runtime mapping, which is
 safer when visible-device remapping is active.
+
+Path MTU is kept outside the version-specific RA ABI. The standalone smoke
+defaults to 1024 bytes and library callers may set `path_mtu_bytes` to 1024,
+2048, or 4096 in `flume_roce_storage_options_t`; zero retains the 1024-byte
+default. This prevents an old or opaque CANN RA implementation from being
+advertised to the storage RNIC as an unverified 4096-byte endpoint.
 
 ## ABI Safety Boundary
 

@@ -59,7 +59,7 @@ int main() {
   endpoint.psn = 34;
   endpoint.port = 1;
   endpoint.gid_index = 3;
-  endpoint.mtu = 5;
+  endpoint.mtu = flume::roce::kDefaultPathMtu;
   FLUME_TEST_CHECK(flume::roce::EncodeEndpoint(endpoint, &wire));
   FLUME_TEST_CHECK(wire.size() == flume::roce::kEndpointWireBytes);
   flume::roce::Endpoint decoded_endpoint;
@@ -67,6 +67,16 @@ int main() {
   FLUME_TEST_CHECK(decoded_endpoint.qpn == endpoint.qpn);
   FLUME_TEST_CHECK(decoded_endpoint.psn == endpoint.psn);
   FLUME_TEST_CHECK(decoded_endpoint.gid == endpoint.gid);
+  FLUME_TEST_CHECK(flume::roce::PathMtuBytes(decoded_endpoint.mtu) == 1024);
+  FLUME_TEST_CHECK(flume::roce::FormatEndpoint(decoded_endpoint).find(
+                       "path_mtu=1024") != std::string::npos);
+  uint8_t parsed_mtu = 0;
+  FLUME_TEST_CHECK(flume::roce::PathMtuFromBytes(2048, &parsed_mtu));
+  FLUME_TEST_CHECK(parsed_mtu == 4);
+  FLUME_TEST_CHECK(!flume::roce::PathMtuFromBytes(1500, &parsed_mtu));
+  endpoint.mtu = 6;
+  FLUME_TEST_CHECK(!flume::roce::EncodeEndpoint(endpoint, &wire));
+  endpoint.mtu = flume::roce::kDefaultPathMtu;
 
   flume::roce::SessionRequest request;
   request.endpoint = endpoint;
@@ -158,6 +168,14 @@ int main() {
   std::string pull_error;
   FLUME_TEST_CHECK(!pull_session.Open(pull_config, &pull_error));
   FLUME_TEST_CHECK(pull_error.find("pull transfer mode") != std::string::npos);
+
+  flume::roce::HostRaConfig invalid_mtu_config;
+  invalid_mtu_config.path_mtu = 0;
+  flume::roce::HostRaSession invalid_mtu_session;
+  std::string invalid_mtu_error;
+  FLUME_TEST_CHECK(!invalid_mtu_session.Open(invalid_mtu_config,
+                                             &invalid_mtu_error));
+  FLUME_TEST_CHECK(invalid_mtu_error.find("path MTU") != std::string::npos);
 
   flume_io_t* invalid_io = nullptr;
   FLUME_TEST_CHECK(flume_swap_in_async(nullptr, 0, nullptr, 0, 4096,

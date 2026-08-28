@@ -26,7 +26,8 @@ void Usage(const char* name) {
             << " [--confirm-storage-write]"
             << " [--control-mode tcp|npu-ra] [--bytes N] [--offset N]"
             << " [--transfer-mode push|pull]"
-            << " [--gid-index N] [--timeout-ms N]\n";
+            << " [--gid-index N] [--path-mtu 1024|2048|4096]"
+            << " [--timeout-ms N]\n";
 }
 
 bool ParseU64(const std::string& text, uint64_t* value) {
@@ -113,6 +114,7 @@ int main(int argc, char** argv) {
   uint64_t parsed_physical_device = 0;
   uint64_t parsed_control_port = 0;
   uint64_t parsed_gid_index = 0;
+  uint64_t parsed_path_mtu = 1024;
   uint64_t parsed_timeout_ms = 30000;
   uint64_t parsed_bytes = 4096;
   uint64_t offset = 0;
@@ -140,6 +142,8 @@ int main(int argc, char** argv) {
       parse_ok = next_u64(&parsed_control_port) && parse_ok;
     } else if (arg == "--gid-index") {
       parse_ok = next_u64(&parsed_gid_index) && parse_ok;
+    } else if (arg == "--path-mtu") {
+      parse_ok = next_u64(&parsed_path_mtu) && parse_ok;
     } else if (arg == "--timeout-ms") {
       parse_ok = next_u64(&parsed_timeout_ms) && parse_ok;
     } else if (arg == "--bytes") {
@@ -178,6 +182,13 @@ int main(int argc, char** argv) {
   const uint32_t device = static_cast<uint32_t>(parsed_device);
   const uint32_t control_port = static_cast<uint32_t>(parsed_control_port);
   const uint32_t gid_index = static_cast<uint32_t>(parsed_gid_index);
+  uint8_t path_mtu = 0;
+  if (parsed_path_mtu > std::numeric_limits<uint32_t>::max() ||
+      !flume::roce::PathMtuFromBytes(static_cast<uint32_t>(parsed_path_mtu),
+                                     &path_mtu)) {
+    Usage(argv[0]);
+    return 2;
+  }
   const uint32_t timeout_ms = static_cast<uint32_t>(parsed_timeout_ms);
   const size_t bytes = static_cast<size_t>(parsed_bytes);
   void* hbm = nullptr;
@@ -211,6 +222,7 @@ int main(int argc, char** argv) {
                                  ? static_cast<int32_t>(parsed_physical_device)
                                  : -1;
     config.gid_index = gid_index;
+    config.path_mtu = path_mtu;
     config.bootstrap_port = control_port;
     config.timeout_ms = timeout_ms;
     config.control_mode = control_mode;

@@ -5,8 +5,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -46,14 +48,14 @@ int ConnectTcp(const std::string& host, uint32_t port, uint32_t timeout_ms,
   return fd;
 }
 
-Endpoint ToEndpoint(const cann::TypicalQp& qp) {
+Endpoint ToEndpoint(const cann::TypicalQp& qp, uint8_t path_mtu) {
   Endpoint endpoint;
   std::memcpy(endpoint.gid.data(), qp.gid, endpoint.gid.size());
   endpoint.qpn = qp.qpn;
   endpoint.psn = qp.psn;
   endpoint.port = 1;
   endpoint.gid_index = static_cast<uint8_t>(qp.gid_index);
-  endpoint.mtu = 5;
+  endpoint.mtu = path_mtu;
   return endpoint;
 }
 
@@ -81,6 +83,12 @@ class HostRaSession::Impl {
       return false;
     }
     config = requested;
+    if (PathMtuBytes(config.path_mtu) < 1024) {
+      if (error != nullptr) {
+        *error = "Host-RA path MTU must be 1024, 2048, or 4096 bytes";
+      }
+      return Fail();
+    }
     const bool npu_command_posting = config.control_mode == ControlMode::kNpuRa;
     if (config.control_mode != ControlMode::kTcp && !npu_command_posting) {
       if (error != nullptr) *error = "unsupported Host-RA control mode";
@@ -165,7 +173,9 @@ class HostRaSession::Impl {
                             config.timeout_ms, error);
     if (control_fd < 0) return Fail();
     SessionRequest request;
-    request.endpoint = ToEndpoint(local_qp);
+    request.endpoint = ToEndpoint(local_qp, config.path_mtu);
+    std::clog << "flume_roce_qp role=npu-local phase=created "
+              << FormatEndpoint(request.endpoint) << '\n';
     if (config.control_mode == ControlMode::kTcp) {
       request.flags = kSessionFlagTcpControl;
     } else {
@@ -188,6 +198,8 @@ class HostRaSession::Impl {
       return Fail();
     }
     if (!lifecycle.Bootstrapped()) return Fail();
+    std::clog << "flume_roce_qp role=storage-peer phase=received "
+              << FormatEndpoint(response.endpoint) << '\n';
     cann::TypicalQp remote_qp = ToTypicalQp(response.endpoint);
     local_qp.retry_count = 7;
     local_qp.retry_time = 14;
@@ -196,6 +208,12 @@ class HostRaSession::Impl {
       if (error != nullptr) *error = "RaTypicalQpModify failed";
       return Fail();
     }
+    std::clog << "flume_roce_qp role=npu-local phase=connected "
+              << FormatEndpoint(ToEndpoint(local_qp, config.path_mtu))
+              << " selected_path_mtu="
+              << std::min(PathMtuBytes(config.path_mtu),
+                          PathMtuBytes(response.endpoint.mtu))
+              << '\n';
     namespace_bytes = response.namespace_capacity;
     max_transfer = response.max_transfer_bytes;
     server_capabilities = response.server_capabilities;

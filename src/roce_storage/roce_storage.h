@@ -16,6 +16,7 @@ constexpr size_t kSessionResponseWireBytes = 64;
 constexpr size_t kCommandWireBytes = 64;
 constexpr size_t kCompletionWireBytes = 40;
 constexpr size_t kEndpointWireBytes = 32;
+constexpr uint8_t kDefaultPathMtu = 3;  // IBV_MTU_1024
 
 constexpr uint32_t kMemoryRemoteWrite = 1U << 0;
 constexpr uint32_t kMemoryRemoteRead = 1U << 1;
@@ -95,6 +96,10 @@ struct Endpoint {
   uint8_t gid_index = 0;
   uint8_t mtu = 0;
 };
+
+bool PathMtuFromBytes(uint32_t bytes, uint8_t* mtu);
+uint32_t PathMtuBytes(uint8_t mtu);
+std::string FormatEndpoint(const Endpoint& endpoint);
 
 struct SessionRequest {
   Endpoint endpoint;

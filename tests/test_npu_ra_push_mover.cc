@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
   FLUME_TEST_CHECK(mover.Open(config, peer, &local, &error));
   FLUME_TEST_CHECK(local.qpn == 101);
   FLUME_TEST_CHECK(local.psn == 202);
+  FLUME_TEST_CHECK(local.mtu == flume::roce::kDefaultPathMtu);
   FLUME_TEST_CHECK(mover.available());
 
   std::vector<uint8_t> source(64, 7);

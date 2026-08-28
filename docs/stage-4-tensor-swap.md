@@ -98,6 +98,7 @@ build-roce-client/flume-roce-swap-smoke \
   --npu-rnic-ip <npu-hccn-ip> \
   --device <logical-npu-device> \
   --gid-index <npu-gid-index> \
+  --path-mtu 1024 \
   --control-port <control-port> \
   --control-mode tcp \
   --operation roundtrip \
@@ -112,6 +113,13 @@ For a legacy CANN package, run
 `--physical-device <physical-npu-device>` while keeping `--device` as the ACL
 logical device. Both current and legacy RA entry points feed the same swap
 state machine and wire protocol.
+
+The NPU endpoint advertises a conservative 1024-byte path MTU by default, so
+the storage verbs QP negotiates `min(storage active_mtu, npu path_mtu)` instead
+of assuming 4096. `--path-mtu 2048|4096` is available only for environments
+where both RNIC endpoints have independently confirmed that MTU. QP logs print
+both endpoint descriptors and `selected_path_mtu`; completion failures include
+the verbs status, opcode, vendor error, QP number, and transfer direction.
 
 Required client markers:
 
