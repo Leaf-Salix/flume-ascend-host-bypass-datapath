@@ -198,7 +198,9 @@ The Host-RA adapter supports current CANN 9.x exports and a CANN 8.2 RC1
 legacy route without branching the storage logic. It accepts current or
 lowercase RA symbols, falls back to legacy `RaRdevInit`, and permits an
 explicit physical device ID when the old runtime lacks logical-to-physical
-mapping. `flume-cann-ra-compat-probe` checks this surface without selecting a
+mapping. Releases exporting both NetService lifecycle calls use them
+explicitly; legacy releases exporting neither use the RA-managed lifecycle.
+`flume-cann-ra-compat-probe` checks this surface without selecting a
 device and reports `cann_ra_symbol_probe=passed` together with
 `cann_ra_compat=unqualified`; only a real QP/MR/RDMA checksum smoke qualifies
 the ABI. See

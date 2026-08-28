@@ -36,6 +36,11 @@ int main(int argc, char** argv) {
         core_api.rdev_init_profile() ==
         (expect_legacy ? flume::roce::CannRaRdevInitProfile::kLegacy
                        : flume::roce::CannRaRdevInitProfile::kV2));
+    FLUME_TEST_CHECK(
+        core_api.net_service_profile() ==
+        (expect_legacy
+             ? flume::roce::CannRaNetServiceProfile::kRaManaged
+             : flume::roce::CannRaNetServiceProfile::kExplicitRuntime));
     flume::roce::cann::RdevInitInfo init_info{};
     flume::roce::cann::Rdev rdev{};
     void* rdev_handle = nullptr;

@@ -148,8 +148,10 @@ extern "C" int RaDeregisterMr(const void*, void*) {
 }
 #elif defined(FLUME_RUNTIME_PUSH_FIXTURE)
 extern "C" int rtSetDevice(int32_t) { return 0; }
+#if !defined(FLUME_RUNTIME_NO_NET_SERVICE)
 extern "C" int rtOpenNetService(const RtNetServiceOpenArgs*) { return 0; }
 extern "C" int rtCloseNetService() { return 0; }
+#endif
 extern "C" int rtRDMADBSend(uint32_t index, uint64_t info, void* stream) {
   return index == 7 && info == 9 && stream != nullptr ? 0 : -1;
 }
@@ -157,6 +159,8 @@ extern "C" int rtRDMADBSend(uint32_t index, uint64_t info, void* stream) {
 extern "C" int rtSetDevice(int32_t) { return 0; }
 extern "C" int rtOpenNetService(const RtNetServiceOpenArgs*) { return 0; }
 extern "C" int rtCloseNetService() { return 0; }
+#elif defined(FLUME_RUNTIME_LEGACY_FIXTURE)
+extern "C" int rtSetDevice(int32_t) { return 0; }
 #elif defined(FLUME_ACL_PUSH_FIXTURE)
 #include <cstdlib>
 #include <cstring>

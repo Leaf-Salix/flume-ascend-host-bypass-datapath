@@ -22,6 +22,12 @@ enum class CannRaRdevInitProfile {
   kLegacy,
 };
 
+enum class CannRaNetServiceProfile {
+  kUnavailable,
+  kExplicitRuntime,
+  kRaManaged,
+};
+
 // Isolates CANN/HCCP symbol and entry-point differences from the storage
 // session. The public methods below are the only RA ABI used by Flume's data
 // path; raw function pointers remain private to this adapter.
@@ -44,8 +50,15 @@ class CannRaApi {
   CannRaRdevInitProfile rdev_init_profile() const {
     return rdev_init_profile_;
   }
+  CannRaNetServiceProfile net_service_profile() const {
+    return net_service_profile_;
+  }
+  bool explicit_net_service_available() const {
+    return net_service_profile_ == CannRaNetServiceProfile::kExplicitRuntime;
+  }
   const char* symbol_profile_name() const;
   const char* rdev_init_profile_name() const;
+  const char* net_service_profile_name() const;
 
   int SetDevice(int32_t logical_device) const;
   bool ResolvePhysicalDevice(int32_t logical_device,
@@ -121,6 +134,8 @@ class CannRaApi {
   CannRaSymbolProfile symbol_profile_ = CannRaSymbolProfile::kUnavailable;
   CannRaRdevInitProfile rdev_init_profile_ =
       CannRaRdevInitProfile::kUnavailable;
+  CannRaNetServiceProfile net_service_profile_ =
+      CannRaNetServiceProfile::kUnavailable;
   bool available_ = false;
   bool command_posting_available_ = false;
 };

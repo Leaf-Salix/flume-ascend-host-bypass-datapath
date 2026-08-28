@@ -20,6 +20,7 @@ The adapter recognizes these compatibility dimensions independently:
 |---|---|---|
 | RA symbol spelling | `RaInit`, `RaRegisterMr`, ... | `ra_init`, `ra_register_mr`, ... |
 | rdev initialization | `RaRdevInitV2(info, rdev, out)` | `RaRdevInit(mode, notify, rdev, out)` |
+| NetService lifecycle | explicit `rtOpenNetService` / `rtCloseNetService` | RA-managed when both runtime symbols are absent |
 | logical-to-physical mapping | `aclrtGetPhyDevIdByLogicDevId` | explicit physical device ID |
 | command submission | `RaTypicalSendWr` | `ra_typical_send_wr` or `ra_send_wr`; not required by TCP-control baseline |
 
@@ -46,6 +47,7 @@ cann_ra_symbol_probe=passed
 cann_ra_compat=unqualified
 symbol_profile=modern-camelcase|legacy-lowercase|mixed
 rdev_init=rdev-init-v2|rdev-init-legacy
+net_service=explicit-runtime|ra-managed
 physical_device_lookup=available|explicit-required
 command_posting=not-required
 abi_profile=hccp-reduced-v1

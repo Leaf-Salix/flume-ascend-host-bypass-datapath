@@ -159,8 +159,23 @@ bool CannRaApi::Open(bool require_command_posting, std::string* error) {
   FLUME_LOAD_RA(ra_register_mr_, "RaRegisterMr", "ra_register_mr");
   FLUME_LOAD_RA(ra_deregister_mr_, "RaDeregisterMr", "ra_deregister_mr");
   FLUME_LOAD(runtime_library_, rt_set_device_, "rtSetDevice");
-  FLUME_LOAD(runtime_library_, rt_open_net_service_, "rtOpenNetService");
-  FLUME_LOAD(runtime_library_, rt_close_net_service_, "rtCloseNetService");
+  const bool have_open_net_service =
+      LoadSymbolAny(runtime_library_, {"rtOpenNetService"},
+                    &rt_open_net_service_, nullptr, nullptr, false);
+  const bool have_close_net_service =
+      LoadSymbolAny(runtime_library_, {"rtCloseNetService"},
+                    &rt_close_net_service_, nullptr, nullptr, false);
+  if (have_open_net_service != have_close_net_service) {
+    if (error != nullptr) {
+      *error = "incomplete CANN NetService API: rtOpenNetService and "
+               "rtCloseNetService must be exported together";
+    }
+    Close();
+    return false;
+  }
+  net_service_profile_ = have_open_net_service
+      ? CannRaNetServiceProfile::kExplicitRuntime
+      : CannRaNetServiceProfile::kRaManaged;
   LoadSymbolAny(acl_library_, {"aclrtGetPhyDevIdByLogicDevId"},
                 &acl_get_physical_device_, nullptr, nullptr, false);
   if (require_command_posting) {
@@ -194,6 +209,7 @@ void CannRaApi::Close() {
   command_posting_available_ = false;
   symbol_profile_ = CannRaSymbolProfile::kUnavailable;
   rdev_init_profile_ = CannRaRdevInitProfile::kUnavailable;
+  net_service_profile_ = CannRaNetServiceProfile::kUnavailable;
 #if FLUME_HAVE_DLOPEN
   if (acl_library_ != nullptr) dlclose(acl_library_);
   if (runtime_library_ != nullptr) dlclose(runtime_library_);
@@ -247,6 +263,18 @@ const char* CannRaApi::rdev_init_profile_name() const {
     case CannRaRdevInitProfile::kLegacy:
       return "rdev-init-legacy";
     case CannRaRdevInitProfile::kUnavailable:
+      return "unavailable";
+  }
+  return "unavailable";
+}
+
+const char* CannRaApi::net_service_profile_name() const {
+  switch (net_service_profile_) {
+    case CannRaNetServiceProfile::kExplicitRuntime:
+      return "explicit-runtime";
+    case CannRaNetServiceProfile::kRaManaged:
+      return "ra-managed";
+    case CannRaNetServiceProfile::kUnavailable:
       return "unavailable";
   }
   return "unavailable";

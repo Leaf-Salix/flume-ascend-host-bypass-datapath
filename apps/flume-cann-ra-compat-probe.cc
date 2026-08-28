@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
             << " cann_ra_compat=unqualified"
             << " symbol_profile=" << api.symbol_profile_name()
             << " rdev_init=" << api.rdev_init_profile_name()
+            << " net_service=" << api.net_service_profile_name()
             << " physical_device_lookup="
             << (api.physical_device_lookup_available() ? "available"
                                                        : "explicit-required")

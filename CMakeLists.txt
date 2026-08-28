@@ -1113,22 +1113,28 @@ if(FLUME_BUILD_TESTS)
       FLUME_ACL_LEGACY_FIXTURE=1)
     target_include_directories(test_cann_acl_legacy_fixture PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_runtime_legacy_fixture SHARED
+      tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_runtime_legacy_fixture PRIVATE
+      FLUME_RUNTIME_LEGACY_FIXTURE=1)
+    target_include_directories(test_cann_runtime_legacy_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
     add_test(NAME cann_ra_loader_legacy_82
       COMMAND test_cann_ra_loader
         $<TARGET_FILE:test_cann_ra_legacy_fixture>
-        $<TARGET_FILE:test_cann_runtime_core_fixture>
+        $<TARGET_FILE:test_cann_runtime_legacy_fixture>
         $<TARGET_FILE:test_cann_acl_legacy_fixture>
         legacy)
     if(TARGET flume-cann-ra-compat-probe)
       add_test(NAME cann_ra_compat_probe_legacy_82
         COMMAND ${CMAKE_COMMAND} -E env
           FLUME_CANN_RA_LIBRARY=$<TARGET_FILE:test_cann_ra_legacy_fixture>
-          FLUME_CANN_RUNTIME_LIBRARY=$<TARGET_FILE:test_cann_runtime_core_fixture>
+          FLUME_CANN_RUNTIME_LIBRARY=$<TARGET_FILE:test_cann_runtime_legacy_fixture>
           FLUME_CANN_ACL_LIBRARY=$<TARGET_FILE:test_cann_acl_legacy_fixture>
           $<TARGET_FILE:flume-cann-ra-compat-probe>)
       set_tests_properties(cann_ra_compat_probe_legacy_82 PROPERTIES
         PASS_REGULAR_EXPRESSION
-          "cann_ra_symbol_probe=passed.*cann_ra_compat=unqualified.*symbol_profile=legacy-lowercase.*rdev_init=rdev-init-legacy.*physical_device_lookup=explicit-required.*abi_qualified=no.*hardware_gate=required")
+          "cann_ra_symbol_probe=passed.*cann_ra_compat=unqualified.*symbol_profile=legacy-lowercase.*rdev_init=rdev-init-legacy.*net_service=ra-managed.*physical_device_lookup=explicit-required.*abi_qualified=no.*hardware_gate=required")
     endif()
 
     add_library(test_cann_ra_legacy_push_fixture SHARED
@@ -1148,12 +1154,20 @@ if(FLUME_BUILD_TESTS)
       FLUME_RUNTIME_PUSH_FIXTURE=1)
     target_include_directories(test_cann_runtime_push_fixture PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
+    add_library(test_cann_runtime_legacy_push_fixture SHARED
+      tests/cann_ra_loader_fixture.cc)
+    target_compile_definitions(test_cann_runtime_legacy_push_fixture PRIVATE
+      FLUME_RUNTIME_PUSH_FIXTURE=1 FLUME_RUNTIME_NO_NET_SERVICE=1)
+    target_include_directories(test_cann_runtime_legacy_push_fixture PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
     add_library(test_cann_acl_push_fixture SHARED tests/cann_ra_loader_fixture.cc)
     target_compile_definitions(test_cann_acl_push_fixture PRIVATE
       FLUME_ACL_PUSH_FIXTURE=1)
     target_include_directories(test_cann_acl_push_fixture PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
-    add_executable(test_npu_ra_push_mover tests/test_npu_ra_push_mover.cc)
+    add_executable(test_npu_ra_push_mover)
+    target_sources(test_npu_ra_push_mover PRIVATE
+      ${PROJECT_SOURCE_DIR}/tests/test_npu_ra_push_mover.cc)
     target_link_libraries(test_npu_ra_push_mover PRIVATE flume)
     target_include_directories(test_npu_ra_push_mover PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
@@ -1165,7 +1179,7 @@ if(FLUME_BUILD_TESTS)
     add_test(NAME npu_ra_push_mover_legacy_82
       COMMAND test_npu_ra_push_mover
         $<TARGET_FILE:test_cann_ra_legacy_push_fixture>
-        $<TARGET_FILE:test_cann_runtime_push_fixture>
+        $<TARGET_FILE:test_cann_runtime_legacy_push_fixture>
         $<TARGET_FILE:test_cann_acl_push_fixture>)
   endif()
 

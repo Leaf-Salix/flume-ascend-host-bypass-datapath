@@ -65,11 +65,13 @@ class NpuRaPushMover::Impl {
     const std::string hdc_arg = "--hdcType=" + std::to_string(config.hdc_type);
     cann::RtProcExtParam parameter{hdc_arg.c_str(), hdc_arg.size()};
     cann::RtNetServiceOpenArgs open_args{&parameter, 1};
-    if (api.OpenNetService(&open_args) != cann::kSuccess) {
-      if (error != nullptr) *error = "rtOpenNetService failed for NPU relay";
-      return Fail();
+    if (api.explicit_net_service_available()) {
+      if (api.OpenNetService(&open_args) != cann::kSuccess) {
+        if (error != nullptr) *error = "rtOpenNetService failed for NPU relay";
+        return Fail();
+      }
+      net_service_open = true;
     }
-    net_service_open = true;
     init_config = {physical_device, cann::kNicDeploymentDevice,
                    config.hdc_type, false};
     if (api.Init(&init_config) != cann::kSuccess) {

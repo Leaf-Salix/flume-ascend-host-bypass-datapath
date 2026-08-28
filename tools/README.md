@@ -53,7 +53,8 @@ build-roce-tcp/flume-cann-ra-compat-probe
 它只做 `dlopen`/`dlsym`，不会选卡、注册 HBM 或建 QP。CANN 9.x 通常显示
 `cann_ra_symbol_probe=passed cann_ra_compat=unqualified` 以及
 `symbol_profile=modern-camelcase rdev_init=rdev-init-v2`；旧布局可显示
-`legacy-lowercase`、`mixed` 或 `rdev-init-legacy`。若显示
+`legacy-lowercase`、`mixed` 或 `rdev-init-legacy`。探针还会报告
+`net_service=explicit-runtime|ra-managed`。若显示
 `physical_device_lookup=explicit-required`，hardware smoke 追加
 `--physical-device <physical-device>`。只有 QP/MR/RDMA checksum 真机 smoke
 通过后才能把该 ABI 视为 qualified。完整兼容边界见
